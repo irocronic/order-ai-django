@@ -3,7 +3,7 @@ from pathlib import Path
 from datetime import timedelta
 import dj_database_url
 from dotenv import load_dotenv
-import json # JSON işlemleri için import eklendi
+import json
 
 # --- TEMEL AYARLAR ---
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -167,8 +167,11 @@ CORS_ALLOWED_ORIGINS = [
 # === CHANNELS ve CELERY için REDIS Yapılandırması ===
 REDIS_URL = os.environ.get('REDIS_URL', 'redis://localhost:6379/0')
 
+# === DEĞİŞİKLİK BURADA: SSL ayarı doğru formata getirildi ===
+# Heroku'nun Redis'i SSL kullanır (rediss://). 'redis' kütüphanesi,
+# sertifika doğrulamasını atlamak için URL'de "ssl_cert_reqs=none" parametresini bekler.
 if REDIS_URL.startswith('rediss://'):
-    REDIS_URL += '?ssl_cert_reqs=CERT_NONE'
+    REDIS_URL += '?ssl_cert_reqs=none'
 
 CHANNEL_LAYERS = {
     'default': {
@@ -263,24 +266,17 @@ if not DEBUG and not ADMIN_EMAIL_RECIPIENTS:
 elif DEBUG and not ADMIN_EMAIL_RECIPIENTS:
     print("UYARI: Geliştirme ortamında yeni üyelik bildirimleri için DJANGO_ADMIN_EMAIL_RECIPIENTS ayarlanmamış. Bildirim gönderilmeyecek.")
 
-# === GOOGLE & SUBSCRIPTION AYARLARI (GÜNCELLENDİ) ===
-# Bu blok, GOOGLE_SERVICE_JSON ortam değişkeninden kimlik bilgilerini okuyup
-# Heroku'nun geçici dosya sistemine yazar ve GOOGLE_APPLICATION_CREDENTIALS
-# ortam değişkenini bu dosyanın yoluna ayarlar.
+# === GOOGLE & SUBSCRIPTION AYARLARI ===
 GOOGLE_APPLICATION_CREDENTIALS = None
 GOOGLE_SERVICE_JSON_STR = os.environ.get("GOOGLE_SERVICE_JSON")
 
 if GOOGLE_SERVICE_JSON_STR:
     try:
-        # JSON string'ini bir sözlüğe çevir
         credentials_json = json.loads(GOOGLE_SERVICE_JSON_STR)
-        # Geçici bir dosya yolu oluştur
         credentials_path = os.path.join(BASE_DIR, 'google-credentials.json')
-        # JSON verisini bu dosyaya yaz
         with open(credentials_path, 'w') as f:
             json.dump(credentials_json, f)
         
-        # Django ve Google kütüphanelerinin kullanacağı ortam değişkenini ayarla
         os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = credentials_path
         GOOGLE_APPLICATION_CREDENTIALS = credentials_path
         print("✅ Google servis anahtarı ortam değişkeninden başarıyla yüklendi.")
