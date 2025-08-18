@@ -1,0 +1,17 @@
+# .gitignore
+*.log
+*.pot
+*.pyc
+__pycache__/
+local_settings.py
+db.sqlite3
+db.sqlite3-journal
+mediafiles/  # Eğer MEDIA_ROOT'u Git'e dahil etmek istemiyorsanız
+staticfiles/ # collectstatic ile oluşturulacak, Git'e dahil edilmemeli
+.env
+venv/
+venv_win/
+myenv
+*.swp
+*.swo
+service-account-key.json

@@ -1,0 +1,515 @@
+<!-- makarna_project\core\templates\core\takeaway_menu.html -->
+
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Paket Sipariş Menüsü - {{ business.name }}</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+    <style>
+        body { font-family: 'Inter', sans-serif; background: linear-gradient(to bottom right, #fef2f2, #fee2e2); }
+        .cart-item:hover { background-color: #fff1f2; }
+        .modal { display: none; position: fixed; z-index: 50; left: 0; top: 0; width: 100%; height: 100%; overflow: auto; background-color: rgba(0,0,0,0.6); animation: fadeIn 0.3s; }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+        .modal-content { background-color: #fefefe; margin: 10% auto; padding: 20px; border: 1px solid #888; width: 90%; max-width: 500px; border-radius: 10px; position: relative; animation: slideIn 0.3s; }
+        @keyframes slideIn { from { top: -50px; opacity: 0; } to { top: 0; opacity: 1; } }
+        .close-button { color: #aaa; position: absolute; top: 10px; right: 20px; font-size: 28px; font-weight: bold; cursor: pointer; }
+        .close-button:hover, .close-button:focus { color: black; text-decoration: none; cursor: pointer; }
+        .category-button { transition: all 0.3s ease; border: 1px solid transparent; }
+        .category-button.active { background-color: #ef4444; color: white; border-color: #b91c1c; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        .category-button:hover:not(.active) { background-color: #fee2e2; }
+        .product-card { transition: transform 0.2s ease, box-shadow 0.2s ease; cursor: pointer; }
+        .product-card:hover { transform: translateY(-3px); box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
+        .product-card.flash { animation: flash-bg 0.5s ease; }
+        @keyframes flash-bg { 0% { background-color: #dcfce7; } 100% { background-color: #ffffff; } }
+        #active-order-section { border-top: 2px dashed #f87171; margin-top: 2rem; padding-top: 1.5rem; }
+        #guest-order-status-container { position: sticky; top: 0; left: 0; right: 0; z-index: 1000; text-align: center; pointer-events: none; }
+        .status-message { display: inline-block; padding: 10px 20px; color: white; border-radius: 0 0 8px 8px; margin-top:0; box-shadow: 0 2px 5px rgba(0,0,0,0.2); font-weight: bold; pointer-events: all; }
+        .status-success { background-color: #4CAF50; }
+        .status-error { background-color: #f44336; }
+        .status-warning { background-color: #FFC107; color: #333; }
+        .status-info { background-color: #2196F3; }
+    </style>
+</head>
+<body class="bg-gradient-to-br from-red-50 to-red-100 min-h-screen p-4 md:p-8">
+
+    <div id="order-uuid-data" data-uuid="{{ order.uuid }}" style="display: none;"></div>
+    <input type="hidden" id="current-guest-order-id" value="{{ order.id }}">
+    
+    <div id="guest-order-status-container"></div>
+
+    <div class="container mx-auto max-w-6xl">
+        <header class="text-center mb-8">
+            <h1 class="text-3xl md:text-4xl font-bold text-gray-800 mb-2">{{ business.name }}</h1>
+            <h2 class="text-xl md:text-2xl text-gray-600">Paket Sipariş ({{ order.customer_name|default:"Misafir" }})</h2>
+        </header>
+
+        <div id="active-order-section" class="mb-10 bg-red-50 p-4 rounded-lg shadow border border-red-200" style="display: none;">
+            <h3 class="text-xl font-semibold mb-3 text-red-800 flex items-center">
+                <i class="fas fa-box-open mr-2"></i> Paketinizdeki Ürünler
+            </h3>
+            <div id="active-order-items" class="mb-3 divide-y divide-red-200"></div>
+            <div class="border-t border-red-200 pt-3 flex justify-between items-center">
+                <span class="text-md font-bold text-gray-800">Paket Toplamı:</span>
+                <span id="active-order-total" class="text-md font-bold text-red-700">0.00 TL</span>
+            </div>
+            <p class="text-xs text-gray-500 mt-2">Yeni ekleyeceğiniz ürünler aşağıdaki sepette görünecektir.</p>
+        </div>
+
+        <div id="category-filters" class="mb-6 flex flex-wrap justify-center gap-2">
+            <button class="category-button active px-4 py-2 bg-white text-gray-700 rounded-full shadow text-sm font-medium" data-category-id="all">Tümü</button>
+        </div>
+
+        <div id="menu-items-container" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+            <p id="loading-message" class="text-gray-500 text-center col-span-full">Menü Yükleniyor...</p>
+        </div>
+
+        <div id="cart-section" class="mt-12 bg-white p-6 rounded-lg shadow-lg sticky bottom-4 border border-gray-200">
+            <h3 class="text-2xl font-semibold mb-4 text-gray-800 flex items-center justify-between">
+                <span class="flex items-center"><i class="fas fa-cart-plus mr-2 text-green-600"></i> Yeni Eklenecekler</span>
+                <span id="cart-count-badge" class="bg-green-600 text-white text-xs font-bold px-2 py-1 rounded-full">0</span>
+            </h3>
+            <div id="cart-items" class="mb-4 max-h-60 overflow-y-auto divide-y divide-gray-200 pr-2">
+                <p id="empty-cart-message" class="text-gray-500 text-center py-4">Yeni ürün eklemek için menüden seçin.</p>
+            </div>
+            <div class="border-t border-gray-200 pt-4 flex justify-between items-center">
+                <span class="text-lg font-bold text-gray-800">Eklenecek Tutar:</span>
+                <span id="cart-total" class="text-lg font-bold text-green-600">0.00 TL</span>
+            </div>
+            <button id="submit-order-button" class="mt-4 w-full bg-green-500 hover:bg-green-600 text-white font-bold py-3 px-4 rounded-lg transition duration-300 disabled:opacity-50 disabled:cursor-not-allowed">
+                <i class="fas fa-check-circle mr-2"></i> Seçilenleri Siparişe Ekle
+            </button>
+            <p id="order-status-message-local" class="mt-2 text-center text-sm"></p>
+        </div>
+    </div>
+
+    <div id="variant-modal" class="modal">
+        <div class="modal-content">
+            <span class="close-button">&times;</span>
+            <h4 id="modal-item-name" class="text-xl font-semibold mb-4">Ürün Seçenekleri</h4>
+            <div id="modal-variants" class="mb-4"></div>
+            <div id="modal-extras" class="mb-4"></div>
+            <label for="modal-notes" class="block text-sm font-medium text-gray-700 mb-1">Not (isteğe bağlı):</label>
+            <textarea id="modal-notes" rows="2" class="w-full p-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"></textarea>
+            <button id="add-to-cart-modal-button" class="mt-4 w-full bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg transition duration-300">
+                Sepete Ekle
+            </button>
+        </div>
+    </div>
+
+    {{ all_menu_items_data_json|json_script:"all-menu-items-data" }}
+    {{ active_order_data_json|json_script:"active-order-data" }}
+    {{ categories_data_json|json_script:"categories-data" }}
+    {{ guest_order_api_url|json_script:"guest-order-api-url-data" }}
+    {{ csrf_token|json_script:"csrf-token-data" }}
+
+    <script>
+        console.log("Guest Takeaway Menu Script v4 (Refactored) Başladı.");
+
+        const TakeawayMenuApp = {
+            // --- State (Uygulama Durumu) ---
+            state: {
+                menu: {},
+                categories: [],
+                cart: [],
+                orderUuid: null,
+                guestApiUrl: '',
+                csrfToken: '',
+            },
+
+            // --- Element Referansları ---
+            elements: {
+                menuContainer: document.getElementById('menu-items-container'),
+                cartItemsContainer: document.getElementById('cart-items'),
+                cartTotal: document.getElementById('cart-total'),
+                emptyCartMessage: document.getElementById('empty-cart-message'),
+                submitButton: document.getElementById('submit-order-button'),
+                statusContainer: document.getElementById('guest-order-status-container'),
+                variantModal: document.getElementById('variant-modal'),
+                modalItemName: document.getElementById('modal-item-name'),
+                modalVariants: document.getElementById('modal-variants'),
+                modalExtras: document.getElementById('modal-extras'),
+                modalNotes: document.getElementById('modal-notes'),
+                addToCartModalButton: document.getElementById('add-to-cart-modal-button'),
+                categoryFilters: document.getElementById('category-filters'),
+                cartCountBadge: document.getElementById('cart-count-badge'),
+                activeOrderSection: document.getElementById('active-order-section'),
+                activeOrderItems: document.getElementById('active-order-items'),
+                activeOrderTotal: document.getElementById('active-order-total'),
+                loadingMessage: document.getElementById('loading-message'),
+            },
+
+            // --- Başlatma Fonksiyonu ---
+            init() {
+                console.log("TakeawayMenuApp başlatılıyor...");
+                this.loadInitialData();
+                this.setupEventListeners();
+                this.render();
+                this.connectSocket();
+            },
+
+            // --- Veri Yükleme ---
+            loadInitialData() {
+                try {
+                    const menuDataJson = JSON.parse(document.getElementById('all-menu-items-data')?.textContent || '[]');
+                    const activeOrderJson = JSON.parse(document.getElementById('active-order-data')?.textContent || 'null');
+                    this.state.categories = JSON.parse(document.getElementById('categories-data')?.textContent || '[]');
+                    this.state.guestApiUrl = JSON.parse(document.getElementById('guest-order-api-url-data')?.textContent || '""');
+                    this.state.csrfToken = JSON.parse(document.getElementById('csrf-token-data')?.textContent || '""');
+                    this.state.orderUuid = document.getElementById('order-uuid-data')?.dataset.uuid;
+                    
+                    if (Array.isArray(menuDataJson)) {
+                        this.state.menu = menuDataJson.reduce((acc, item) => {
+                            if (item?.id != null) acc[item.id] = item;
+                            return acc;
+                        }, {});
+                    } else {
+                        console.error("Hata: Menü verisi beklenen dizi formatında değil.", menuDataJson);
+                    }
+                    this.state.activeOrder = activeOrderJson;
+
+                } catch (e) {
+                    console.error("Başlangıç verisi parse edilirken hata:", e);
+                    this.displayStatusMessage("Sayfa yüklenirken bir hata oluştu.", "error");
+                }
+            },
+
+            // --- Olay Dinleyicileri ---
+            setupEventListeners() {
+                this.elements.categoryFilters?.addEventListener('click', (e) => {
+                    const btn = e.target.closest('button.category-button');
+                    if (btn?.dataset.categoryId) this.renderMenuItems(btn.dataset.categoryId);
+                });
+                this.elements.submitButton?.addEventListener('click', () => this.submitNewOrderItems());
+                this.elements.variantModal?.addEventListener('click', (e) => {
+                    if (e.target == this.elements.variantModal) this.closeModal();
+                });
+                this.elements.variantModal?.querySelector('.close-button')?.addEventListener('click', () => this.closeModal());
+            },
+
+            // --- Render Fonksiyonları (Arayüzü Çizenler) ---
+            render() {
+                this.renderCategoryFilters();
+                this.renderActiveOrder();
+                this.renderMenuItems();
+                this.updateCartDisplay();
+            },
+            
+            renderCategoryFilters() {
+                const container = this.elements.categoryFilters;
+                if (!container) return;
+                container.querySelectorAll('button:not([data-category-id="all"])').forEach(btn => btn.remove());
+                this.state.categories?.filter(cat => cat && cat.parent == null).forEach(category => {
+                    const button = document.createElement('button');
+                    button.className = 'category-button px-4 py-2 bg-white text-gray-700 rounded-full shadow text-sm font-medium';
+                    button.dataset.categoryId = category.id.toString();
+                    button.textContent = category.name;
+                    container.appendChild(button);
+                });
+            },
+
+            renderActiveOrder() {
+                const orderData = this.state.activeOrder;
+                const { activeOrderItems, activeOrderTotal, activeOrderSection } = this.elements;
+                if (!activeOrderItems || !activeOrderTotal || !activeOrderSection) return;
+                
+                if (!orderData || !orderData.order_items || orderData.order_items.length === 0) {
+                    activeOrderSection.style.display = 'none';
+                    return;
+                }
+
+                activeOrderItems.innerHTML = '';
+                let total = 0;
+                orderData.order_items.forEach(item => {
+                    const lineTotal = (parseFloat(item.price || 0) * parseInt(item.quantity || 0));
+                    let extrasText = item.extras?.map(e => e.variant_name).join(', ') ?? '';
+                    extrasText = extrasText ? `<br><span class="text-xs text-red-600">Ekstralar: ${extrasText}</span>` : '';
+                    const itemElement = document.createElement('div');
+                    itemElement.className = 'py-2 flex justify-between items-start text-sm';
+                    itemElement.innerHTML = `
+                        <div class="flex-grow pr-2">
+                            <span class="font-medium text-gray-800">${item.menu_item?.name ?? 'Ürün'} ${item.variant?.name ? `(${item.variant.name})` : ''} x ${item.quantity}</span>
+                            ${extrasText}
+                        </div>
+                        <span class="font-semibold text-gray-700 whitespace-nowrap">${lineTotal.toFixed(2)} TL</span>`;
+                    activeOrderItems.appendChild(itemElement);
+                    total += lineTotal;
+                });
+                activeOrderTotal.textContent = `${total.toFixed(2)} TL`;
+                activeOrderSection.style.display = 'block';
+
+                if (orderData.status === 'pending_approval') this.displayStatusMessage(`Siparişiniz (No: ${orderData.id}) onay bekliyor.`, 'warning');
+                else if (orderData.status === 'approved') this.displayStatusMessage(`Siparişiniz (No: ${orderData.id}) onaylandı.`, 'success');
+                else if (orderData.status === 'rejected') this.displayStatusMessage(`Siparişiniz (No: ${orderData.id}) reddedildi.`, 'error');
+            },
+
+            renderMenuItems(categoryId = 'all') {
+                const container = this.elements.menuContainer;
+                if (!container) return;
+                container.innerHTML = ''; // Önce temizle
+                
+                const itemsToDisplay = categoryId === 'all'
+                    ? Object.values(this.state.menu)
+                    : Object.values(this.state.menu).filter(item => item.category?.id?.toString() === categoryId.toString());
+
+                if (itemsToDisplay.length === 0) {
+                    container.innerHTML = '<p class="text-gray-500 text-center col-span-full">Bu kategoride ürün bulunamadı.</p>';
+                    return;
+                }
+
+                itemsToDisplay.forEach(item => {
+                    if (item?.id != null) container.appendChild(this.createMenuItemCard(item));
+                });
+                
+                this.elements.categoryFilters?.querySelectorAll('.category-button').forEach(btn => 
+                    btn.classList.toggle('active', btn.dataset.categoryId == categoryId.toString())
+                );
+            },
+            
+            createMenuItemCard(item) {
+                const card = document.createElement('div');
+                card.className = 'product-card bg-white rounded-lg shadow overflow-hidden flex flex-col';
+                const imageUrl = item.image || item.category?.image;
+                card.innerHTML = `
+                    <div class="h-48 w-full bg-gray-200 flex items-center justify-center overflow-hidden">
+                        ${imageUrl && imageUrl.startsWith('http') ? `<img src="${imageUrl}" alt="${item.name}" class="h-full w-full object-cover">` : '<i class="fas fa-utensils text-4xl text-gray-400"></i>'}
+                    </div>
+                    <div class="p-4 flex flex-col flex-grow">
+                        <h3 class="text-lg font-semibold text-gray-800 mb-1">${item.name || 'İsimsiz'}</h3>
+                        <p class="text-sm text-gray-600 mb-3 flex-grow">${item.description || ''}</p>
+                        <div class="flex justify-between items-center mt-auto">
+                            <span class="text-lg font-bold text-red-600">${this.getDisplayPrice(item)}</span>
+                            <button class="add-to-cart-btn bg-red-500 hover:bg-red-600 text-white text-xs font-bold py-1 px-3 rounded-full transition duration-300">
+                                <i class="fas fa-plus"></i> Ekle
+                            </button>
+                        </div>
+                    </div>`;
+                
+                const actionOnClick = () => {
+                    const hasNormalVariants = item.variants?.some(v => v && !v.is_extra);
+                    const hasOnlyExtras = item.variants?.some(v => v && v.is_extra) && !hasNormalVariants;
+                    if (item.is_campaign_bundle) {
+                        this.addToCart(item.id, null, [], null);
+                    } else if (hasNormalVariants || hasOnlyExtras) {
+                        this.openVariantModal(item.id);
+                    } else {
+                        this.addToCart(item.id, null, [], null);
+                    }
+                };
+                
+                card.querySelector('.add-to-cart-btn').onclick = (e) => { e.stopPropagation(); actionOnClick(); card.classList.add('flash'); setTimeout(() => card.classList.remove('flash'), 500); };
+                card.onclick = actionOnClick;
+                return card;
+            },
+
+            getDisplayPrice(item) {
+                if (item.is_campaign_bundle && item.price != null) {
+                    return `${parseFloat(item.price).toFixed(2)} TL`;
+                }
+                const firstNormalVariant = item.variants?.find(v => v && !v.is_extra);
+                if (firstNormalVariant?.price != null) {
+                    return `${parseFloat(firstNormalVariant.price).toFixed(2)} TL'den başlayan`;
+                }
+                if (item.variants?.some(v => v && !v.is_extra)) {
+                    return 'Seçenekli';
+                }
+                return 'Fiyat Yok';
+            },
+
+            // --- Modal Fonksiyonları ---
+            openVariantModal(itemId) {
+                const item = this.state.menu[itemId];
+                if (!item) return;
+
+                const { modalItemName, modalVariants, modalExtras, modalNotes, addToCartModalButton, variantModal } = this.elements;
+                if (!modalItemName || !modalVariants || !modalExtras || !modalNotes || !addToCartModalButton || !variantModal) return;
+
+                modalItemName.textContent = item.name;
+                modalVariants.innerHTML = '';
+                modalExtras.innerHTML = '';
+                modalNotes.value = '';
+
+                const normalVariants = item.variants?.filter(v => v && !v.is_extra) || [];
+                const extraVariants = item.variants?.filter(v => v && v.is_extra) || [];
+                
+                if (normalVariants.length > 0) {
+                    modalVariants.innerHTML = '<p class="font-semibold mb-2 text-gray-700">Seçenek:</p>' + normalVariants.map((variant, index) => `
+                        <label class="flex items-center mb-2 cursor-pointer">
+                            <input type="radio" name="modal_variant_selection" value="${variant.id}" class="mr-2 h-4 w-4 text-blue-600 border-gray-300 focus:ring-blue-500" ${index === 0 ? 'checked' : ''}>
+                            <span class="text-gray-800">${variant.name} - ${parseFloat(variant.price).toFixed(2)} TL</span>
+                        </label>`).join('');
+                }
+                
+                if (extraVariants.length > 0) {
+                    modalExtras.innerHTML = '<p class="font-semibold mb-2 text-gray-700 mt-4">Ekstralar:</p>' + extraVariants.map(variant => `
+                        <label class="flex items-center mb-2 cursor-pointer">
+                            <input type="checkbox" name="modal_extra_selection" value="${variant.id}" class="mr-2 h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500">
+                            <span class="text-gray-800">${variant.name} - ${parseFloat(variant.price).toFixed(2)} TL</span>
+                        </label>`).join('');
+                }
+                
+                addToCartModalButton.onclick = () => {
+                    const selectedVariantId = modalVariants.querySelector('input:checked')?.value ? parseInt(modalVariants.querySelector('input:checked').value) : null;
+                    if (normalVariants.length > 0 && selectedVariantId === null) { alert("Lütfen bir ana seçenek belirtin."); return; }
+                    const selectedExtraIds = Array.from(modalExtras.querySelectorAll('input:checked')).map(input => parseInt(input.value));
+                    this.addToCart(itemId, selectedVariantId, selectedExtraIds, modalNotes.value.trim());
+                    this.closeModal();
+                };
+                
+                variantModal.style.display = 'block';
+            },
+
+            closeModal() {
+                if(this.elements.variantModal) this.elements.variantModal.style.display = 'none';
+            },
+
+            // --- Sepet Yönetimi ---
+            addToCart(itemId, variantId = null, extraIds = [], notes = null) {
+                const item = this.state.menu[itemId];
+                if (!item) { console.error(`addToCart: Ürün ID ${itemId} bulunamadı!`); return; }
+
+                let mainVariant = null, extras = [], unitPrice = 0;
+                if (item.is_campaign_bundle) {
+                    unitPrice = parseFloat(item.price);
+                } else {
+                    if (variantId !== null && item.variants) mainVariant = item.variants.find(v => v.id === variantId && !v.is_extra);
+                    else if (item.variants?.some(v => v && !v.is_extra)) { alert(`Lütfen '${item.name}' için bir ana seçenek belirtin.`); return; }
+                    
+                    extras = extraIds.map(id => item.variants?.find(v => v.id === id && v.is_extra)).filter(Boolean);
+                    unitPrice = parseFloat(mainVariant?.price || 0) + extras.reduce((sum, extra) => sum + parseFloat(extra.price), 0);
+                }
+
+                const cartId = `${item.id}-${variantId ?? 'na'}-${extraIds.sort().join('-')}-${notes||'no'}`;
+                const existingItem = this.state.cart.find(ci => ci.cartId === cartId);
+                
+                if (existingItem) {
+                    existingItem.quantity++;
+                } else {
+                    this.state.cart.push({ cartId, itemId: item.id, itemName: item.name, variantId, variantName: mainVariant?.name, price: unitPrice, quantity: 1, extras: extras.map(e => ({ variant: e.id, variantName: e.name })), notes });
+                }
+                this.updateCartDisplay();
+            },
+
+            removeFromCart(cartId) {
+                const index = this.state.cart.findIndex(item => item.cartId === cartId);
+                if (index > -1) {
+                    if (this.state.cart[index].quantity > 1) this.state.cart[index].quantity--;
+                    else this.state.cart.splice(index, 1);
+                    this.updateCartDisplay();
+                }
+            },
+
+            updateCartDisplay() {
+                const { cartItemsContainer, cartTotal, emptyCartMessage, cartCountBadge, submitButton } = this.elements;
+                if (!cartItemsContainer || !cartTotal || !emptyCartMessage || !cartCountBadge) return;
+                
+                cartItemsContainer.innerHTML = '';
+                let total = 0, totalItems = 0;
+
+                if (this.state.cart.length === 0) {
+                    emptyCartMessage.style.display = 'block';
+                } else {
+                    emptyCartMessage.style.display = 'none';
+                    this.state.cart.forEach(item => {
+                        const extrasText = item.extras?.length > 0 ? `<br><span class="text-xs text-gray-500">Ekstralar: ${item.extras.map(e => e.variantName).join(', ')}</span>` : '';
+                        const notesText = item.notes ? `<br><span class="text-xs text-blue-500">Not: ${item.notes}</span>` : '';
+                        const itemElement = document.createElement('div');
+                        itemElement.className = 'cart-item flex justify-between items-center py-3 text-sm';
+                        itemElement.innerHTML = `<div><span class="font-medium text-gray-800">${item.itemName} ${item.variantName ? `(${item.variantName})` : ''}</span>${extrasText}${notesText}</div><div class="flex items-center"><span class="mx-2 font-semibold">${item.quantity} x ${item.price.toFixed(2)} TL</span><button class="remove-from-cart-btn text-red-500 hover:text-red-700 ml-2" data-cart-id="${item.cartId}"><i class="fas fa-minus-circle"></i></button></div>`;
+                        cartItemsContainer.appendChild(itemElement);
+                        total += item.price * item.quantity;
+                        totalItems += item.quantity;
+                    });
+                    document.querySelectorAll('.remove-from-cart-btn').forEach(button => { button.onclick = () => this.removeFromCart(button.dataset.cartId); });
+                }
+
+                cartTotal.textContent = `${total.toFixed(2)} TL`;
+                cartCountBadge.textContent = totalItems.toString();
+                if (submitButton) submitButton.disabled = this.state.cart.length === 0;
+            },
+
+            // --- API ve Socket İşlemleri ---
+            async submitNewOrderItems() {
+                if (this.state.cart.length === 0) { this.displayStatusMessage('Lütfen önce ürün ekleyin.', 'warning'); return; }
+                if (this.elements.submitButton) { this.elements.submitButton.disabled = true; this.elements.submitButton.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i> Ekleniyor...'; }
+
+                const payload = this.state.cart.map(item => ({
+                    menu_item_id: item.itemId,
+                    variant_id: item.variantId,
+                    quantity: item.quantity,
+                    extras: item.extras,
+                    notes: item.notes,
+                }));
+
+                try {
+                    const response = await fetch(this.state.guestApiUrl, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': this.state.csrfToken },
+                        body: JSON.stringify(payload),
+                    });
+                    const responseData = await response.json();
+                    if (response.ok) {
+                        this.state.cart = [];
+                        this.updateCartDisplay();
+                        this.state.activeOrder = responseData;
+                        this.renderActiveOrder();
+                        const successMsg = responseData.status === 'pending_approval' ? "Siparişiniz alındı, onay bekleniyor..." : "Ürünler mevcut siparişinize eklendi!";
+                        this.displayStatusMessage(successMsg, responseData.status === 'pending_approval' ? 'warning' : 'success');
+                    } else {
+                        throw (responseData); // Hata objesini fırlat
+                    }
+                } catch (error) {
+                    let errorMsgText = 'Ürünler eklenemedi.';
+                    if (error.detail) { errorMsgText = error.detail; }
+                    else if (error.non_field_errors) { errorMsgText = error.non_field_errors[0]; }
+                    this.displayStatusMessage(errorMsgText, 'error');
+                    console.error('Sipariş gönderme hatası:', error);
+                } finally {
+                    if (this.elements.submitButton) {
+                        this.elements.submitButton.disabled = this.state.cart.length === 0;
+                        this.elements.submitButton.innerHTML = '<i class="fas fa-check-circle mr-2"></i> Seçilenleri Siparişe Ekle';
+                    }
+                }
+            },
+            
+            connectSocket() {
+                if (this.state.orderUuid) {
+                    const socket = io(`${window.location.protocol}//${window.location.host}`, { path: '/socket.io/', transports: ['websocket', 'polling'] });
+                    socket.on('connect', () => {
+                        console.log('Misafir (Paket): Socket.IO bağlandı.');
+                        socket.emit('join_guest_takeaway_room', { order_uuid: this.state.orderUuid });
+                    });
+                    socket.on('order_update_for_guest_takeaway', (data) => {
+                        console.log('Misafir (Paket) için sipariş güncellemesi:', data);
+                        if (data?.order_id) { window.location.reload(); }
+                    });
+                } else {
+                    console.error("KRİTİK HATA: Sipariş UUID bulunamadı!");
+                }
+            },
+
+            displayStatusMessage(message, type = 'info') {
+                const container = this.elements.statusContainer;
+                if (!container) return;
+                let className = 'status-info';
+                if (type === 'success') className = 'status-success';
+                else if (type === 'error') className = 'status-error';
+                else if (type === 'warning') className = 'status-warning';
+                container.innerHTML = `<div class="status-message ${className}">${message}</div>`;
+                setTimeout(() => {
+                    if (container.firstChild && container.firstChild.textContent === message) {
+                        container.innerHTML = '';
+                    }
+                }, 7000);
+            },
+        };
+
+        document.addEventListener('DOMContentLoaded', () => {
+            TakeawayMenuApp.init();
+        });
+    </script>
+</body>
+</html>
