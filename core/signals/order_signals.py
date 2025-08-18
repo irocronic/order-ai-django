@@ -74,27 +74,33 @@ def _cleanup_old_notifications():
         if old_keys:
             logger.info(f"[DEDUPLİKASYON] {len(old_keys)} eski notification kaydı temizlendi")
 
+# ==================== GÜNCELLENEN FONKSİYON BAŞLANGICI ====================
 def emit_order_status_update(order, event_type, message):
     """
-    TAMAMEN YENİDEN YAZILMIŞ DEDUPLİKASYON SİSTEMİ
     Sipariş durumu güncellemelerini tek bir mesajla gönderen fonksiyon.
+    Düzeltilmiş deduplikasyon mantığı içerir.
     """
     # Eski kayıtları temizle
     _cleanup_old_notifications()
     
-    # Deduplication key oluştur
-    dedup_key = f"order_{order.id}_{event_type}_{int(datetime.now().timestamp() // 3)}"
+    # Benzersiz bir bildirim ID'si oluştur
+    notification_id = f"{uuid.uuid4()}-{int(datetime.now().timestamp())}"
     
-    # Eğer son 3 saniye içinde aynı event gönderildiyse, SKIP et
-    if dedup_key in _sent_notifications:
-        logger.info(f"[DEDUPLİKASYON] SKIPPED: {event_type} (Order: {order.id}) - Son 3 saniye içinde gönderildi")
+    # Deduplication key'i artık daha genel ve sadece anlık çift gönderimleri engellemek için.
+    # Zaman aralığına bağlı değil, sadece son gönderim zamanına bakıyor.
+    dedup_key = f"order_{order.id}_{event_type}"
+    
+    now = datetime.now()
+    
+    # Eğer aynı sipariş ve olay türü için 1 saniyeden daha kısa süre önce bildirim gönderildiyse, atla.
+    if dedup_key in _sent_notifications and (now - _sent_notifications[dedup_key]).total_seconds() < 1:
+        logger.info(f"[DEDUPLİKASYON] SKIPPED (Hızlı Tekrar): {event_type} (Order: {order.id})")
         return
     
-    # Bu notification'ı gönderildi olarak işaretle
-    _sent_notifications[dedup_key] = datetime.now()
+    # Bu bildirim'i gönderildi olarak işaretle (yeni zaman damgasıyla)
+    _sent_notifications[dedup_key] = now
     
-    # Unique notification ID oluştur
-    notification_id = f"{uuid.uuid4()}-{int(datetime.now().timestamp())}"
+    logger.info(f"[DEDUPLİKASYON] GÖNDERİLİYOR: {event_type} (Order: {order.id}, Notification: {notification_id})")
     
     update_data = {
         'notification_id': notification_id,
@@ -123,7 +129,6 @@ def emit_order_status_update(order, event_type, message):
         if item.menu_item and item.menu_item.category and item.menu_item.category.assigned_kds
     }
 
-    # **DÜZELTİLEN MANTIK**: Önce kime gönderilecek karar ver, sonra tek seferde gönder
     rooms_to_notify = []
     
     # 1. Business room'u ekle
@@ -135,21 +140,16 @@ def emit_order_status_update(order, event_type, message):
     
     # 2. KDS room'ları ekle (eğer varsa)
     if kds_screens_with_items:
-        # Sadece ilk KDS'e gönder (çünkü aynı kullanıcı muhtemelen sadece bir KDS'de)
-        primary_kds = list(kds_screens_with_items)[0]
-        kds_room = f'kds_{business_id}_{primary_kds.slug}'
-        
-        kds_data = update_data.copy()
-        kds_data['kds_slug'] = primary_kds.slug
-        
-        rooms_to_notify.append({
-            'room': kds_room,
-            'data': kds_data
-        })
+        for kds in kds_screens_with_items:
+            kds_room = f'kds_{business_id}_{kds.slug}'
+            kds_data = update_data.copy()
+            kds_data['kds_slug'] = kds.slug
+            rooms_to_notify.append({
+                'room': kds_room,
+                'data': kds_data
+            })
     
-    # **TEK MESAJ GÖNDER**: Her room için ayrı ayrı emit et
-    logger.info(f"[DEDUPLİKASYON] Gönderiliyor: {event_type} (Order: {order.id}, Notification: {notification_id})")
-    
+    # Her room için ayrı ayrı emit et
     for room_info in rooms_to_notify:
         room_name = room_info['room']
         room_data = room_info['data']
@@ -158,6 +158,7 @@ def emit_order_status_update(order, event_type, message):
         async_to_sync(sio.emit)('order_status_update', convert_decimals_to_strings(room_data), room=room_name)
     
     logger.info(f"[DEDUPLİKASYON] Tamamlandı: {len(rooms_to_notify)} room'a gönderildi")
+# ==================== GÜNCELLENEN FONKSİYON SONU ====================
 
 def send_order_update_notification(order, created: bool = False, update_fields=None, item_added_info=None):
     """
@@ -179,7 +180,6 @@ def send_order_update_notification(order, created: bool = False, update_fields=N
     # Yeni deduplication sistemi ile fonksiyonu çağır
     emit_order_status_update(order, event_type, message)
 
-# Diğer fonksiyonlar aynı kalıyor...
 @receiver(pre_delete, sender=Order)
 def handle_order_deletion_notification(sender, instance: Order, **kwargs):
     business_id = instance.business_id
@@ -195,7 +195,7 @@ def handle_order_deletion_notification(sender, instance: Order, **kwargs):
     general_room_name = f'business_{business_id}'
     payload = {
         'notification_id': f"{uuid.uuid4()}-{int(datetime.now().timestamp())}",
-        'event_type': NOTIFICATION_EVENT_TYPES[12][0],
+        'event_type': NOTIFICATION_EVENT_TYPES[12][0], # 'order_cancelled_update'
         'order_id': instance.id,
         'table_id': instance.table.id if instance.table else None,
         'message': f"Sipariş #{instance.id} iptal edildi.",
