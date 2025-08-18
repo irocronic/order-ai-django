@@ -1,4 +1,4 @@
-# makarna_project/core/views/order_actions/financial_actions.py
+# core/views/order_actions/financial_actions.py
 
 from rest_framework import status
 from rest_framework.response import Response
@@ -14,8 +14,8 @@ from makarna_project.asgi import sio
 from ...models import Order, CreditPaymentDetails, Payment
 from ...serializers import OrderSerializer
 from ...utils.order_helpers import PermissionKeys, get_user_business
-# --- DEĞİŞİKLİK 1: Gerekli yardımcı fonksiyonu import ediyoruz ---
-from ...signals.order_signals import convert_decimals_to_strings
+# === DEĞİŞİKLİK BURADA: Import yolunu yeni util dosyasından alıyoruz ===
+from ...utils.json_helpers import convert_decimals_to_strings
 
 logger = logging.getLogger(__name__)
 
@@ -90,13 +90,11 @@ def mark_as_paid_action(view_instance, request, pk=None):
             'message': f"Sipariş #{order.id} ödendi.",
             'order_id': order.id,
             'table_id': original_table_id,
-            'updated_order_data': order_serializer.data, # DİKKAT: Bu serializer hala Decimal içerebilir
+            'updated_order_data': order_serializer.data,
         }
         try:
-            # --- DEĞİŞİKLİK 2: payload'ı göndermeden önce Decimal'leri string'e çeviriyoruz ---
             cleaned_payload = convert_decimals_to_strings(payload)
             async_to_sync(sio.emit)('order_status_update', cleaned_payload, room=room_name)
-            # --- DEĞİŞİKLİK SONU ---
             logger.info(f"Socket.IO (Ödeme): 'order_status_update' (paid) {room_name} odasına gönderildi (Sipariş ID: {order.id}).")
         except Exception as e_socket:
             logger.error(f"Socket.IO event gönderilirken hata (ödeme - sipariş {order.id}): {e_socket}", exc_info=True)
@@ -156,10 +154,8 @@ def save_credit_payment_action(view_instance, request, pk=None):
             'updated_order_data': order_serializer.data,
         }
         try:
-            # --- DEĞİŞİKLİK 3: Bu kısma da aynı temizleme işlemini uyguluyoruz ---
             cleaned_payload = convert_decimals_to_strings(payload)
             async_to_sync(sio.emit)('order_status_update', cleaned_payload, room=room_name)
-            # --- DEĞİŞİKLİK SONU ---
             logger.info(f"Socket.IO (Veresiye): 'order_status_update' (credit_sale) {room_name} odasına gönderildi (Sipariş ID: {order.id}).")
         except Exception as e_socket:
             logger.error(f"Socket.IO event gönderilirken hata (veresiye - sipariş {order.id}): {e_socket}", exc_info=True)

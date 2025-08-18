@@ -1,24 +1,18 @@
 # core/tasks.py
-
 from celery import shared_task
 from asgiref.sync import async_to_sync
-from decimal import Decimal
 import logging
 from .models import Order
 from .serializers import OrderSerializer
 import uuid
 from datetime import datetime
+# === DEĞİŞİKLİK BURADA: Import yolunu yeni util dosyasından alıyoruz ===
+from .utils.json_helpers import convert_decimals_to_strings
 
 logger = logging.getLogger(__name__)
 
-def _convert_decimals_to_strings(obj):
-    if isinstance(obj, list):
-        return [_convert_decimals_to_strings(i) for i in obj]
-    elif isinstance(obj, dict):
-        return {k: _convert_decimals_to_strings(v) for k, v in obj.items()}
-    elif isinstance(obj, Decimal):
-        return str(obj)
-    return obj
+# Bu dosyadaki yerel _convert_decimals_to_strings fonksiyonunu siliyoruz
+# ve import ettiğimizi kullanıyoruz.
 
 @shared_task(name="send_order_update_notification")
 def send_order_update_task(order_id, event_type, message, extra_data=None):
@@ -28,6 +22,10 @@ def send_order_update_task(order_id, event_type, message, extra_data=None):
     logger.info(f"[Celery Task] Sending notification for Order ID: {order_id}, Event: {event_type}")
     try:
         from makarna_project.asgi import sio
+        from core.signals.order_signals import get_event_type_from_status
+        # Deduplication için gerekli değişkenleri burada da yönetebiliriz,
+        # ancak Celery'nin kendi rate-limiting gibi daha gelişmiş özellikleri vardır.
+        # Şimdilik basit tutalım.
 
         order = Order.objects.select_related(
             'table', 'customer', 'business', 'taken_by_staff'
@@ -43,7 +41,7 @@ def send_order_update_task(order_id, event_type, message, extra_data=None):
             'event_type': event_type,
             'message': message,
             'order_id': order.id,
-            'updated_order_data': _convert_decimals_to_strings(serialized_order),
+            'updated_order_data': convert_decimals_to_strings(serialized_order),
             'table_number': order.table.table_number if order.table else None,
             'timestamp': datetime.now().isoformat()
         }
@@ -75,4 +73,3 @@ def send_order_update_task(order_id, event_type, message, extra_data=None):
         logger.error(f"[Celery Task] Order with ID {order_id} not found.")
     except Exception as e:
         logger.error(f"[Celery Task] Failed to send notification for order {order_id}. Error: {e}", exc_info=True)
-        # Hata durumunda görevi yeniden denemek için: self.retry(exc=e, countdown=60)

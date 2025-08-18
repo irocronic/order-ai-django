@@ -22,27 +22,19 @@ from ..models import (
 )
 from ..serializers import OrderSerializer, OrderItemSerializer
 from ..utils.order_helpers import PermissionKeys, get_user_business
+# === DEĞİŞİKLİK BURADA: Import yolunu yeni util dosyasından alıyoruz ===
+from ..utils.json_helpers import convert_decimals_to_strings
 from ..permissions import IsOnActiveShift
 from channels.layers import get_channel_layer
 from asgiref.sync import async_to_sync
 
-# <<< DEĞİŞİKLİK BURADA BAŞLIYOR (1/2) >>>
-# Sinyal dosyası artık sadece bildirim gönderme fonksiyonunu barındırıyor.
 from ..signals.order_signals import send_order_update_notification
-# <<< DEĞİŞİKLİK SONU (1/2) >>>
 
 from .order_actions import item_actions, status_actions, financial_actions, operational_actions
 
 logger = logging.getLogger(__name__)
 
-def convert_decimals_to_strings(obj):
-    if isinstance(obj, list):
-        return [convert_decimals_to_strings(i) for i in obj]
-    elif isinstance(obj, dict):
-        return {k: convert_decimals_to_strings(v) for k, v in obj.items()}
-    elif isinstance(obj, Decimal):
-        return str(obj)
-    return obj
+# Yerel fonksiyon tanımı kaldırıldı.
 
 class StandardResultsSetPagination(PageNumberPagination):
     page_size = 20
@@ -125,16 +117,9 @@ class OrderViewSet(viewsets.ModelViewSet):
 
         return queryset.order_by('-created_at')
 
-    # <<< DEĞİŞİKLİK BURADA BAŞLIYOR (2/2) >>>
     def perform_create(self, serializer):
-        """
-        Yeni bir sipariş oluşturur ve ilgili bildirimleri gönderir.
-        """
         try:
             order = serializer.save(taken_by_staff=self.request.user)
-            
-            # Sinyal yerine doğrudan bildirim fonksiyonunu çağırıyoruz.
-            # HATA DÜZELTMESİ: Fonksiyona `order_id` yerine `order` nesnesinin kendisi gönderiliyor.
             transaction.on_commit(
                 lambda: send_order_update_notification(
                     order=order, 
@@ -149,10 +134,7 @@ class OrderViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=['post'], url_path='add-item')
     def add_item(self, request, pk=None):
-        # Bu metodun içeriği artık `order_actions.py` dosyasından geliyor.
-        # Bu dosyadaki `add_item_action` fonksiyonunu da güncellememiz gerekiyor.
         return item_actions.add_item_action(self, request, pk=pk)
-    # <<< DEĞİŞİKLİK SONU (2/2) >>>
 
     def get_object(self):
         lookup_url_kwarg = self.lookup_url_kwarg or self.lookup_field

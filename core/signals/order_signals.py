@@ -9,13 +9,11 @@ import uuid
 from ..models import (
     Order, OrderItem, Pager, NOTIFICATION_EVENT_TYPES,
 )
-# YENİ: Doğrudan bildirim göndermek yerine Celery task'ini import ediyoruz.
 from ..tasks import send_order_update_task
 
 logger = logging.getLogger(__name__)
 
 
-# Bu yardımcı fonksiyon, hangi event tipinin tetikleneceğini belirlemek için hala gerekli.
 def get_event_type_from_status(order: Order, created: bool, update_fields=None, item_added_info=None) -> str:
     if item_added_info:
         return NOTIFICATION_EVENT_TYPES[15][0]  # 'order_item_added'
@@ -42,12 +40,7 @@ def get_event_type_from_status(order: Order, created: bool, update_fields=None, 
     return NOTIFICATION_EVENT_TYPES[14][0]
 
 
-# === GÜNCELLENMİŞ ANA FONKSİYON ===
-# Artık anlık işlem yapmak yerine sadece Celery task'ini kuyruğa ekliyor.
 def send_order_update_notification(order, created: bool = False, update_fields=None, item_added_info=None):
-    """
-    Sipariş güncellemeleri için Celery task'ini tetikleyen merkezi fonksiyon.
-    """
     if not isinstance(order, Order):
         logger.error(f"BİLDİRİM GÖNDERME HATASI: Geçersiz 'order' nesnesi tipi. Beklenen: Order, Gelen: {type(order)}")
         return
@@ -58,17 +51,12 @@ def send_order_update_notification(order, created: bool = False, update_fields=N
     if item_added_info:
         message = f"{item_added_info['item_name']} ürünü Sipariş #{order.id}'e eklendi."
     
-    # Celery task'ini .delay() ile çağırarak arka planda çalışmasını sağlıyoruz.
-    # Bu satır anında çalışır ve web worker'ı bloklamaz.
     send_order_update_task.delay(order_id=order.id, event_type=event_type, message=message)
     logger.info(f"Celery task for order #{order.id} (Event: {event_type}) has been queued.")
 
 
 @receiver(pre_delete, sender=Order)
 def handle_order_deletion_notification(sender, instance: Order, **kwargs):
-    # Bu fonksiyon artık doğrudan sio.emit çağırmayacak.
-    # Bunun yerine, order_cancelled_update tipinde bir Celery task'i tetikleyebiliriz.
-    # pre_delete sinyali, nesne silinmeden önce çalıştığı için order_id'yi kullanabiliriz.
     send_order_update_task.delay(
         order_id=instance.id,
         event_type='order_cancelled_update',

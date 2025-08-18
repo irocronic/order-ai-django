@@ -8,7 +8,8 @@ import logging
 
 # Proje içi importlar
 from ..models import Pager
-from .order_signals import convert_decimals_to_strings # Diğer sinyal dosyasından yardımcı fonksiyonu import et
+# === DEĞİŞİKLİK BURADA: Import yolunu yeni util dosyasından alıyoruz ===
+from ..utils.json_helpers import convert_decimals_to_strings
 
 logger = logging.getLogger(__name__)
 

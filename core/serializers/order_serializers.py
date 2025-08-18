@@ -16,17 +16,12 @@ from ..models import (
 from .menu_serializers import MenuItemSerializer, MenuItemVariantSerializer
 from .payment_serializers import PaymentSerializer, CreditPaymentDetailsSerializer
 from .pager_serializers import PagerSerializer as FullPagerInfoSerializer
+# === DEĞİŞİKLİK BURADA: Import yolunu yeni util dosyasından alıyoruz ===
+from ..utils.json_helpers import convert_decimals_to_strings
 
 logger = logging.getLogger(__name__)
 
-def convert_decimals_to_strings(obj):
-    if isinstance(obj, list):
-        return [convert_decimals_to_strings(i) for i in obj]
-    elif isinstance(obj, dict):
-        return {k: convert_decimals_to_strings(v) for k, v in obj.items()}
-    elif isinstance(obj, Decimal):
-        return str(obj)
-    return obj
+# Yerel fonksiyon tanımı kaldırıldı.
 
 class SimplePagerInfoSerializer(serializers.ModelSerializer):
     status_display = serializers.CharField(source='get_status_display', read_only=True)
@@ -136,13 +131,11 @@ class OrderItemSerializer(serializers.ModelSerializer):
         queryset=MenuItemVariant.objects.all(), source='variant', write_only=True, required=False, allow_null=True
     )
     
-    # GÜNCELLENDİ: KDV alanları eklendi
     kdv_rate = serializers.DecimalField(max_digits=5, decimal_places=2, read_only=True)
     kdv_amount = serializers.DecimalField(max_digits=10, decimal_places=2, read_only=True)
 
     class Meta:
         model = OrderItem
-        # GÜNCELLENDİ: 'fields' listesine KDV alanları eklendi
         fields = [
             'id', 'order', 'menu_item', 'menu_item_id', 'variant', 'variant_id',
             'quantity', 'price', 'extras', 'table_user', 'delivered',
@@ -150,7 +143,6 @@ class OrderItemSerializer(serializers.ModelSerializer):
             'kds_status', 'kds_status_display', 'item_prepared_by_staff', 'item_prepared_by_staff_username',
             'waiter_picked_up_at', 'kdv_rate', 'kdv_amount'
         ]
-        # GÜNCELLENDİ: 'read_only_fields' listesine KDV alanları eklendi
         read_only_fields = [
             'order', 'menu_item', 'variant', 'extras', 'price', 'delivered',
             'is_awaiting_staff_approval', 'kds_status', 'kds_status_display',
@@ -204,14 +196,12 @@ class OrderSerializer(serializers.ModelSerializer):
     )
     uuid = serializers.UUIDField(read_only=True, format='hex_verbose')
 
-    # YENİ: KDV ve Genel Toplam alanları eklendi (read_only)
     total_kdv_amount = serializers.DecimalField(max_digits=10, decimal_places=2, read_only=True)
     grand_total = serializers.DecimalField(max_digits=10, decimal_places=2, read_only=True)
 
 
     class Meta:
         model = Order
-        # GÜNCELLENDİ: 'fields' listesine KDV ve Genel Toplam alanları eklendi
         fields = [
             'id', 'uuid', 'customer', 'business', 'table', 'order_type', 'customer_name',
             'customer_phone', 'created_at', 
@@ -224,7 +214,7 @@ class OrderSerializer(serializers.ModelSerializer):
             'taken_by_staff', 'taken_by_staff_username', 
             'prepared_by_kitchen_staff', 'prepared_by_kitchen_staff_username',
             'status', 'status_display', 
-            'total_kdv_amount', 'grand_total', # <-- YENİ
+            'total_kdv_amount', 'grand_total',
             'assigned_pager_info',
             'pager_device_id_to_assign',
         ]
@@ -232,7 +222,7 @@ class OrderSerializer(serializers.ModelSerializer):
             'uuid', 'created_at', 'approved_at', 'kitchen_completed_at', 'picked_up_by_waiter_at', 'delivered_at',
             'status_display', 'taken_by_staff_username', 'prepared_by_kitchen_staff_username',
             'order_items', 'table_users', 'payment', 'credit_details',
-            'total_kdv_amount', 'grand_total', # <-- YENİ
+            'total_kdv_amount', 'grand_total',
             'assigned_pager_info',
         ]
 
@@ -279,7 +269,6 @@ class OrderSerializer(serializers.ModelSerializer):
 
         default_kds_status_for_new_item = OrderItem.KDS_ITEM_STATUS_PENDING
 
-        # YENİ: KDV ve Genel Toplam için değişkenler
         total_price_before_kdv = Decimal('0.00')
         total_kdv_amount = Decimal('0.00')
 
@@ -294,9 +283,8 @@ class OrderSerializer(serializers.ModelSerializer):
                 logger.error(f"Order {order.id}: menu_item_instance missing in item_data_dict during OrderSerializer.create.")
                 raise ValidationError({"order_items_data": "Her sipariş kalemi için geçerli bir ürün (menu_item_instance) sağlanmalıdır."})
 
-            # GÜNCELLENDİ: Fiyat ve KDV hesaplama mantığı
             item_price_per_unit_before_kdv = Decimal('0.00')
-            kdv_rate = menu_item_instance.kdv_rate # Ürünün KDV oranını al
+            kdv_rate = menu_item_instance.kdv_rate
 
             if menu_item_instance.is_campaign_bundle:
                 try:
@@ -335,10 +323,9 @@ class OrderSerializer(serializers.ModelSerializer):
                 variant=variant_instance, 
                 quantity=quantity,
                 table_user=table_user_name_from_item_data,
-                price=item_price_per_unit_before_kdv, # KDV hariç fiyat
+                price=item_price_per_unit_before_kdv,
                 is_awaiting_staff_approval= is_awaiting_approval_flag_for_items,
                 kds_status=kds_status_for_this_item,
-                # YENİ: KDV alanlarını doldur
                 kdv_rate=kdv_rate,
                 kdv_amount=line_kdv_amount
             )
@@ -352,7 +339,6 @@ class OrderSerializer(serializers.ModelSerializer):
                             quantity=extra_detail.get('quantity', 1)
                         )
         
-        # YENİ: Siparişin toplam KDV ve genel toplamını güncelle
         order.total_kdv_amount = total_kdv_amount
         order.grand_total = total_price_before_kdv + total_kdv_amount
         order.save(update_fields=['total_kdv_amount', 'grand_total'])
@@ -442,7 +428,7 @@ class GuestOrderCreateSerializer(OrderSerializer):
                     if 'business' not in data and 'business_from_context' in self.context:
                         data['business'] = self.context['business_from_context']
                     elif 'business' not in data:
-                            data['business'] = table_instance.business
+                        data['business'] = table_instance.business
                 except Table.DoesNotExist:
                     raise ValidationError({"table_uuid": "Geçersiz masa kimliği."})
             elif not order_uuid_from_url:
@@ -536,7 +522,7 @@ class KDSOrderSerializer(serializers.ModelSerializer):
         
         if obj.status in [Order.STATUS_COMPLETED, Order.STATUS_CANCELLED, Order.STATUS_REJECTED]:
             return 0 
-            
+        
         return int((timezone.now() - obj.created_at).total_seconds() / 60)
 
     def get_filtered_kds_order_items(self, obj: Order):
