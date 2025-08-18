@@ -1,19 +1,45 @@
 from celery import shared_task
-# === DEĞİŞİKLİK 1: Yeni kütüphaneden Emitter import edildi ===
 from socket_io_emitter import Emitter
 from django.conf import settings
 import logging
-from .models import Order
-from .serializers import OrderSerializer
 import uuid
 from datetime import datetime
+from urllib.parse import urlparse  # DEĞİŞİKLİK 1: URL ayrıştırma kütüphanesi eklendi
+
+from .models import Order
+from .serializers import OrderSerializer
 from .utils.json_helpers import convert_decimals_to_strings
 
 logger = logging.getLogger(__name__)
 
-# === DEĞİŞİKLİK 2: Yeni Emitter, Redis URL'si ile başlatıldı ===
-# Bu, Celery worker'ının ana sunucuya mesaj göndermesini sağlar.
-io = Emitter({'host': settings.REDIS_URL})
+# === DEĞİŞİKLİK 2: REDIS_URL'ini ayrıştırarak Emitter'ı başlatma ===
+try:
+    # Heroku'nun verdiği REDIS_URL'i (örn: rediss://user:pass@host:port) ayrıştır
+    url = urlparse(settings.REDIS_URL)
+    
+    # Emitter'ın beklediği format olan sözlük (dictionary) yapısını oluştur
+    redis_opts = {
+        'host': url.hostname,
+        'port': url.port,
+    }
+    # Eğer URL'de kullanıcı adı ve şifre varsa, onları da ekle
+    if url.username:
+        redis_opts['username'] = url.username
+    if url.password:
+        redis_opts['password'] = url.password
+        
+    # Emitter'ı bu sözlük ile başlat
+    io = Emitter(redis_opts)
+    logger.info("Socket.IO Emitter successfully initialized with parsed REDIS_URL.")
+
+except Exception as e:
+    logger.error(f"Failed to initialize Socket.IO Emitter: {e}", exc_info=True)
+    # Hata durumunda uygulamanın çökmesini engellemek için sahte bir Emitter oluştur
+    class MockEmitter:
+        def in_(self, room): return self
+        def emit(self, event, data): pass
+    io = MockEmitter()
+
 
 @shared_task(name="send_order_update_notification")
 def send_order_update_task(order_id, event_type, message, extra_data=None):
@@ -52,12 +78,10 @@ def send_order_update_task(order_id, event_type, message, extra_data=None):
             if item.menu_item and item.menu_item.category and item.menu_item.category.assigned_kds
         }
 
-        # === DEĞİŞİKLİK 3: Bildirimler yeni 'io' nesnesi üzerinden gönderiliyor ===
-        # Genel işletme odasına gönder
+        # Bildirimler 'io' nesnesi üzerinden gönderiliyor
         io.in_(business_room).emit('order_status_update', update_data)
         logger.info(f"[Celery Task] Notification EMITTED VIA Emitter to room: {business_room}")
 
-        # KDS odalarına gönder
         for kds in kds_screens_with_items:
             kds_room = f"kds_{order.business_id}_{kds.slug}"
             kds_data = update_data.copy()
