@@ -1,32 +1,29 @@
 # core/tasks.py
 from celery import shared_task
-from asgiref.sync import async_to_sync
+import socketio  # socketio kütüphanesini import ediyoruz
+from django.conf import settings  # REDIS_URL için ayarları import ediyoruz
 import logging
 from .models import Order
 from .serializers import OrderSerializer
 import uuid
 from datetime import datetime
-# === DEĞİŞİKLİK BURADA: Import yolunu yeni util dosyasından alıyoruz ===
 from .utils.json_helpers import convert_decimals_to_strings
 
 logger = logging.getLogger(__name__)
 
-# Bu dosyadaki yerel _convert_decimals_to_strings fonksiyonunu siliyoruz
-# ve import ettiğimizi kullanıyoruz.
+# Celery worker'ının mesajları yayınlayacağı bir Redis istemcisi oluşturuyoruz.
+# Bu istemci, sadece Redis'e yazar (write_only=True).
+sio_redis_emitter = socketio.RedisEmitter(settings.REDIS_URL, write_only=True)
 
 @shared_task(name="send_order_update_notification")
 def send_order_update_task(order_id, event_type, message, extra_data=None):
     """
     WebSocket üzerinden sipariş güncelleme bildirimini gönderen Celery task'i.
+    Artık RedisEmitter kullanarak ana web process ile iletişim kurar.
     """
     logger.info(f"[Celery Task] Sending notification for Order ID: {order_id}, Event: {event_type}")
     try:
-        from makarna_project.asgi import sio
-        from core.signals.order_signals import get_event_type_from_status
-        # Deduplication için gerekli değişkenleri burada da yönetebiliriz,
-        # ancak Celery'nin kendi rate-limiting gibi daha gelişmiş özellikleri vardır.
-        # Şimdilik basit tutalım.
-
+        # asgi.py'den 'sio' importu kaldırıldı. Kendi emitter'ımızı kullanıyoruz.
         order = Order.objects.select_related(
             'table', 'customer', 'business', 'taken_by_staff'
         ).prefetch_related(
@@ -58,16 +55,16 @@ def send_order_update_task(order_id, event_type, message, extra_data=None):
         }
 
         # Business room'a gönder
-        async_to_sync(sio.emit)('order_status_update', update_data, room=business_room)
-        logger.info(f"[Celery Task] Notification sent to room: {business_room}")
+        sio_redis_emitter.emit('order_status_update', update_data, room=business_room)
+        logger.info(f"[Celery Task] Notification EMITTED VIA REDIS to room: {business_room}")
 
         # KDS room'larına gönder
         for kds in kds_screens_with_items:
             kds_room = f"kds_{order.business_id}_{kds.slug}"
             kds_data = update_data.copy()
             kds_data['kds_slug'] = kds.slug
-            async_to_sync(sio.emit)('order_status_update', kds_data, room=kds_room)
-            logger.info(f"[Celery Task] Notification sent to KDS room: {kds_room}")
+            sio_redis_emitter.emit('order_status_update', kds_data, room=kds_room)
+            logger.info(f"[Celery Task] Notification EMITTED VIA REDIS to KDS room: {kds_room}")
     
     except Order.DoesNotExist:
         logger.error(f"[Celery Task] Order with ID {order_id} not found.")

@@ -1,20 +1,24 @@
-# makarna_project/asgi.py
 import os
 import django
 import socketio 
 from django.core.asgi import get_asgi_application
-import logging # logging için
+from django.conf import settings # Ayarları import ediyoruz
+import logging
 
 # Django ayarlarını yükle
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'makarna_project.settings')
 django.setup() 
 
+# Celery worker gibi diğer süreçlerden gelen mesajları dinlemek için bir Redis yöneticisi oluştur.
+redis_manager = socketio.AsyncRedisManager(settings.REDIS_URL)
+
 # Socket.IO sunucu instance'ı
 sio = socketio.AsyncServer(
     async_mode='asgi',
-    cors_allowed_origins='*', # Üretim için '*' yerine belirli domainleri kullanın
-    logger=True, # Socket.IO sunucu loglarını etkinleştir
-    engineio_logger=True # Engine.IO loglarını etkinleştir (daha detaylı)
+    client_manager=redis_manager, # Sunucuyu Redis yöneticisi ile başlat
+    cors_allowed_origins='*',
+    logger=True,
+    engineio_logger=True
 )
 
 # Socket.IO event handler'larını import et ve kaydet
