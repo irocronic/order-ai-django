@@ -145,7 +145,7 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 REST_FRAMEWORK = {
     'DEFAULT_RENDERER_CLASSES': (
         'core.renderers.Utf8JSONRenderer',
-        'rest_framework.renderers.BrowsableAPIRenderer',
+        'rest_framework.renderers.BrowsableAPIRerenderer',
     ),
     'DEFAULT_AUTHENTICATION_CLASSES': (
         'rest_framework_simplejwt.authentication.JWTAuthentication',
@@ -169,6 +169,14 @@ CORS_ALLOWED_ORIGINS = [
 
 # Heroku'da Redis eklentisi REDIS_URL ortam değişkenini otomatik sağlar.
 REDIS_URL = os.environ.get('REDIS_URL', 'redis://localhost:6379/0')
+
+# =========================================================================================
+# === SSL DÜZELTMESİ: Loglardaki hatayı çözmek için bu blok eklendi ===
+# Celery'nin Heroku'daki güvenli Redis bağlantısı (rediss://) ile çalışabilmesi için
+# SSL sertifika doğrulamasını atlaması gerektiğini belirtiyoruz.
+if REDIS_URL.startswith('rediss://'):
+    REDIS_URL += '?ssl_cert_reqs=CERT_NONE'
+# =========================================================================================
 
 # --- CHANNELS AYARLARI (REDIS KULLANACAK ŞEKİLDE GÜNCELLENDİ) ---
 CHANNEL_LAYERS = {
