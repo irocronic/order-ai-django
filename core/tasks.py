@@ -33,7 +33,7 @@ except Exception as e:
     logger.error(f"Failed to initialize Socket.IO Emitter: {e}", exc_info=True)
     class MockEmitter:
         def in_(self, room): return self
-        def emit(self, event, data, room=None): pass # room parametresini kabul et
+        def Emit(self, event, data, room=None): pass # room parametresini kabul et
     io = MockEmitter()
 
 
@@ -75,19 +75,19 @@ def send_order_update_task(order_id, event_type, message, extra_data=None):
         }
 
         # === DEĞİŞİKLİK: Bildirim gönderme metodu düzeltildi ===
-        # 'io.in_(...).emit(...)' yerine 'io.emit(..., room=...)' kullanılıyor.
-        io.emit('order_status_update', update_data, room=business_room)
+        # 'io.emit(...)' yerine 'io.Emit(...)' (büyük E ile) kullanılıyor.
+        # Ayrıca, bir odaya göndermek için 'in_' metodu yerine 'to' metodu kullanılır.
+        io.to(business_room).Emit('order_status_update', update_data)
         logger.info(f"[Celery Task] Notification EMITTED VIA Emitter to room: {business_room}")
 
         for kds in kds_screens_with_items:
             kds_room = f"kds_{order.business_id}_{kds.slug}"
             kds_data = update_data.copy()
             kds_data['kds_slug'] = kds.slug
-            io.emit('order_status_update', kds_data, room=kds_room)
+            io.to(kds_room).Emit('order_status_update', kds_data)
             logger.info(f"[Celery Task] Notification EMITTED VIA Emitter to KDS room: {kds_room}")
     
     except Order.DoesNotExist:
         logger.error(f"[Celery Task] Order with ID {order_id} not found.")
     except Exception as e:
         logger.error(f"[Celery Task] Failed to send notification for order {order_id}. Error: {e}", exc_info=True)
-
