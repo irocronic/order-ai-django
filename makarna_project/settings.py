@@ -145,7 +145,7 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 REST_FRAMEWORK = {
     'DEFAULT_RENDERER_CLASSES': (
         'core.renderers.Utf8JSONRenderer',
-        'rest_framework.renderers.BrowsableAPIRerenderer',
+        'rest_framework.renderers.BrowsableAPIRenderer',  # YAZIM HATASI DÜZELTİLDİ
     ),
     'DEFAULT_AUTHENTICATION_CLASSES': (
         'rest_framework_simplejwt.authentication.JWTAuthentication',
@@ -177,6 +177,7 @@ REDIS_URL = os.environ.get('REDIS_URL', 'redis://localhost:6379/0')
 if REDIS_URL.startswith('rediss://'):
     REDIS_URL += '?ssl_cert_reqs=CERT_NONE'
 # =========================================================================================
+
 
 # --- CHANNELS AYARLARI (REDIS KULLANACAK ŞEKİLDE GÜNCELLENDİ) ---
 CHANNEL_LAYERS = {
