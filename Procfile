@@ -1,3 +1,3 @@
 release: python manage.py migrate
-web: gunicorn makarna_project.asgi:application -k uvicorn.workers.UvicornWorker --log-file -
+web: daphne -p $PORT -b 0.0.0.0 makarna_project.asgi:application
 worker: celery -A makarna_project worker -l info
