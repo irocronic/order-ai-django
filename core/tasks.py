@@ -2,42 +2,38 @@ from celery import shared_task
 from socket_io_emitter import Emitter
 from django.conf import settings
 import logging
-import uuid
-from datetime import datetime
-from urllib.parse import urlparse  # DEĞİŞİKLİK 1: URL ayrıştırma kütüphanesi eklendi
+from urllib.parse import urlparse
+import redis
 
 from .models import Order
 from .serializers import OrderSerializer
+import uuid
+from datetime import datetime
 from .utils.json_helpers import convert_decimals_to_strings
 
 logger = logging.getLogger(__name__)
 
-# === DEĞİŞİKLİK 2: REDIS_URL'ini ayrıştırarak Emitter'ı başlatma ===
+# Redis istemcisini doğru SSL ayarlarıyla manuel olarak oluşturuyoruz
+# Bu, 'Invalid SSL' hatasını önler ve kararlı bir bağlantı sağlar.
 try:
-    # Heroku'nun verdiği REDIS_URL'i (örn: rediss://user:pass@host:port) ayrıştır
     url = urlparse(settings.REDIS_URL)
-    
-    # Emitter'ın beklediği format olan sözlük (dictionary) yapısını oluştur
     redis_opts = {
         'host': url.hostname,
         'port': url.port,
+        'ssl': url.scheme == 'rediss',
+        'ssl_cert_reqs': None, # Heroku Redis için sertifika doğrulamasını atla
     }
-    # Eğer URL'de kullanıcı adı ve şifre varsa, onları da ekle
-    if url.username:
-        redis_opts['username'] = url.username
     if url.password:
         redis_opts['password'] = url.password
-        
-    # Emitter'ı bu sözlük ile başlat
-    io = Emitter(redis_opts)
+    
+    redis_client = redis.Redis(**redis_opts)
+    io = Emitter(opts={'client': redis_client})
     logger.info("Socket.IO Emitter successfully initialized with parsed REDIS_URL.")
-
 except Exception as e:
     logger.error(f"Failed to initialize Socket.IO Emitter: {e}", exc_info=True)
-    # Hata durumunda uygulamanın çökmesini engellemek için sahte bir Emitter oluştur
     class MockEmitter:
         def in_(self, room): return self
-        def emit(self, event, data): pass
+        def emit(self, event, data, room=None): pass # room parametresini kabul et
     io = MockEmitter()
 
 
@@ -45,7 +41,7 @@ except Exception as e:
 def send_order_update_task(order_id, event_type, message, extra_data=None):
     """
     WebSocket üzerinden sipariş güncelleme bildirimini gönderen Celery task'i.
-    Artık socket.io-emitter kütüphanesini kullanarak ana web process ile iletişim kurar.
+    Artık socket.io-emitter kütüphanesini doğru sözdizimi ile kullanır.
     """
     logger.info(f"[Celery Task] Sending notification for Order ID: {order_id}, Event: {event_type}")
     try:
@@ -78,18 +74,20 @@ def send_order_update_task(order_id, event_type, message, extra_data=None):
             if item.menu_item and item.menu_item.category and item.menu_item.category.assigned_kds
         }
 
-        # Bildirimler 'io' nesnesi üzerinden gönderiliyor
-        io.in_(business_room).emit('order_status_update', update_data)
+        # === DEĞİŞİKLİK: Bildirim gönderme metodu düzeltildi ===
+        # 'io.in_(...).emit(...)' yerine 'io.emit(..., room=...)' kullanılıyor.
+        io.emit('order_status_update', update_data, room=business_room)
         logger.info(f"[Celery Task] Notification EMITTED VIA Emitter to room: {business_room}")
 
         for kds in kds_screens_with_items:
             kds_room = f"kds_{order.business_id}_{kds.slug}"
             kds_data = update_data.copy()
             kds_data['kds_slug'] = kds.slug
-            io.in_(kds_room).emit('order_status_update', kds_data)
+            io.emit('order_status_update', kds_data, room=kds_room)
             logger.info(f"[Celery Task] Notification EMITTED VIA Emitter to KDS room: {kds_room}")
     
     except Order.DoesNotExist:
         logger.error(f"[Celery Task] Order with ID {order_id} not found.")
     except Exception as e:
         logger.error(f"[Celery Task] Failed to send notification for order {order_id}. Error: {e}", exc_info=True)
+
