@@ -1,341 +1,377 @@
-# core/views/kds_views.py
+# core/views/guest_api_views.py
 
-from rest_framework import viewsets, status
-from rest_framework.permissions import IsAuthenticated, BasePermission
-from rest_framework.decorators import action
+from rest_framework import generics, status
+from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
-from rest_framework.exceptions import PermissionDenied, NotFound
-from django.utils import timezone
-from django.db import transaction, models
+from django.shortcuts import get_object_or_404
+from django.http import Http404
+from django.db import transaction, IntegrityError
+from django.db.models import Q, Prefetch
+from asgiref.sync import async_to_sync
 import logging
-import json
-from django.db.models import Prefetch, Q, Exists, OuterRef
+from collections import Counter
 from decimal import Decimal
+from rest_framework.exceptions import ValidationError
 
-from ..models import Order, CustomUser, OrderItem, CreditPaymentDetails, KDSScreen, Business, Category
-from ..serializers import KDSOrderSerializer
-from ..utils.order_helpers import get_user_business, PermissionKeys
-from ..signals.order_signals import send_order_update_notification
+# === DEĞİŞİKLİK BURADA: Artık sinyal yerine doğrudan Celery task'ini import ediyoruz ===
+from ..tasks import send_order_update_task
+
+from makarna_project.asgi import sio
+from ..models import (
+    Table, MenuItem, Order, OrderItem, OrderItemExtra, MenuItemVariant,
+    Category, Business, CampaignMenu
+)
+from ..serializers import (
+    GuestOrderCreateSerializer, MenuItemSerializer, CategorySerializer, OrderSerializer, GuestOrderItemSerializer
+)
 
 logger = logging.getLogger(__name__)
 
-def convert_decimals_to_strings(obj):
-    if isinstance(obj, list):
-        return [convert_decimals_to_strings(i) for i in obj]
-    elif isinstance(obj, dict):
-        return {k: convert_decimals_to_strings(v) for k, v in obj.items()}
-    elif isinstance(obj, Decimal):
-        return str(obj)
-    return obj
+def add_item_to_guest_order(order: Order, item_data_dict: dict, is_awaiting_staff_approval_flag: bool):
+    """
+    Mevcut bir siparişe ürün ekler veya miktarını günceller.
+    item_data_dict: GuestOrderItemSerializer.validate() tarafından döndürülen ve işlenmiş verileri içerir.
+    is_awaiting_staff_approval_flag: Yeni veya güncellenen OrderItem için bu flag'in değeri.
+    """
+    menu_item_instance = item_data_dict.get('menu_item_instance')
+    variant_instance = item_data_dict.get('variant_instance')
+    quantity_to_add = item_data_dict.get('quantity', 1)
+    table_user = item_data_dict.get('table_user', None)
+    valid_extras_instances = item_data_dict.get('valid_extras_instances', [])
 
-class CanAccessSpecificKDS(BasePermission):
-    message = "Bu KDS ekranına erişim yetkiniz yok."
-    def has_permission(self, request, view):
-        user = request.user
-        if not user or not user.is_authenticated:
-            return False
-        
-        kds_slug = view.kwargs.get('kds_slug')
-        if not kds_slug:
-            logger.warning(f"KDS Erişimi: kds_slug URL parametresi eksik. Kullanıcı: {user.username}")
-            return False
+    if not menu_item_instance:
+        logger.error("Hata: add_item_to_guest_order -> menu_item_instance bulunamadı.")
+        raise ValidationError({"detail": "Sipariş kalemi için ürün bilgisi eksik."})
 
-        user_business = get_user_business(user)
-        if not user_business:
-            logger.warning(f"KDS Erişimi: Kullanıcı {user.username} için işletme bulunamadı.")
-            return False
+    incoming_extras_counter = Counter()
+    if valid_extras_instances:
+        for extra_detail in valid_extras_instances:
+            if isinstance(extra_detail.get('variant_instance'), MenuItemVariant):
+                incoming_extras_counter[(extra_detail['variant_instance'].id, extra_detail.get('quantity', 1))] += 1
 
+    matching_items_query = order.order_items.filter(
+        menu_item=menu_item_instance,
+        variant=variant_instance,
+        is_awaiting_staff_approval=is_awaiting_staff_approval_flag
+    ).prefetch_related('extras__variant')
+
+    found_item = None
+    for existing_item in matching_items_query:
+        existing_extras_counter = Counter(
+            (extra.variant_id, extra.quantity) for extra in existing_item.extras.all()
+        )
+        if existing_extras_counter == incoming_extras_counter:
+            found_item = existing_item
+            break
+
+    item_price_per_unit = Decimal('0.00')
+
+    if menu_item_instance.is_campaign_bundle:
         try:
-            kds_screen = KDSScreen.objects.get(business=user_business, slug=kds_slug, is_active=True)
-            view.target_kds_screen = kds_screen
-        except KDSScreen.DoesNotExist:
-            logger.warning(f"KDS Erişimi: {user_business.name} işletmesinde aktif '{kds_slug}' slug'lı KDS bulunamadı. Kullanıcı: {user.username}")
-            return False
-        
-        if user.user_type == 'business_owner':
-            return True
-        if user.user_type in ['staff', 'kitchen_staff']:
-            staff_perms = user.staff_permissions
-            if PermissionKeys.MANAGE_KDS in staff_perms and kds_screen in user.accessible_kds_screens.all():
-                return True
-        
-        logger.warning(f"KDS Erişimi: Kullanıcı {user.username}, KDS '{kds_slug}' için yetkisiz.")
-        return False
+            campaign = menu_item_instance.represented_campaign
+            if campaign and campaign.is_active:
+                from django.utils import timezone # Fonksiyon içinde import
+                now_date = timezone.now().date()
+                if (campaign.start_date and campaign.start_date > now_date) or \
+                   (campaign.end_date and campaign.end_date < now_date):
+                    raise ValidationError(f"'{campaign.name}' kampanyası şu an geçerli değil.")
+                item_price_per_unit = campaign.campaign_price
+            else:
+                raise ValidationError(f"Kampanya '{menu_item_instance.name}' aktif değil veya bulunamadı.")
+        except (CampaignMenu.DoesNotExist, AttributeError):
+            raise ValidationError(f"Kampanya '{menu_item_instance.name}' için kampanya detayı düzgün tanımlanmamış/bulunamadı.")
+    else:
+        main_price = variant_instance.price if variant_instance else Decimal('0.00')
+        extras_total_price = sum(
+            extra_detail['variant_instance'].price * Decimal(str(extra_detail.get('quantity', 1)))
+            for extra_detail in valid_extras_instances if isinstance(extra_detail.get('variant_instance'), MenuItemVariant)
+        )
+        item_price_per_unit = main_price + extras_total_price
+
+    with transaction.atomic():
+        if found_item:
+            found_item.quantity += quantity_to_add
+            found_item.price = item_price_per_unit
+            found_item.save(update_fields=['quantity', 'price'])
+            processed_item = found_item
+            logger.info(f"Guest Add: OrderItem ID {found_item.id} miktarı {quantity_to_add} artırıldı. Yeni miktar: {found_item.quantity}.")
+        else:
+            kds_status_for_new_item = OrderItem.KDS_ITEM_STATUS_CHOICES[0][0] if menu_item_instance.category and menu_item_instance.category.assigned_kds else None
+            order_item = OrderItem.objects.create(
+                order=order,
+                menu_item=menu_item_instance,
+                variant=variant_instance,
+                quantity=quantity_to_add,
+                table_user=None,
+                price=item_price_per_unit,
+                is_awaiting_staff_approval=is_awaiting_staff_approval_flag,
+                kds_status=kds_status_for_new_item
+            )
+            for extra_data in valid_extras_instances:
+                if isinstance(extra_data.get('variant_instance'), MenuItemVariant):
+                    OrderItemExtra.objects.create(
+                        order_item=order_item,
+                        variant=extra_data['variant_instance'],
+                        quantity=extra_data.get('quantity', 1)
+                    )
+            processed_item = order_item
+            logger.info(f"Guest Add: Yeni OrderItem ID {order_item.id} Sipariş ID {order.id} için oluşturuldu.")
+
+    return OrderItem.objects.select_related('menu_item', 'menu_item__category', 'variant').prefetch_related('extras__variant').get(id=processed_item.id)
 
 
-class KDSOrderViewSet(viewsets.ReadOnlyModelViewSet):
-    serializer_class = KDSOrderSerializer
-    permission_classes = [IsAuthenticated, CanAccessSpecificKDS]
+class GuestOrderCreateView(generics.GenericAPIView):
+    serializer_class = GuestOrderCreateSerializer
+    permission_classes = [AllowAny]
 
     def get_serializer_context(self):
         context = super().get_serializer_context()
         context['request'] = self.request
-        if not hasattr(self, 'target_kds_screen'):
-            kds_slug_from_url = self.kwargs.get('kds_slug')
-            user_business_from_context = get_user_business(self.request.user)
-            if kds_slug_from_url and user_business_from_context:
-                try:
-                    self.target_kds_screen = KDSScreen.objects.get(business=user_business_from_context, slug=kds_slug_from_url, is_active=True)
-                except KDSScreen.DoesNotExist:
-                    logger.warning(f"KDSOrderViewSet.get_serializer_context (fallback): KDS '{kds_slug_from_url}' not found.")
-                    self.target_kds_screen = None
-            else:
-                self.target_kds_screen = None
-        context['target_kds_screen'] = getattr(self, 'target_kds_screen', None)
+        if hasattr(self, 'table_instance_for_context') and self.table_instance_for_context:
+            context['business_from_context'] = self.table_instance_for_context.business
+            context['table_uuid_from_url'] = str(self.table_instance_for_context.uuid)
+        else:
+            logger.warning("GuestOrderCreateView.get_serializer_context: table_instance_for_context set edilmemiş olabilir.")
         return context
 
+    def post(self, request, table_uuid):
+        try:
+            self.table_instance_for_context = Table.objects.select_related('business').get(uuid=table_uuid)
+        except Table.DoesNotExist:
+            logger.warning(f"GuestOrderCreateView: Geçersiz masa UUID'si {table_uuid} için istek alındı.")
+            return Response({'detail': 'Geçersiz masa kodu.'}, status=status.HTTP_404_NOT_FOUND)
+
+        serializer = self.get_serializer(data=request.data)
+        try:
+            serializer.is_valid(raise_exception=True)
+        except ValidationError as e:
+            logger.error(f"GuestOrderCreateView validasyon hatası: {e.detail} - İstek Verisi: {request.data}", exc_info=False)
+            return Response(e.detail, status=status.HTTP_400_BAD_REQUEST)
+
+        validated_data_from_serializer = serializer.validated_data
+        table_instance = self.table_instance_for_context
+        business_instance = table_instance.business
+        items_to_add_data_list = validated_data_from_serializer.get('order_items_data', [])
+
+        if not items_to_add_data_list:
+            return Response({'order_items_data': ['Siparişe eklenecek ürün bulunmuyor.']}, status=status.HTTP_400_BAD_REQUEST)
+
+        final_order_to_return = None
+        response_status_code = status.HTTP_200_OK
+
+        with transaction.atomic():
+            active_order = Order.objects.filter(
+                table=table_instance,
+                business=business_instance,
+                is_paid=False,
+                credit_payment_details__isnull=True
+            ).exclude(
+                Q(status=Order.STATUS_COMPLETED) | Q(status=Order.STATUS_CANCELLED) | Q(status=Order.STATUS_REJECTED)
+            ).order_by('-created_at').first()
+
+            if active_order:
+                logger.info(f"Masa {table_instance.table_number} için mevcut aktif sipariş (ID: {active_order.id}, Durum: {active_order.status}) bulundu. Ürünler bu siparişe eklenecek/güncellenecek.")
+                from django.utils import timezone
+                for item_data_dict in items_to_add_data_list:
+                    add_item_to_guest_order(active_order, item_data_dict, is_awaiting_staff_approval_flag=True)
+
+                if active_order.status != Order.STATUS_PENDING_APPROVAL or active_order.taken_by_staff is not None:
+                    logger.info(f"Sipariş #{active_order.id} misafir tarafından güncellendi. Durum '{Order.STATUS_PENDING_APPROVAL}' olarak sıfırlanıyor.")
+                    active_order.status = Order.STATUS_PENDING_APPROVAL
+                    active_order.taken_by_staff = None
+                    active_order.prepared_by_kitchen_staff = None
+                    active_order.kitchen_completed_at = None
+                    active_order.delivered_at = None
+                    active_order.save(update_fields=['status', 'taken_by_staff', 'prepared_by_kitchen_staff', 'kitchen_completed_at', 'delivered_at'])
+                else:
+                    active_order.save()
+
+                final_order_to_return = active_order
+                response_status_code = status.HTTP_200_OK
+            else:
+                logger.info(f"Masa {table_instance.table_number} için yeni misafir siparişi oluşturuluyor.")
+                final_order_to_return = serializer.save(
+                    business=business_instance,
+                    table=table_instance,
+                    customer=None,
+                    taken_by_staff=None,
+                    status=Order.STATUS_PENDING_APPROVAL
+                )
+                if final_order_to_return:
+                    final_order_to_return.order_items.update(is_awaiting_staff_approval=True)
+                    logger.info(f"Yeni misafir siparişi #{final_order_to_return.id} oluşturuldu ve tüm kalemler onaya ayarlandı.")
+                response_status_code = status.HTTP_201_CREATED
+
+        if final_order_to_return:
+            # === DEĞİŞİKLİK BURADA: Celery task'i doğrudan çağrılıyor ===
+            is_newly_created = response_status_code == status.HTTP_201_CREATED
+            event_type = 'guest_order_pending_approval'
+            message = f"Masa {table_instance.table_number} için yeni misafir siparişi onay bekliyor." if is_newly_created else f"Masa {table_instance.table_number} siparişine ürün eklendi, onay bekliyor."
+            transaction.on_commit(
+                lambda: send_order_update_task.delay(
+                    order_id=final_order_to_return.id,
+                    event_type=event_type,
+                    message=message
+                )
+            )
+            final_order_to_return.refresh_from_db()
+            full_order_serializer = OrderSerializer(final_order_to_return, context=self.get_serializer_context())
+            return Response(full_order_serializer.data, status=response_status_code)
+        else:
+            logger.error("GuestOrderCreateView: Sipariş oluşturma/güncelleme sonrası final_order_to_return None kaldı.")
+            return Response({"detail": "Sipariş işlenirken beklenmedik bir sorun oluştu."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class GuestMenuView(generics.ListAPIView):
+    serializer_class = MenuItemSerializer
+    permission_classes = [AllowAny]
+
     def get_queryset(self):
-        user = self.request.user
-        user_business = get_user_business(user)
-        target_kds_screen = getattr(self, 'target_kds_screen', None)
+        return MenuItem.objects.none()
 
-        if not user_business or not target_kds_screen:
-            return Order.objects.none()
+    def get_serializer_context(self):
+        return {'request': self.request}
 
-        logger.debug(f"KDS View Query: Fetching orders for KDS '{target_kds_screen.name}' (ID: {target_kds_screen.id}), Business: '{user_business.name}' by user '{user.username}'.")
-        
-        relevant_orders = Order.objects.filter(
-            business=user_business,
+    def get(self, request, table_uuid):
+        try:
+            table = get_object_or_404(Table.objects.select_related('business'), uuid=table_uuid)
+            business = table.business
+        except (ValueError, Table.DoesNotExist, Http404):
+            return Response({"detail": "Geçersiz veya bulunamayan masa kodu."}, status=status.HTTP_404_NOT_FOUND)
+
+        active_order = Order.objects.filter(
+            table=table,
+            business=business,
+            customer__isnull=True,
             is_paid=False,
-            credit_payment_details__isnull=True,
-            status__in=[Order.STATUS_APPROVED, Order.STATUS_PREPARING, Order.STATUS_READY_FOR_PICKUP]
+            credit_payment_details__isnull=True
         ).exclude(
-            status__in=[Order.STATUS_COMPLETED, Order.STATUS_CANCELLED, Order.STATUS_REJECTED]
-        ).annotate(
-            has_actionable_items_for_this_kds=Exists(
-                OrderItem.objects.filter(
-                    order=OuterRef('pk'),
-                    menu_item__category__assigned_kds_id=target_kds_screen.id,
-                    is_awaiting_staff_approval=False,
-                    delivered=False,
-                    kds_status__in=[
-                        OrderItem.KDS_ITEM_STATUS_CHOICES[0][0], # 'pending_kds'
-                        OrderItem.KDS_ITEM_STATUS_CHOICES[1][0], # 'preparing_kds'
-                    ]
-                )
-            )
-        ).filter(has_actionable_items_for_this_kds=True).select_related(
-            'table', 'customer', 'taken_by_staff', 'prepared_by_kitchen_staff', 'assigned_pager_instance'
+            Q(status=Order.STATUS_REJECTED) | Q(status=Order.STATUS_CANCELLED) | Q(status=Order.STATUS_COMPLETED)
         ).prefetch_related(
-            Prefetch(
-                'order_items',
-                queryset=OrderItem.objects.select_related(
-                    'menu_item__category__assigned_kds',
-                    'menu_item__represented_campaign',
-                    'item_prepared_by_staff'
-                ).prefetch_related('extras__variant')
-            )
-        ).distinct().order_by('created_at')
-        
-        return relevant_orders
+            Prefetch('order_items', queryset=OrderItem.objects.select_related('menu_item__category', 'variant').prefetch_related('extras__variant')),
+            'table_users'
+        ).select_related('payment_info', 'taken_by_staff').order_by('-created_at').first()
 
-    @action(detail=True, methods=['post'], url_path='start-preparation')
-    @transaction.atomic
-    def start_preparation(self, request, kds_slug=None, pk=None):
-        order = self.get_object()
-        target_kds_screen = getattr(self, 'target_kds_screen', None)
-        
-        if not target_kds_screen:
-            logger.error(f"KDS Action (start_preparation): Order #{order.id} için target_kds_screen alınamadı. User: {request.user.username}, KDS Slug: {kds_slug}")
-            raise PermissionDenied("KDS bilgisi alınamadı, işlem yapılamıyor.")
+        active_order_data = None
+        if active_order:
+            active_order_data = OrderSerializer(active_order, context=self.get_serializer_context()).data
 
-        logger.info(
-            f"[KDS VIEW] Action 'start_preparation' BAŞLANGIÇ: Order ID: {order.id}, "
-            f"Hedef KDS: '{target_kds_screen.name}' (ID: {target_kds_screen.id}), "
-            f"Kullanıcı: {request.user.username}"
-        )
-        
-        all_items_in_order_for_debug = OrderItem.objects.filter(
-            order_id=order.id, 
-            is_awaiting_staff_approval=False, 
-            delivered=False
-        ).select_related('menu_item__category__assigned_kds', 'menu_item__category')
-        logger.info(f"  [KDS VIEW] Order #{order.id} için TÜM AKTİF KALEMLER (Sorgudan Önce):")
-        for item_debug in all_items_in_order_for_debug:
-            cat_assigned_kds_id_debug = item_debug.menu_item.category.assigned_kds_id if item_debug.menu_item and item_debug.menu_item.category and item_debug.menu_item.category.assigned_kds else None
-            logger.info(
-                f"    DEBUG ITEM - ID: {item_debug.id}, Adı: '{item_debug.menu_item.name if item_debug.menu_item else 'N/A'}', "
-                f"Kategorisinin KDS ID: {cat_assigned_kds_id_debug}, Mevcut KDS Durumu: '{item_debug.kds_status}'"
-            )
+        menu_items_qs = MenuItem.objects.filter(business=business, is_active=True).prefetch_related(
+            Prefetch('variants', queryset=MenuItemVariant.objects.select_related('stock'))
+        ).select_related('category', 'category__parent')
 
-        if order.status not in [Order.STATUS_APPROVED, Order.STATUS_PREPARING]:
-            logger.warning(f"[KDS VIEW] Order #{order.id} (status: {order.get_status_display()}) 'start_preparation' için uygun değil. KDS: '{target_kds_screen.name}'")
-            return Response({'detail': f"Bu siparişin durumu ('{order.get_status_display()}') hazırlanmaya başlanamaz."}, status=status.HTTP_400_BAD_REQUEST)
-        
-        category_ids_for_this_kds = Category.objects.filter(assigned_kds_id=target_kds_screen.id).values_list('id', flat=True)
+        categories_qs = Category.objects.filter(business=business).prefetch_related('subcategories')
 
-        if not category_ids_for_this_kds:
-            logger.warning(f"KDS Action (start_preparation): KDS '{target_kds_screen.name}' (ID: {target_kds_screen.id}) için atanmış kategori bulunamadı.")
-            return Response(
-                {'detail': f"Bu KDS ({target_kds_screen.name}) ekranı için atanmış kategori olmadığından hazırlanacak ürün bulunamadı."},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        logger.info(f"  [KDS VIEW] KDS '{target_kds_screen.name}' için ilgili Kategori ID'leri: {list(category_ids_for_this_kds)}")
+        menu_item_serializer = MenuItemSerializer(menu_items_qs, many=True, context=self.get_serializer_context())
+        category_serializer = CategorySerializer(categories_qs, many=True, context=self.get_serializer_context())
 
-        items_to_prepare = OrderItem.objects.filter(
-            order_id=order.id,
-            menu_item__category_id__in=list(category_ids_for_this_kds), 
-            is_awaiting_staff_approval=False,
-            delivered=False,
-            kds_status=OrderItem.KDS_ITEM_STATUS_CHOICES[0][0] # 'pending_kds'
-        )
-        
-        logger.info(f"  [KDS VIEW] KDS '{target_kds_screen.name}' için 'pending_kds' durumunda bulunan ve filtrelenen ürün sayısı: {items_to_prepare.count()}")
-        for itp_debug in items_to_prepare:
-            logger.info(f"    -> Filtrelenmiş Hazırlanacak Ürün: ID {itp_debug.id}, Adı: {itp_debug.menu_item.name}, Kategorisinin KDS ID: {itp_debug.menu_item.category.assigned_kds_id if itp_debug.menu_item.category else 'N/A'}")
+        return Response({
+            'menu_items': menu_item_serializer.data,
+            'categories': category_serializer.data,
+            'business_name': business.name,
+            'table_number': table.table_number,
+            'table_uuid': str(table.uuid),
+            'active_order': active_order_data,
+        }, status=status.HTTP_200_OK)
 
-        if not items_to_prepare.exists():
-            all_active_items_for_this_kds_again = OrderItem.objects.filter(
-                order_id=order.id,
-                menu_item__category_id__in=list(category_ids_for_this_kds),
-                is_awaiting_staff_approval=False,
-                delivered=False
-            )
-            current_statuses_for_error_debug = {item.id: f"{item.menu_item.name} ({item.kds_status})" for item in all_active_items_for_this_kds_again}
-            logger.warning(
-                f"KDS Action (start_preparation) - 400 Nedeni (İç Kontrol): Order #{order.id}, KDS '{target_kds_screen.name}' (ID: {target_kds_screen.id}) için 'pending_kds' "
-                f"durumunda ürün bulunamadı. Bu KDS için mevcut aktif kalem durumları (tekrar kontrol): {current_statuses_for_error_debug}"
-            )
-            if all_active_items_for_this_kds_again.filter(kds_status__in=[OrderItem.KDS_ITEM_STATUS_CHOICES[1][0], OrderItem.KDS_ITEM_STATUS_CHOICES[2][0]]).exists():
-                return Response({'detail': f"Bu KDS ({target_kds_screen.name}) ekranındaki ürünler zaten hazırlanıyor veya hazır durumda. (Durumlar: {current_statuses_for_error_debug})"}, status=status.HTTP_400_BAD_REQUEST)
-            return Response({'detail': f"Bu KDS ({target_kds_screen.name}) ekranı için hazırlanmaya başlanacak yeni ürün bulunmuyor. (Durumlar: {current_statuses_for_error_debug})"}, status=status.HTTP_400_BAD_REQUEST)
 
-        updated_item_ids = []
-        for item in items_to_prepare: 
-            logger.info(
-                f"  [KDS VIEW] GÜNCELLENİYOR -> Item ID {item.id} ('{item.menu_item.name}', "
-                f"ItemCatKDS_ID: {item.menu_item.category.assigned_kds_id if item.menu_item.category and item.menu_item.category.assigned_kds else 'N/A'}) "
-                f"için KDS '{target_kds_screen.name}' (TargetKDS_ID: {target_kds_screen.id}). "
-                f"Eski KDS Durumu: '{item.kds_status}', Yeni: 'preparing_kds'."
-            )
-            item.kds_status = OrderItem.KDS_ITEM_STATUS_CHOICES[1][0] 
-            item.item_prepared_by_staff = request.user
-            item.save(update_fields=['kds_status', 'item_prepared_by_staff'])
-            updated_item_ids.append(item.id)
-        
-        update_fields_for_notification = []
-        if order.status == Order.STATUS_APPROVED and updated_item_ids:
-            order.status = Order.STATUS_PREPARING
-            order.save(update_fields=['status'])
-            logger.info(f"[KDS VIEW] Order ID {order.id} genel durumu KDS '{target_kds_screen.name}' tarafından '{Order.STATUS_PREPARING}' olarak güncellendi.")
-            update_fields_for_notification.append('status')
-        
-        logger.info(f"KDS '{target_kds_screen.name}': Order #{order.id} için {len(updated_item_ids)} kalem ({updated_item_ids}) 'KDS Hazırlanıyor' olarak işaretlendi by {request.user.username}")
-        
-        # === DEĞİŞİKLİK BURADA: `order_id` yerine `order` nesnesini gönderiyoruz ===
-        transaction.on_commit(
-            lambda: send_order_update_notification(
-                order=order, created=False, update_fields=update_fields_for_notification
-            )
-        )
-        
-        order.refresh_from_db()
-        serializer = self.get_serializer(order)
-        return Response(serializer.data)
+class GuestTakeawayMenuView(generics.ListAPIView):
+    serializer_class = MenuItemSerializer
+    permission_classes = [AllowAny]
 
-    @action(detail=True, methods=['post'], url_path='mark-ready-for-pickup')
-    @transaction.atomic
-    def mark_ready_for_pickup(self, request, kds_slug=None, pk=None):
-        order = self.get_object()
-        target_kds_screen = getattr(self, 'target_kds_screen', None)
-        if not target_kds_screen:
-            raise PermissionDenied("KDS bilgisi alınamadı, işlem yapılamıyor.")
-        
-        logger.info(
-            f"[KDS VIEW] Action 'mark_ready_for_pickup' BAŞLANGIÇ: Order ID: {order.id}, "
-            f"Hedef KDS: '{target_kds_screen.name}' (ID: {target_kds_screen.id}), "
-            f"Kullanıcı: {request.user.username}"
-        )
-        
-        category_ids_for_this_kds = Category.objects.filter(assigned_kds_id=target_kds_screen.id).values_list('id', flat=True)
+    def get_queryset(self):
+        return MenuItem.objects.none()
 
-        if not category_ids_for_this_kds:
-            logger.warning(f"KDS Action (mark_ready_for_pickup): KDS '{target_kds_screen.name}' (ID: {target_kds_screen.id}) için atanmış kategori bulunamadı.")
-            return Response({'detail': f"Bu KDS ({target_kds_screen.name}) ekranı için atanmış kategori olmadığından ürün işlenemez."}, status=status.HTTP_400_BAD_REQUEST)
-        
-        logger.info(f"  [KDS VIEW] KDS '{target_kds_screen.name}' için Kategori ID'leri (mark_ready): {list(category_ids_for_this_kds)}")
+    def get(self, request, order_uuid):
+        try:
+            active_order = Order.objects.filter(
+                uuid=order_uuid,
+                order_type='takeaway'
+            ).exclude(
+                Q(status__in=[Order.STATUS_COMPLETED, Order.STATUS_CANCELLED, Order.STATUS_REJECTED])
+            ).prefetch_related(
+                Prefetch('order_items', queryset=OrderItem.objects.select_related('menu_item__category', 'variant').prefetch_related('extras__variant'))
+            ).select_related('business').first()
 
-        items_to_mark_ready = OrderItem.objects.filter(
-            order_id=order.id,
-            menu_item__category_id__in=list(category_ids_for_this_kds),
-            is_awaiting_staff_approval=False,
-            delivered=False,
-            kds_status__in=[OrderItem.KDS_ITEM_STATUS_CHOICES[0][0], OrderItem.KDS_ITEM_STATUS_CHOICES[1][0]]
-        )
-        
-        logger.info(f"  [KDS VIEW] KDS '{target_kds_screen.name}' için 'pending_kds' veya 'preparing_kds' durumunda bulunan ve filtrelenen ürün sayısı: {items_to_mark_ready.count()}")
+            if not active_order:
+                return Response({"detail": "Geçersiz veya tamamlanmış sipariş linki."}, status=status.HTTP_404_NOT_FOUND)
 
-        if not items_to_mark_ready.exists():
-            all_active_items_for_this_kds_again = OrderItem.objects.filter(
-                order_id=order.id,
-                menu_item__category_id__in=list(category_ids_for_this_kds),
-                is_awaiting_staff_approval=False,
-                delivered=False
-            )
-            current_statuses_for_error_debug = {item.id: f"{item.menu_item.name} ({item.kds_status})" for item in all_active_items_for_this_kds_again}
-            logger.warning(
-                f"KDS Action (mark_ready_for_pickup) - 400 Nedeni (İç Kontrol): Order #{order.id}, KDS '{target_kds_screen.name}' (ID: {target_kds_screen.id}) için 'pending_kds' veya 'preparing_kds' "
-                f"durumunda ürün bulunamadı. Bu KDS için mevcut aktif kalem durumları (tekrar kontrol): {current_statuses_for_error_debug}"
-            )
-            all_are_already_ready = all_active_items_for_this_kds_again.exists() and \
-                                      not all_active_items_for_this_kds_again.exclude(kds_status=OrderItem.KDS_ITEM_STATUS_CHOICES[2][0]).exists()
+            business = active_order.business
+            menu_items_qs = MenuItem.objects.filter(business=business, is_active=True).prefetch_related('variants__stock').select_related('category', 'category__parent')
+            categories_qs = Category.objects.filter(business=business).prefetch_related('subcategories')
 
-            if all_are_already_ready:
-                return Response({'detail': 'Bu KDS ekranındaki tüm ürünler zaten hazır olarak işaretlenmiş.'},status=status.HTTP_400_BAD_REQUEST)
-            return Response({'detail': 'Bu KDS ekranı için hazır olarak işaretlenecek aktif ürün bulunmuyor.'}, status=status.HTTP_400_BAD_REQUEST)
+            menu_item_serializer = MenuItemSerializer(menu_items_qs, many=True, context={'request': request})
+            category_serializer = CategorySerializer(categories_qs, many=True, context={'request': request})
+            active_order_data = OrderSerializer(active_order, context={'request': request}).data
 
-        updated_item_ids = []
-        for item in items_to_mark_ready:
-            if not (item.menu_item and item.menu_item.category_id in category_ids_for_this_kds):
-                logger.error(
-                    f"  [KDS VIEW] KRİTİK FİLTRE HATASI (mark_ready): Item ID {item.id} ('{item.menu_item.name}') "
-                    f"yanlışlıkla KDS '{target_kds_screen.name}' için seçildi! "
-                    f"Item'ın Kategori ID: {item.menu_item.category_id}. Hedef KDS Kategori ID'leri: {list(category_ids_for_this_kds)}. "
-                    f"Bu ürün güncellenmeyecek."
+            return Response({
+                'menu_items': menu_item_serializer.data,
+                'categories': category_serializer.data,
+                'business_name': business.name,
+                'active_order': active_order_data,
+            }, status=status.HTTP_200_OK)
+
+        except (ValueError, Order.DoesNotExist, Http404):
+            return Response({"detail": "Geçersiz sipariş kodu."}, status=status.HTTP_404_NOT_FOUND)
+
+
+class GuestTakeawayOrderUpdateView(generics.GenericAPIView):
+    serializer_class = GuestOrderItemSerializer
+    permission_classes = [AllowAny]
+
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        context['request'] = self.request
+        if hasattr(self, 'business_instance_for_context'):
+            context['business_from_context'] = self.business_instance_for_context
+        return context
+
+    def post(self, request, order_uuid):
+        try:
+            order_to_update = Order.objects.filter(
+                uuid=order_uuid,
+                order_type='takeaway'
+            ).exclude(
+                Q(status__in=[Order.STATUS_COMPLETED, Order.STATUS_CANCELLED, Order.STATUS_REJECTED])
+            ).first()
+
+            if not order_to_update:
+                return Response({"detail": "Sipariş bulunamadı veya güncellenemez durumda."}, status=status.HTTP_404_NOT_FOUND)
+            
+            self.business_instance_for_context = order_to_update.business
+
+            serializer = self.get_serializer(data=request.data, many=True)
+            serializer.is_valid(raise_exception=True)
+            validated_items = serializer.validated_data
+
+            if not validated_items:
+                return Response({'detail': 'Eklenecek ürün bulunmuyor.'}, status=status.HTTP_400_BAD_REQUEST)
+
+            with transaction.atomic():
+                for item_data_dict in validated_items:
+                    add_item_to_guest_order(order_to_update, item_data_dict, is_awaiting_staff_approval_flag=True)
+
+                order_to_update.status = Order.STATUS_PENDING_APPROVAL
+                order_to_update.save(update_fields=['status'])
+
+            # === DEĞİŞİKLİK BURADA: Celery task'i doğrudan çağrılıyor ===
+            event_type = 'existing_order_needs_reapproval'
+            message = f"Paket sipariş #{order_to_update.id} güncellendi ve yeniden onay bekliyor."
+            transaction.on_commit(
+                lambda: send_order_update_task.delay(
+                    order_id=order_to_update.id,
+                    event_type=event_type,
+                    message=message
                 )
-                continue
-            logger.info(f"KDS Action (mark_ready_for_pickup): GÜNCELLENİYOR -> Item ID {item.id} ('{item.menu_item.name}', CatKDS ID: {item.menu_item.category.assigned_kds_id if item.menu_item.category and item.menu_item.category.assigned_kds else 'N/A'}) için KDS '{target_kds_screen.name}' (ID: {target_kds_screen.id}). Eski KDS Durumu: '{item.kds_status}', Yeni: 'ready_kds'.")
-            item.kds_status = OrderItem.KDS_ITEM_STATUS_CHOICES[2][0]
-            if not item.item_prepared_by_staff:
-                item.item_prepared_by_staff = request.user
-            item.save(update_fields=['kds_status', 'item_prepared_by_staff'])
-            updated_item_ids.append(item.id)
+            )
 
-        logger.info(f"KDS '{target_kds_screen.name}': Order #{order.id} için {len(updated_item_ids)} kalem ({updated_item_ids}) 'KDS Hazır' olarak işaretlendi by {request.user.username}")
+            order_to_update.refresh_from_db()
+            final_order_data = OrderSerializer(order_to_update, context={'request': request}).data
 
-        all_kds_relevant_and_undelivered_items_for_order = OrderItem.objects.filter(
-            order=order,
-            is_awaiting_staff_approval=False,
-            delivered=False,
-            menu_item__category__assigned_kds__isnull=False
-        )
-        
-        all_items_globally_ready_for_pickup = True
-        if all_kds_relevant_and_undelivered_items_for_order.exists():
-            for item_in_order_check in all_kds_relevant_and_undelivered_items_for_order:
-                if item_in_order_check.kds_status != OrderItem.KDS_ITEM_STATUS_CHOICES[2][0]:
-                    all_items_globally_ready_for_pickup = False
-                    break
-        
-        if all_items_globally_ready_for_pickup:
-            if order.status != Order.STATUS_READY_FOR_PICKUP:
-                order.status = Order.STATUS_READY_FOR_PICKUP
-                order.kitchen_completed_at = timezone.now()
-                order.save(update_fields=['status', 'kitchen_completed_at'])
-                logger.info(f"Order ID {order.id} tüm KDS kalemleri hazır olduğu için durumu '{Order.STATUS_READY_FOR_PICKUP}' olarak güncellendi.")
-                
-                # === DEĞİŞİKLİK BURADA: `order_id` yerine `order` nesnesini gönderiyoruz ===
-                transaction.on_commit(
-                    lambda: send_order_update_notification(
-                        order=order, created=False, update_fields=['status', 'kitchen_completed_at']
-                    )
-                )
+            return Response(final_order_data, status=status.HTTP_200_OK)
 
-        elif order.status == Order.STATUS_APPROVED:
-            if order.order_items.filter(kds_status=OrderItem.KDS_ITEM_STATUS_CHOICES[1][0]).exists():
-                order.status = Order.STATUS_PREPARING
-                order.save(update_fields=['status'])
-
-        order.refresh_from_db()
-        serializer = self.get_serializer(order)
-        return Response(serializer.data, status=status.HTTP_200_OK)
+        except (ValueError, Order.DoesNotExist):
+            return Response({"detail": "Geçersiz sipariş kodu."}, status=status.HTTP_404_NOT_FOUND)
+        except ValidationError as e:
+            logger.warning(f"GuestTakeawayOrderUpdateView validasyon hatası: {e.detail}")
+            return Response(e.detail, status=status.HTTP_400_BAD_REQUEST)
