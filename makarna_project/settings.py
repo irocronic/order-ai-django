@@ -153,9 +153,7 @@ REST_FRAMEWORK = {
     'DEFAULT_PERMISSION_CLASSES': (
         'rest_framework.permissions.IsAuthenticated',
     ),
-    # === DEĞİŞİKLİK BURADA: ÖZEL HATA İŞLEYİCİ EKLENDİ ===
     'EXCEPTION_HANDLER': 'core.exceptions.custom_exception_handler',
-    # =======================================================
 }
 
 # --- CORS AYARLARI ---
@@ -167,12 +165,31 @@ CORS_ALLOWED_ORIGINS = [
     "http://localhost:60387",
 ]
 
-# --- CHANNELS AYARLARI ---
+# === DEĞİŞİKLİK BAŞLANGICI: Channels ve Celery için Redis Yapılandırması ===
+
+# Heroku'da Redis eklentisi REDIS_URL ortam değişkenini otomatik sağlar.
+REDIS_URL = os.environ.get('REDIS_URL', 'redis://localhost:6379/0')
+
+# --- CHANNELS AYARLARI (REDIS KULLANACAK ŞEKİLDE GÜNCELLENDİ) ---
 CHANNEL_LAYERS = {
     'default': {
-        'BACKEND': 'channels.layers.InMemoryChannelLayer',
+        'BACKEND': 'channels_redis.core.RedisChannelLayer',
+        'CONFIG': {
+            "hosts": [REDIS_URL],
+        },
     },
 }
+
+# --- CELERY AYARLARI (YENİ EKLENDİ) ---
+CELERY_BROKER_URL = REDIS_URL
+CELERY_RESULT_BACKEND = REDIS_URL
+CELERY_ACCEPT_CONTENT = ['json']
+CELERY_TASK_SERIALIZER = 'json'
+CELERY_RESULT_SERIALIZER = 'json'
+CELERY_TIMEZONE = TIME_ZONE
+
+# === DEĞİŞİKLİK SONU ===
+
 
 # --- SIMPLE JWT AYARLARI ---
 SIMPLE_JWT = {
