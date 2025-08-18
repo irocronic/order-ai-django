@@ -21,11 +21,11 @@ try:
         'host': url.hostname,
         'port': url.port,
         'ssl': url.scheme == 'rediss',
-        'ssl_cert_reqs': None, # Heroku Redis için sertifika doğrulamasını atla
+        'ssl_cert_reqs': None,  # Heroku Redis için sertifika doğrulamasını atla
     }
     if url.password:
         redis_opts['password'] = url.password
-    
+
     redis_client = redis.Redis(**redis_opts)
     io = Emitter(opts={'client': redis_client})
     logger.info("Socket.IO Emitter successfully initialized with parsed REDIS_URL.")
@@ -33,7 +33,7 @@ except Exception as e:
     logger.error(f"Failed to initialize Socket.IO Emitter: {e}", exc_info=True)
     class MockEmitter:
         def in_(self, room): return self
-        def Emit(self, event, data, room=None): pass # room parametresini kabul et
+        def Emit(self, event, data, room=None): pass  # room parametresini kabul et
     io = MockEmitter()
 
 
@@ -53,7 +53,7 @@ def send_order_update_task(order_id, event_type, message, extra_data=None):
         ).get(id=order_id)
 
         serialized_order = OrderSerializer(order).data
-        
+
         update_data = {
             'notification_id': f"{uuid.uuid4()}",
             'event_type': event_type,
@@ -67,7 +67,7 @@ def send_order_update_task(order_id, event_type, message, extra_data=None):
             update_data.update(extra_data)
 
         business_room = f"business_{order.business_id}"
-        
+
         kds_screens_with_items = {
             item.menu_item.category.assigned_kds
             for item in order.order_items.all()
@@ -75,18 +75,17 @@ def send_order_update_task(order_id, event_type, message, extra_data=None):
         }
 
         # === DEĞİŞİKLİK: Bildirim gönderme metodu düzeltildi ===
-        # 'io.emit(...)' yerine 'io.Emit(...)' (büyük E ile) kullanılıyor.
-        # Ayrıca, bir odaya göndermek için 'in_' metodu yerine 'to' metodu kullanılır.
-        io.to(business_room).Emit('order_status_update', update_data)
+        # 'io.to(...).Emit(...)' yerine 'io.in_(...).Emit(...)' kullanılmalı
+        io.in_(business_room).Emit('order_status_update', update_data)
         logger.info(f"[Celery Task] Notification EMITTED VIA Emitter to room: {business_room}")
 
         for kds in kds_screens_with_items:
             kds_room = f"kds_{order.business_id}_{kds.slug}"
             kds_data = update_data.copy()
             kds_data['kds_slug'] = kds.slug
-            io.to(kds_room).Emit('order_status_update', kds_data)
+            io.in_(kds_room).Emit('order_status_update', kds_data)
             logger.info(f"[Celery Task] Notification EMITTED VIA Emitter to KDS room: {kds_room}")
-    
+
     except Order.DoesNotExist:
         logger.error(f"[Celery Task] Order with ID {order_id} not found.")
     except Exception as e:
