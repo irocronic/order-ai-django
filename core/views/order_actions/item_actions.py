@@ -13,7 +13,9 @@ from makarna_project.asgi import sio
 from ...models import Order, MenuItem, MenuItemVariant, OrderItem, OrderItemExtra, NOTIFICATION_EVENT_TYPES
 from ...serializers import OrderSerializer
 from ...utils.order_helpers import PermissionKeys
-from ...signals.order_signals import send_order_update_notification, convert_decimals_to_strings
+# === DEĞİŞİKLİK BURADA: import yolunu güncelliyoruz ===
+from ...signals.order_signals import send_order_update_notification
+from ...utils.json_helpers import convert_decimals_to_strings
 
 logger = logging.getLogger(__name__)
 
@@ -80,7 +82,6 @@ def add_item_action(view_instance, request, pk=None):
         'valid_extras': valid_extras_for_item,
     }
     
-    # Yeni eklenen ürünler, misafir siparişleri hariç, onay beklemez.
     is_awaiting_staff_approval_flag = order.status == Order.STATUS_PENDING_APPROVAL
 
     processed_item = view_instance._add_or_update_order_item_internal(
@@ -101,19 +102,17 @@ def add_item_action(view_instance, request, pk=None):
 
     order.refresh_from_db()
 
-    # Bildirim için özel bilgi oluşturuyoruz.
     item_added_info = {
         'item_name': processed_item.menu_item.name,
         'quantity': processed_item.quantity,
         'variant_name': processed_item.variant.name if processed_item.variant else None
     }
     
-    # HATA DÜZELTMESİ: Bildirim fonksiyonu artık doğru parametrelerle çağrılıyor.
     transaction.on_commit(
         lambda: send_order_update_notification(
-            order=order,  # order_id yerine tam order nesnesi
+            order=order,
             created=False,
-            item_added_info=item_added_info  # Yeni ürün eklendiğini belirtmek için
+            item_added_info=item_added_info
         )
     )
     logger.info(f"Sipariş #{order.id}'e ürün eklendi. `send_order_update_notification` fonksiyonu tetiklendi.")

@@ -14,7 +14,7 @@ from makarna_project.asgi import sio
 from ...models import Order, CreditPaymentDetails, Payment
 from ...serializers import OrderSerializer
 from ...utils.order_helpers import PermissionKeys, get_user_business
-# === DEĞİŞİKLİK BURADA: Import yolunu yeni util dosyasından alıyoruz ===
+# === DEĞİŞİKLİK BURADA: import yolunu güncelliyoruz ===
 from ...utils.json_helpers import convert_decimals_to_strings
 
 logger = logging.getLogger(__name__)

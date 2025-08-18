@@ -12,9 +12,7 @@ from makarna_project.asgi import sio
 from ...models import Order, Table
 from ...serializers import OrderSerializer
 from ...utils.order_helpers import PermissionKeys, get_user_business
-# <<< DEĞİŞİKLİK BURADA BAŞLIYOR (1/3): Merkezi bildirim fonksiyonunu import ediyoruz >>>
 from ...signals.order_signals import send_order_update_notification
-# <<< DEĞİŞİKLİK SONU (1/3) >>>
 
 logger = logging.getLogger(__name__)
 
@@ -72,15 +70,13 @@ def transfer_order_action(view_instance, request):
     
     order_serializer = OrderSerializer(order_to_transfer, context={'request': request})
 
-    # <<< DEĞİŞİKLİK BURADA BAŞLIYOR (2/3): Bildirim fonksiyonu doğru parametrelerle çağrılıyor >>>
     transaction.on_commit(
         lambda: send_order_update_notification(
-            order=order_to_transfer,  # order_id yerine order nesnesi
+            order=order_to_transfer,
             created=False, 
             update_fields=['table']
         )
     )
-    # <<< DEĞİŞİKLİK SONU (2/3) >>>
 
     return Response(order_serializer.data, status=status.HTTP_200_OK)
 
@@ -103,23 +99,18 @@ def destroy_order_action(view_instance, instance: Order):
         instance.save(update_fields=['status'])
         logger.info(f"Sipariş {order_id} (eski durum: {original_status_display}) kullanıcı {user.username} tarafından İPTAL EDİLDİ.")
         
-        # <<< DEĞİŞİKLİK BURADA BAŞLIYOR (3/3): Bildirim fonksiyonu doğru parametrelerle çağrılıyor >>>
-        # Manuel socket.io emit bloğu kaldırıldı, merkezi fonksiyon kullanılıyor.
         transaction.on_commit(
             lambda: send_order_update_notification(
-                order=instance,  # order_id yerine order nesnesi
+                order=instance,
                 created=False, 
                 update_fields=['status']
             )
         )
-        # <<< DEĞİŞİKLİK SONU (3/3) >>>
         
-        # Yanıt olarak güncellenmiş sipariş verisini döndür
         order_serializer_data = OrderSerializer(instance, context={'request': view_instance.request}).data
         return Response(order_serializer_data, status=status.HTTP_200_OK)
     
     elif user.is_superuser: 
-        # pre_delete sinyali zaten bildirim gönderecek, burada tekrar göndermeye gerek yok.
         instance.delete()
         logger.info(f"Sipariş {order_id} SUPERUSER {user.username} tarafından VERİTABANINDAN SİLİNDİ.")
         return Response(status=status.HTTP_204_NO_CONTENT)
