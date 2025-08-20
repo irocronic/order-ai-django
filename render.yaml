@@ -3,7 +3,7 @@ services:
   - type: web
     name: orderai-web
     env: python
-    plan: free # Başlangıç için ücretsiz plan. İstediğiniz zaman "starter" olarak değiştirebilirsiniz.
+    plan: free
     buildCommand: "./build.sh"
     startCommand: "uvicorn makarna_project.asgi:application --host 0.0.0.0 --port $PORT"
     healthCheckPath: /
@@ -11,13 +11,12 @@ services:
       - key: PYTHON_VERSION
         value: 3.11.4
       - key: DJANGO_SECRET_KEY
-        generateValue: true # Render sizin için güvenli bir anahtar üretecek.
+        generateValue: true
       - key: DJANGO_DEBUG
-        value: false # Production için her zaman false olmalı.
+        value: false
       - key: DATABASE_URL
-        value: "postgresql://postgres.PROJECT_REF:GERÇEK_ŞİFRE@aws-0-REGION.pooler.supabase.com:6543/postgres?sslmode=require" # SİZİN SUPABASE URL'NİZ
+        value: "postgresql://postgres.sovfgoqxqggtizuaqqzi:0952koray1985Ka@aws-1-eu-central-1.pooler.supabase.com:6543/postgres"
       - key: REDIS_URL
-        # --- HATA DÜZELTİLDİ: Token'ın doğru hali aşağıya eklendi ---
         value: "rediss://default:ASbBAAImcDE3ZmUyMGJkNzhjMTg0MDQyYTI0YTY5MzE0ZDY4MDhmZnAxOTkyMQ@artistic-kiwi-9921.upstash.io:6379"
       
       # --- Heroku'dan Gelen Gerekli Değişkenler ---
@@ -28,7 +27,7 @@ services:
       - key: DJANGO_EMAIL_HOST_USER
         value: "akma.koray@gmail.com"
       - key: DJANGO_EMAIL_HOST_PASSWORD
-        sync: false # ÖNEMLİ: Bu değeri Render panelinden manuel olarak girin.
+        sync: false
       - key: DJANGO_SECURE_SSL_REDIRECT
         value: "True"
       - key: DJANGO_SESSION_COOKIE_SECURE
@@ -38,14 +37,14 @@ services:
       - key: PYTHONUNBUFFERED
         value: "1"
       - key: GOOGLE_APPLICATION_CREDENTIALS_PATH
-        value: "/etc/secrets/google-credentials.json" # Secret File için yol
+        value: "/etc/secrets/google-credentials.json"
 
   # 2. Celery Worker Servisi
   - type: worker
     name: orderai-worker
     env: python
-    plan: starter # ÖNEMLİ: FREE'DEN STARTER'A DEĞİŞTİRİLDİ
-    buildCommand: "./build.sh" # ÖNEMLİ: PIP INSTALL YERİNE BUILD.SH KULLANILDI
+    plan: starter
+    buildCommand: "./build.sh"
     startCommand: "celery -A makarna_project worker -l info"
     envVars:
       - key: PYTHON_VERSION
@@ -56,9 +55,8 @@ services:
           name: orderai-web
           envVarKey: DJANGO_SECRET_KEY
       - key: DATABASE_URL
-        value: "postgresql://postgres.PROJECT_REF:GERÇEK_ŞİFRE@aws-0-REGION.pooler.supabase.com:6543/postgres?sslmode=require" # SİZİN SUPABASE URL'NİZ
+        value: "postgresql://postgres.sovfgoqxqggtizuaqqzi:0952koray1985Ka@aws-1-eu-central-1.pooler.supabase.com:6543/postgres"
       - key: REDIS_URL
-        # --- HATA DÜZELTİLDİ: Token'ın doğru hali aşağıya eklendi ---
         value: "rediss://default:ASbBAAImcDE3ZmUyMGJkNzhjMTg0MDQyYTI0YTY5MzE0ZDY4MDhmZnAxOTkyMQ@artistic-kiwi-9921.upstash.io:6379"
       
       # --- Heroku'dan Gelen Gerekli Değişkenler (Worker için de gerekli) ---
@@ -69,8 +67,8 @@ services:
       - key: DJANGO_EMAIL_HOST_USER
         value: "akma.koray@gmail.com"
       - key: DJANGO_EMAIL_HOST_PASSWORD
-        sync: false # ÖNEMLİ: Bu değeri Render panelinden manuel olarak girin.
+        sync: false
       - key: PYTHONUNBUFFERED
         value: "1"
       - key: GOOGLE_APPLICATION_CREDENTIALS_PATH
-        value: "/etc/secrets/google-credentials.json" # Secret File için yol
+        value: "/etc/secrets/google-credentials.json"

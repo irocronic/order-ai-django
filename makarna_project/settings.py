@@ -86,7 +86,7 @@ TEMPLATES = [
 WSGI_APPLICATION = 'makarna_project.wsgi.application'
 ASGI_APPLICATION = 'makarna_project.asgi.application'
 
-# --- VERİTABANI AYARLARI (ÖNEMLİ GÜNCELLEME) ---
+# --- VERİTABANI AYARLARI (SUPABASE İÇİN OPTİMİZE EDİLDİ) ---
 DATABASES = {
     'default': {}
 }
@@ -94,17 +94,15 @@ DATABASES = {
 DATABASE_URL_ENV = os.environ.get('DATABASE_URL')
 
 if DATABASE_URL_ENV:
-    # Supabase için özel yapılandırma
+    # Supabase Transaction Pooler için optimizasyon
     DATABASES['default'] = dj_database_url.config(
         default=DATABASE_URL_ENV,
-        conn_max_age=600,
-        ssl_require=True,  # Supabase için SSL zorunlu
-        conn_health_checks=True,  # Bağlantı sağlık kontrolleri
+        conn_max_age=60,  # Transaction pooler için daha kısa
+        ssl_require=False,  # Pooler IPv4 proxy kullandığı için SSL'i kendisi halleder
     )
     
-    # Supabase için ek veritabanı ayarları
+    # Supabase Transaction Pooler için özel ayarlar
     DATABASES['default']['OPTIONS'] = {
-        'sslmode': 'require',
         'connect_timeout': 10,
         'options': '-c default_transaction_isolation=read_committed'
     }
