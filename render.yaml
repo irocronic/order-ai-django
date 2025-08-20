@@ -3,7 +3,7 @@ services:
   - type: web
     name: orderai-web
     env: python
-    plan: free # Free plan for start. You can change to "starter" anytime.
+    plan: free
     buildCommand: "./build.sh"
     startCommand: "uvicorn makarna_project.asgi:application --host 0.0.0.0 --port $PORT"
     healthCheckPath: /
@@ -11,21 +11,17 @@ services:
       - key: PYTHON_VERSION
         value: 3.11.4
       - key: DJANGO_SECRET_KEY
-        generateValue: true # Render will generate a secure key for you.
+        generateValue: true
       - key: DJANGO_DEBUG
-        value: false # Should always be false for production.
+        value: false
       - key: DATABASE_URL
         value: "postgresql://postgres.sovfgoqxqggtizuaqqzi:0952koray1985Ka@aws-1-eu-central-1.pooler.supabase.com:5432/postgres?sslmode=require"
       - key: REDIS_URL
         value: "rediss://default:ASbBAAImcDE3ZmUyMGJkNzhjMTg0MDQyYTI0YTY5MzE0ZDY4MDhmZnAxOTkyMQ@artistic-kiwi-9921.upstash.io:6379"
-      
-      # NEW: Render URL Configuration
       - key: RENDER_EXTERNAL_URL
         value: "https://orderai-web.onrender.com"
       - key: DJANGO_ALLOWED_HOSTS
         value: "orderai-web.onrender.com"
-      
-      # --- Required Variables from Heroku ---
       - key: ANDROID_PACKAGE_NAME
         value: "com.orderai.app"
       - key: DJANGO_ADMIN_EMAIL_RECIPIENTS
@@ -33,7 +29,7 @@ services:
       - key: DJANGO_EMAIL_HOST_USER
         value: "akma.koray@gmail.com"
       - key: DJANGO_EMAIL_HOST_PASSWORD
-        sync: false # IMPORTANT: Enter this value manually from Render panel.
+        sync: false
       - key: DJANGO_SECURE_SSL_REDIRECT
         value: "True"
       - key: DJANGO_SESSION_COOKIE_SECURE
@@ -43,44 +39,6 @@ services:
       - key: PYTHONUNBUFFERED
         value: "1"
       - key: GOOGLE_APPLICATION_CREDENTIALS_PATH
-        value: "/etc/secrets/google-credentials.json" # Path for Secret File
+        value: "/etc/secrets/google-credentials.json"
 
-  # 2. Celery Worker Service
-  - type: worker
-    name: orderai-worker
-    env: python
-    plan: free # Free plan for start.
-    buildCommand: "pip install -r requirements.txt"
-    startCommand: "celery -A makarna_project worker -l info"
-    envVars:
-      - key: PYTHON_VERSION
-        value: 3.11.4
-      - key: DJANGO_SECRET_KEY
-        fromService:
-          type: web
-          name: orderai-web
-          envVarKey: DJANGO_SECRET_KEY
-      - key: DATABASE_URL
-        value: "postgresql://postgres.sovfgoqxqggtizuaqqzi:0952koray1985Ka@aws-1-eu-central-1.pooler.supabase.com:5432/postgres?sslmode=require"
-      - key: REDIS_URL
-        value: "rediss://default:ASbBAAImcDE3ZmUyMGJkNzhjMTg0MDQyYTI0YTY5MzE0ZDY4MDhmZnAxOTkyMQ@artistic-kiwi-9921.upstash.io:6379"
-      
-      # NEW: Render URL Configuration (Worker için de gerekli)
-      - key: RENDER_EXTERNAL_URL
-        value: "https://orderai-web.onrender.com"
-      - key: DJANGO_ALLOWED_HOSTS
-        value: "orderai-web.onrender.com"
-      
-      # --- Required Variables (Also needed for Worker) ---
-      - key: ANDROID_PACKAGE_NAME
-        value: "com.orderai.app"
-      - key: DJANGO_ADMIN_EMAIL_RECIPIENTS
-        value: "akma.koray@gmail.com"
-      - key: DJANGO_EMAIL_HOST_USER
-        value: "akma.koray@gmail.com"
-      - key: DJANGO_EMAIL_HOST_PASSWORD
-        sync: false # IMPORTANT: Enter this value manually from Render panel.
-      - key: PYTHONUNBUFFERED
-        value: "1"
-      - key: GOOGLE_APPLICATION_CREDENTIALS_PATH
-        value: "/etc/secrets/google-credentials.json" # Path for Secret File
+# Worker kısmını geçici olarak kaldırdık (Free plan sınırlaması)
