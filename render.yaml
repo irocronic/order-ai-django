@@ -15,9 +15,9 @@ services:
       - key: DJANGO_DEBUG
         value: false # Should always be false for production.
       - key: DATABASE_URL
-        value: "postgresql://postgres:[YOUR-PASSWORD]@db.sovfgoqxqggtizuaqqzi.supabase.co:5432/postgres?sslmode=require&options=-c%20default_transaction_isolation=read_committed"
+        value: "postgresql://postgres.sovfgoqxqggtizuaqqzi:0952koray1985Ka@aws-1-eu-central-1.pooler.supabase.com:5432/postgres?sslmode=require"
       - key: REDIS_URL
-        value: "rediss://default:********@artistic-kiwi-9921.upstash.io:6379" # YOUR UPSTASH URL
+        value: "rediss://default:ASbBAAImcDE3ZmUyMGJkNzhjMTg0MDQyYTI0YTY5MzE0ZDY4MDhmZnAxOTkyMQ@artistic-kiwi-9921.upstash.io:6379"
       
       # --- Required Variables from Heroku ---
       - key: ANDROID_PACKAGE_NAME
@@ -55,9 +55,9 @@ services:
           name: orderai-web
           envVarKey: DJANGO_SECRET_KEY
       - key: DATABASE_URL
-        value: "postgresql://postgres:[YOUR-PASSWORD]@db.sovfgoqxqggtizuaqqzi.supabase.co:5432/postgres?sslmode=require&options=-c%20default_transaction_isolation=read_committed"
+        value: "postgresql://postgres.sovfgoqxqggtizuaqqzi:0952koray1985Ka@aws-1-eu-central-1.pooler.supabase.com:5432/postgres?sslmode=require"
       - key: REDIS_URL
-        value: "rediss://default:********@artistic-kiwi-9921.upstash.io:6379" # YOUR UPSTASH URL
+        value: "rediss://default:ASbBAAImcDE3ZmUyMGJkNzhjMTg0MDQyYTI0YTY5MzE0ZDY4MDhmZnAxOTkyMQ@artistic-kiwi-9921.upstash.io:6379"
       
       # --- Required Variables (Also needed for Worker) ---
       - key: ANDROID_PACKAGE_NAME
