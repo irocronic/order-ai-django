@@ -4,7 +4,7 @@ services:
     name: orderai-web
     env: python
     plan: starter
-    region: frankfurt
+    # region: frankfurt  # ❌ KALDIRILDI - Oregon'da çalışıyor
     buildCommand: "./build.sh"
     startCommand: "uvicorn makarna_project.asgi:application --host 0.0.0.0 --port $PORT"
     envVars:
@@ -33,7 +33,7 @@ services:
       - key: DJANGO_EMAIL_HOST_USER
         value: "akma.koray@gmail.com"
       - key: DJANGO_EMAIL_HOST_PASSWORD
-        value: "vhpjyfnxsjuicpgy"  # ✅ EKLENDİ: .env.backup'taki şifre
+        value: "vhpjyfnxsjuicpgy"
       - key: GOOGLE_CREDENTIALS_JSON
         sync: false
 
@@ -42,7 +42,7 @@ services:
     name: orderai-worker
     env: python
     plan: starter
-    region: frankfurt
+    # region: oregon  # ✅ Web ile aynı bölge (otomatik)
     buildCommand: "./build.sh"
     startCommand: "celery -A makarna_project worker -l info --concurrency=2"
     envVars:
@@ -71,7 +71,7 @@ services:
       - key: DJANGO_EMAIL_HOST_USER
         value: "akma.koray@gmail.com"
       - key: DJANGO_EMAIL_HOST_PASSWORD
-        value: "vhpjyfnxsjuicpgy"  # ✅ EKLENDİ: Worker için de gerekli
+        value: "vhpjyfnxsjuicpgy"
       - key: GOOGLE_CREDENTIALS_JSON
         sync: false
 
