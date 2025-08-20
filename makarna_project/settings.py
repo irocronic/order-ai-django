@@ -192,10 +192,17 @@ CELERY_TASK_SERIALIZER = 'json'
 CELERY_RESULT_SERIALIZER = 'json'
 CELERY_TIMEZONE = TIME_ZONE
 
-# Celery için ek ayarlar (Render için optimizasyon)
+# === RENDER İÇİN MEMORY OPTİMİZE EDİLMİŞ CELERY AYARLARI ===
+CELERY_WORKER_CONCURRENCY = 2  # 16'dan 2'ye düşürüldü
 CELERY_WORKER_PREFETCH_MULTIPLIER = 1
 CELERY_TASK_ACKS_LATE = True
-CELERY_WORKER_MAX_TASKS_PER_CHILD = 1000
+CELERY_WORKER_MAX_TASKS_PER_CHILD = 100  # 1000'den 100'e düşürüldü
+CELERY_WORKER_DISABLE_RATE_LIMITS = True
+CELERY_TASK_REJECT_ON_WORKER_LOST = True
+
+# Memory optimization
+CELERY_WORKER_POOL_RESTARTS = True
+CELERY_WORKER_MAX_MEMORY_PER_CHILD = 200000  # 200MB limit per worker
 
 # --- SIMPLE JWT AYARLARI ---
 SIMPLE_JWT = {
@@ -299,7 +306,7 @@ SOCKETIO_SETTINGS = {
 
 SOCKETIO_SETTINGS['cors_allowed_origins'] = CORS_ALLOWED_ORIGINS
 
-print("🏠 Production ortam - Optimized Socket.IO ayarları kullanılıyor")
+print("🏠 Production ortam - Memory Optimized Socket.IO ayarları kullanılıyor")
 
 SOCKETIO_ASYNC_MODE = 'threading'
 
@@ -307,3 +314,7 @@ SOCKETIO_ASYNC_MODE = 'threading'
 print(f"🔧 Socket.IO Ayarları:")
 print(f"   - Ping Timeout: {SOCKETIO_SETTINGS['ping_timeout']}ms")
 print(f"   - Ping Interval: {SOCKETIO_SETTINGS['ping_interval']}ms")
+print(f"🔧 Celery Memory Optimization:")
+print(f"   - Worker Concurrency: {CELERY_WORKER_CONCURRENCY}")
+print(f"   - Max Tasks Per Child: {CELERY_WORKER_MAX_TASKS_PER_CHILD}")
+print(f"   - Max Memory Per Child: {CELERY_WORKER_MAX_MEMORY_PER_CHILD}KB")

@@ -39,13 +39,13 @@ services:
       - key: GOOGLE_APPLICATION_CREDENTIALS_PATH
         value: "/etc/secrets/google-credentials.json"
 
-  # 2. Celery Worker Servisi
+  # 2. Celery Worker Servisi (MEMORY OPTİMİZE EDİLDİ)
   - type: worker
     name: orderai-worker
     env: python
     plan: starter
     buildCommand: "./build.sh"
-    startCommand: "celery -A makarna_project worker -l info"
+    startCommand: "celery -A makarna_project worker -l info --concurrency=2 --max-tasks-per-child=100"
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.4
