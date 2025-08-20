@@ -94,7 +94,7 @@ REDIS_URL = os.environ.get('REDIS_URL', 'redis://localhost:6379/0')
 if REDIS_URL.startswith('rediss://'):
     REDIS_URL += '?ssl_cert_reqs=none'
 
-# --- VERİTABANI AYARLARI (HIZLANDIRILDI) ---
+# --- VERİTABANI AYARLARI (PSYCOPG3 İLE UYUMLU) ---
 DATABASES = {
     'default': {}
 }
@@ -102,7 +102,7 @@ DATABASES = {
 DATABASE_URL_ENV = os.environ.get('DATABASE_URL')
 
 if DATABASE_URL_ENV:
-    # Direct connection için (en hızlı) - Transaction pooler yerine
+    # Direct connection için (en hızlı) - psycopg3 uyumlu
     DATABASES['default'] = dj_database_url.config(
         default=DATABASE_URL_ENV,
         conn_max_age=300,  # Daha uzun connection reuse (5 dakika)
@@ -110,13 +110,10 @@ if DATABASE_URL_ENV:
         conn_health_checks=True,
     )
     
-    # Hız optimizasyonu için gelişmiş ayarlar
+    # psycopg3 uyumlu ayarlar
     DATABASES['default']['OPTIONS'] = {
         'sslmode': 'require',
-        'connect_timeout': 5,  # Daha hızlı timeout
-        'tcp_keepalives_idle': 600,
-        'tcp_keepalives_interval': 30,
-        'tcp_keepalives_count': 3,
+        'connect_timeout': 5,
         'application_name': 'orderai_render',
     }
     
