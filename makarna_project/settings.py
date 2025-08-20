@@ -15,9 +15,6 @@ SECRET_KEY = os.environ.get('DJANGO_SECRET_KEY', 'django-insecure-yerel-icin-guv
 DEBUG = os.environ.get('DJANGO_DEBUG', 'True') == 'True'
 
 # --- HOST AYARLARI (RENDER İÇİN GÜNCELLENDİ) ---
-# --- GÜNCELLEME BAŞLANGICI ---
-# Bu bölüm, Heroku'ya özel yapılandırmayı kaldırıp Render'ın dinamik URL'sini
-# ve diğer ortam değişkenlerini kullanacak şekilde yeniden düzenlendi.
 ALLOWED_HOSTS = []
 
 # Render.com, deploy edilen servisin URL'sini bu ortam değişkeni ile sağlar.
@@ -26,7 +23,6 @@ if RENDER_EXTERNAL_HOSTNAME:
     ALLOWED_HOSTS.append(RENDER_EXTERNAL_HOSTNAME)
 
 # Kendi özel alan adınızı (custom domain) da bir ortam değişkeninden ekleyebilirsiniz.
-# Örnek: DJANGO_ALLOWED_HOSTS=ornekalanadim.com,www.ornekalanadim.com
 allowed_hosts_env = os.environ.get('DJANGO_ALLOWED_HOSTS')
 if allowed_hosts_env:
     ALLOWED_HOSTS.extend([host.strip() for host in allowed_hosts_env.split(',') if host.strip()])
@@ -34,7 +30,6 @@ if allowed_hosts_env:
 # Geliştirme ortamı (DEBUG=True) için localhost ekler.
 if DEBUG:
     ALLOWED_HOSTS.extend(['localhost', '127.0.0.1'])
-# --- GÜNCELLEME SONU ---
 
 AUTH_USER_MODEL = 'core.CustomUser'
 
@@ -91,7 +86,7 @@ TEMPLATES = [
 WSGI_APPLICATION = 'makarna_project.wsgi.application'
 ASGI_APPLICATION = 'makarna_project.asgi.application'
 
-# --- VERİTABANI AYARLARI ---
+# --- VERİTABANI AYARLARI (ÖNEMLİ GÜNCELLEME) ---
 DATABASES = {
     'default': {}
 }
@@ -99,14 +94,21 @@ DATABASES = {
 DATABASE_URL_ENV = os.environ.get('DATABASE_URL')
 
 if DATABASE_URL_ENV:
-    # --- GÜNCELLEME BAŞLANGICI ---
-    # conn_max_age=0 Heroku için önerilir, Render için 600 daha iyi bir varsayılandır.
+    # Supabase için özel yapılandırma
     DATABASES['default'] = dj_database_url.config(
         default=DATABASE_URL_ENV,
         conn_max_age=600,
-        ssl_require=os.environ.get('DATABASE_SSL_REQUIRE', 'True') == 'True'
+        ssl_require=True,  # Supabase için SSL zorunlu
+        conn_health_checks=True,  # Bağlantı sağlık kontrolleri
     )
-    # --- GÜNCELLEME SONU ---
+    
+    # Supabase için ek veritabanı ayarları
+    DATABASES['default']['OPTIONS'] = {
+        'sslmode': 'require',
+        'connect_timeout': 10,
+        'options': '-c default_transaction_isolation=read_committed'
+    }
+    
 elif DEBUG:
     print("--- LOKAL GELİŞTİRME: SQLite KULLANILIYOR ---")
     DATABASES['default'] = {
@@ -164,24 +166,17 @@ CORS_ALLOWED_ORIGINS = [
     "http://localhost:60387",
 ]
 
-# --- GÜNCELLEME BAŞLANGICI ---
 # Render URL'sini de CORS'a eklemek için ortam değişkeni kullanıyoruz.
-# render.yaml dosyasında RENDER_EXTERNAL_URL'yi tanımlamanız gerekecektir.
 RENDER_EXTERNAL_URL = os.environ.get('RENDER_EXTERNAL_URL')
 if RENDER_EXTERNAL_URL:
     CORS_ALLOWED_ORIGINS.append(RENDER_EXTERNAL_URL)
-# --- GÜNCELLEME SONU ---
-
 
 # === CHANNELS ve CELERY için REDIS Yapılandırması ===
 REDIS_URL = os.environ.get('REDIS_URL', 'redis://localhost:6379/0')
 
-# --- GÜNCELLEME BAŞLANGICI ---
-# Upstash TLS/SSL bağlantıları için bu kontrol önemlidir.
-# Bu satır zaten doğru, bir değişiklik gerekmiyor, sadece teyit ediliyor.
+# Upstash TLS/SSL bağlantıları için
 if REDIS_URL.startswith('rediss://'):
     REDIS_URL += '?ssl_cert_reqs=none'
-# --- GÜNCELLEME SONU ---
 
 CHANNEL_LAYERS = {
     'default': {
@@ -198,6 +193,11 @@ CELERY_ACCEPT_CONTENT = ['json']
 CELERY_TASK_SERIALIZER = 'json'
 CELERY_RESULT_SERIALIZER = 'json'
 CELERY_TIMEZONE = TIME_ZONE
+
+# Celery için ek ayarlar (Render için optimizasyon)
+CELERY_WORKER_PREFETCH_MULTIPLIER = 1
+CELERY_TASK_ACKS_LATE = True
+CELERY_WORKER_MAX_TASKS_PER_CHILD = 1000
 
 # --- SIMPLE JWT AYARLARI ---
 SIMPLE_JWT = {
@@ -276,25 +276,19 @@ if not DEBUG and not ADMIN_EMAIL_RECIPIENTS:
 elif DEBUG and not ADMIN_EMAIL_RECIPIENTS:
     print("UYARI: Geliştirme ortamında yeni üyelik bildirimleri için DJANGO_ADMIN_EMAIL_RECIPIENTS ayarlanmamış. Bildirim gönderilmeyecek.")
 
-# === GOOGLE & SUBSCRIPTION AYARLARI (RENDER İÇİN GÜNCELLENDİ) ===
-# --- GÜNCELLEME BAŞLANGICI ---
-# Render'da "Secret File" olarak eklenen dosyanın yolunu okumak için bu yapı daha güvenilirdir.
-# GOOGLE_APPLICATION_CREDENTIALS_PATH ortam değişkenini Render panelinde
-# /etc/secrets/google-credentials.json olarak ayarlayacaksınız.
+# === GOOGLE & SUBSCRIPTION AYARLARI ===
 GOOGLE_APPLICATION_CREDENTIALS = os.environ.get('GOOGLE_APPLICATION_CREDENTIALS_PATH')
 
 if not GOOGLE_APPLICATION_CREDENTIALS:
-    # Lokal geliştirme için projenin ana dizinindeki dosyayı kullanır.
     local_credentials_path = os.path.join(BASE_DIR, 'google-credentials.json')
     if os.path.exists(local_credentials_path):
         GOOGLE_APPLICATION_CREDENTIALS = local_credentials_path
     else:
         print("UYARI: GOOGLE_APPLICATION_CREDENTIALS_PATH ayarlanmamış ve lokalde google-credentials.json bulunamadı. Abonelik doğrulama çalışmayabilir.")
-# --- GÜNCELLEME SONU ---
 
 ANDROID_PACKAGE_NAME = os.environ.get('ANDROID_PACKAGE_NAME', 'com.orderai.app')
 
-# === SOCKET.IO AYARLARI - HEROKU OPTİMİZASYONU ===
+# === SOCKET.IO AYARLARI ===
 SOCKETIO_SETTINGS = {
     'ping_timeout': 60000,
     'ping_interval': 25000,
@@ -305,34 +299,11 @@ SOCKETIO_SETTINGS = {
     'cors_credentials': True,
 }
 
-# --- GÜNCELLEME BAŞLANGICI ---
-# CORS_ALLOWED_ORIGINS listesi yukarıda dinamik olarak ayarlandığı için
-# buradaki referansı direkt o listeye yapıyoruz.
 SOCKETIO_SETTINGS['cors_allowed_origins'] = CORS_ALLOWED_ORIGINS
-# --- GÜNCELLEME SONU ---
 
-
-# --- GÜNCELLEME BAŞLANGICI ---
-# Heroku'ya özel Dyno kontrolü kaldırıldı. Render için bu tür optimizasyonlara
-# genellikle gerek yoktur veya platform tarafından yönetilir.
-print("🏠 Local/Production ortam - Normal Socket.IO ayarları kullanılıyor")
-# --- GÜNCELLEME SONU ---
+print("🏠 Production ortam - Optimized Socket.IO ayarları kullanılıyor")
 
 SOCKETIO_ASYNC_MODE = 'threading'
-
-# --- GÜNCELLEME BAŞLANGICI ---
-# Heroku'ya özel Dyno kontrolü kaldırıldı. CONN_MAX_AGE ayarı veritabanı
-# bölümüne taşındı.
-# --- GÜNCELLEME SONU ---
-
-# === DYNO KEEP-ALIVE SİSTEMİ (OPSİYONEL) ===
-# --- GÜNCELLEME BAŞLANGICI ---
-# Bu bölüm Heroku'ya özel olduğu için kaldırıldı veya yorum satırına alındı.
-# Render'ın "Free" planları uykuya dalabilir, ancak ücretli planlarda uygulama sürekli çalışır.
-# Gerekirse, Render'ın Cron Jobs özelliğini kullanarak bir "health check" endpoint'ine istek atabilirsiniz.
-# HEROKU_KEEP_ALIVE_ENABLED = os.environ.get('HEROKU_KEEP_ALIVE_ENABLED', 'True') == 'True'
-# ... (ilgili diğer satırlar)
-# --- GÜNCELLEME SONU ---
 
 # === DEBUG LOG AYARLARI ===
 print(f"🔧 Socket.IO Ayarları:")

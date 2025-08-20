@@ -15,7 +15,7 @@ services:
       - key: DJANGO_DEBUG
         value: false # Production için her zaman false olmalı.
       - key: DATABASE_URL
-        value: "postgresql://postgres:********@db.sovfgoqxqggtizuaqqzi.supabase.co:5432/postgres" # SİZİN SUPABASE URL'NİZ
+        value: "postgresql://postgres.PROJECT_REF:GERÇEK_ŞİFRE@aws-0-REGION.pooler.supabase.com:6543/postgres?sslmode=require" # SİZİN SUPABASE URL'NİZ
       - key: REDIS_URL
         # --- HATA DÜZELTİLDİ: Token'ın doğru hali aşağıya eklendi ---
         value: "rediss://default:ASbBAAImcDE3ZmUyMGJkNzhjMTg0MDQyYTI0YTY5MzE0ZDY4MDhmZnAxOTkyMQ@artistic-kiwi-9921.upstash.io:6379"
@@ -44,8 +44,8 @@ services:
   - type: worker
     name: orderai-worker
     env: python
-    plan: free # Başlangıç için ücretsiz plan.
-    buildCommand: "pip install -r requirements.txt"
+    plan: starter # ÖNEMLİ: FREE'DEN STARTER'A DEĞİŞTİRİLDİ
+    buildCommand: "./build.sh" # ÖNEMLİ: PIP INSTALL YERİNE BUILD.SH KULLANILDI
     startCommand: "celery -A makarna_project worker -l info"
     envVars:
       - key: PYTHON_VERSION
@@ -56,7 +56,7 @@ services:
           name: orderai-web
           envVarKey: DJANGO_SECRET_KEY
       - key: DATABASE_URL
-        value: "postgresql://postgres:********@db.sovfgoqxqggtizuaqqzi.supabase.co:5432/postgres" # SİZİN SUPABASE URL'NİZ
+        value: "postgresql://postgres.PROJECT_REF:GERÇEK_ŞİFRE@aws-0-REGION.pooler.supabase.com:6543/postgres?sslmode=require" # SİZİN SUPABASE URL'NİZ
       - key: REDIS_URL
         # --- HATA DÜZELTİLDİ: Token'ın doğru hali aşağıya eklendi ---
         value: "rediss://default:ASbBAAImcDE3ZmUyMGJkNzhjMTg0MDQyYTI0YTY5MzE0ZDY4MDhmZnAxOTkyMQ@artistic-kiwi-9921.upstash.io:6379"
