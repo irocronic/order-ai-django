@@ -1,9 +1,9 @@
 services:
-  # 1. Django Web Servisi (PERFORMANCE OPTİMİZE EDİLDİ)
+  # 1. Django Web Servisi (IPv4 DATABASE URL ile)
   - type: web
     name: orderai-web
     env: python
-    plan: starter  # free'den starter'a yükseltildi
+    plan: starter
     buildCommand: "./build.sh"
     startCommand: "uvicorn makarna_project.asgi:application --host 0.0.0.0 --port $PORT --workers 1 --worker-connections 1000 --backlog 2048"
     healthCheckPath: /
@@ -15,7 +15,7 @@ services:
       - key: DJANGO_DEBUG
         value: false
       - key: DATABASE_URL
-        value: "postgresql://postgres:0952koray1985Ka@db.sovfgoqxqggtizuaqqzi.supabase.co:5432/postgres"
+        value: "postgresql://postgres.sovfgoqxqggtizuaqqzi:0952koray1985Ka@aws-1-eu-central-1.pooler.supabase.com:6543/postgres"
       - key: REDIS_URL
         value: "rediss://default:ASbBAAImcDE3ZmUyMGJkNzhjMTg0MDQyYTI0YTY5MzE0ZDY4MDhmZnAxOTkyMQ@artistic-kiwi-9921.upstash.io:6379"
       
@@ -39,7 +39,7 @@ services:
       - key: GOOGLE_APPLICATION_CREDENTIALS_PATH
         value: "/etc/secrets/google-credentials.json"
 
-  # 2. Celery Worker Servisi (MEMORY VE PERFORMANCE OPTİMİZE EDİLDİ)
+  # 2. Celery Worker Servisi (IPv4 DATABASE URL ile)
   - type: worker
     name: orderai-worker
     env: python
@@ -55,7 +55,7 @@ services:
           name: orderai-web
           envVarKey: DJANGO_SECRET_KEY
       - key: DATABASE_URL
-        value: "postgresql://postgres:0952koray1985Ka@db.sovfgoqxqggtizuaqqzi.supabase.co:5432/postgres"
+        value: "postgresql://postgres.sovfgoqxqggtizuaqqzi:0952koray1985Ka@aws-1-eu-central-1.pooler.supabase.com:6543/postgres"
       - key: REDIS_URL
         value: "rediss://default:ASbBAAImcDE3ZmUyMGJkNzhjMTg0MDQyYTI0YTY5MzE0ZDY4MDhmZnAxOTkyMQ@artistic-kiwi-9921.upstash.io:6379"
       
