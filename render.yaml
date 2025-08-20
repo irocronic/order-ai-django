@@ -19,6 +19,12 @@ services:
       - key: REDIS_URL
         value: "rediss://default:ASbBAAImcDE3ZmUyMGJkNzhjMTg0MDQyYTI0YTY5MzE0ZDY4MDhmZnAxOTkyMQ@artistic-kiwi-9921.upstash.io:6379"
       
+      # NEW: Render URL Configuration
+      - key: RENDER_EXTERNAL_URL
+        value: "https://orderai-web.onrender.com"
+      - key: DJANGO_ALLOWED_HOSTS
+        value: "orderai-web.onrender.com"
+      
       # --- Required Variables from Heroku ---
       - key: ANDROID_PACKAGE_NAME
         value: "com.orderai.app"
@@ -58,6 +64,12 @@ services:
         value: "postgresql://postgres.sovfgoqxqggtizuaqqzi:0952koray1985Ka@aws-1-eu-central-1.pooler.supabase.com:5432/postgres?sslmode=require"
       - key: REDIS_URL
         value: "rediss://default:ASbBAAImcDE3ZmUyMGJkNzhjMTg0MDQyYTI0YTY5MzE0ZDY4MDhmZnAxOTkyMQ@artistic-kiwi-9921.upstash.io:6379"
+      
+      # NEW: Render URL Configuration (Worker için de gerekli)
+      - key: RENDER_EXTERNAL_URL
+        value: "https://orderai-web.onrender.com"
+      - key: DJANGO_ALLOWED_HOSTS
+        value: "orderai-web.onrender.com"
       
       # --- Required Variables (Also needed for Worker) ---
       - key: ANDROID_PACKAGE_NAME
