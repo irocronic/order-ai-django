@@ -9,7 +9,7 @@ services:
     healthCheckPath: /
     envVars:
       - key: PYTHON_VERSION
-        value: 3.11.4 # requirements.txt dosyanızdaki sürüme göre güncelleyebilirsiniz.
+        value: 3.11.4
       - key: DJANGO_SECRET_KEY
         generateValue: true # Render sizin için güvenli bir anahtar üretecek.
       - key: DJANGO_DEBUG
