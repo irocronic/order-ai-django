@@ -33,7 +33,7 @@ if DEBUG:
 
 AUTH_USER_MODEL = 'core.CustomUser'
 
-# --- UYGULAMA TANIMLARI (CACHE EKLENDI) ---
+# --- UYGULAMA TANIMLARI ---
 INSTALLED_APPS = [
     'whitenoise.runserver_nostatic',
     'corsheaders',
@@ -48,7 +48,6 @@ INSTALLED_APPS = [
     'channels',
     'subscriptions',
     'core.apps.CoreConfig',
-    'django_redis',  # Redis cache için eklendi
 ]
 
 # --- ARA YAZILIMLAR ---
@@ -87,94 +86,35 @@ TEMPLATES = [
 WSGI_APPLICATION = 'makarna_project.wsgi.application'
 ASGI_APPLICATION = 'makarna_project.asgi.application'
 
-# === REDIS CONFIGURATION (PERFORMANCE İÇİN ÖN TANIMLI) ===
-REDIS_URL = os.environ.get('REDIS_URL', 'redis://localhost:6379/0')
-
-# Upstash TLS/SSL bağlantıları için
-if REDIS_URL.startswith('rediss://'):
-    REDIS_URL += '?ssl_cert_reqs=none'
-
-# --- VERİTABANI AYARLARI (RENDER PRODUCTION İÇİN OVERRIDE) ---
+# --- VERİTABANI AYARLARI (SUPABASE İÇİN OPTİMİZE EDİLDİ) ---
 DATABASES = {
     'default': {}
 }
 
-# === RENDER İÇİN ZORLA IPv4 DATABASE URL ===
-if not DEBUG:  # Production ortamında
-    # Render için IPv4 Transaction Pooler kullan
-    DATABASE_URL_OVERRIDE = "postgresql://postgres.sovfgoqxqggtizuaqqzi:0952koray1985Ka@aws-1-eu-central-1.pooler.supabase.com:6543/postgres"
-    print(f"🔄 RENDER PRODUCTION: IPv4 Database URL kullanılıyor: {DATABASE_URL_OVERRIDE[:50]}...")
-    
+DATABASE_URL_ENV = os.environ.get('DATABASE_URL')
+
+if DATABASE_URL_ENV:
+    # Supabase Transaction Pooler için optimizasyon
     DATABASES['default'] = dj_database_url.config(
-        default=DATABASE_URL_OVERRIDE,
-        conn_max_age=300,
-        ssl_require=True,
-        conn_health_checks=True,
+        default=DATABASE_URL_ENV,
+        conn_max_age=60,  # Transaction pooler için daha kısa
+        ssl_require=False,  # Pooler IPv4 proxy kullandığı için SSL'i kendisi halleder
     )
     
+    # Supabase Transaction Pooler için özel ayarlar
     DATABASES['default']['OPTIONS'] = {
-        'sslmode': 'require',
-        'connect_timeout': 5,
-        'application_name': 'orderai_render',
+        'connect_timeout': 10,
+        'options': '-c default_transaction_isolation=read_committed'
     }
     
+elif DEBUG:
+    print("--- LOKAL GELİŞTİRME: SQLite KULLANILIYOR ---")
+    DATABASES['default'] = {
+        'ENGINE': 'django.db.backends.sqlite3',
+        'NAME': BASE_DIR / 'db.sqlite3',
+    }
 else:
-    # Development için normal flow
-    DATABASE_URL_ENV = os.environ.get('DATABASE_URL')
-    
-    if DATABASE_URL_ENV:
-        DATABASES['default'] = dj_database_url.config(
-            default=DATABASE_URL_ENV,
-            conn_max_age=300,
-            ssl_require=True,
-            conn_health_checks=True,
-        )
-        
-        DATABASES['default']['OPTIONS'] = {
-            'sslmode': 'require',
-            'connect_timeout': 5,
-            'application_name': 'orderai_render',
-        }
-    else:
-        print("--- LOKAL GELİŞTİRME: SQLite KULLANILIYOR ---")
-        DATABASES['default'] = {
-            'ENGINE': 'django.db.backends.sqlite3',
-            'NAME': BASE_DIR / 'db.sqlite3',
-        }
-
-# === PERFORMANCE OPTİMİZASYONLARI ===
-# Database connection pooling
-DATABASES['default']['CONN_MAX_AGE'] = 300
-DATABASES['default']['CONN_HEALTH_CHECKS'] = True
-
-# === REDIS CACHE SİSTEMİ (HIZ İÇİN) ===
-CACHES = {
-    'default': {
-        'BACKEND': 'django_redis.cache.RedisCache',
-        'LOCATION': REDIS_URL,
-        'OPTIONS': {
-            'CLIENT_CLASS': 'django_redis.client.DefaultClient',
-            'CONNECTION_POOL_KWARGS': {
-                'max_connections': 30,
-                'retry_on_timeout': True,
-                'socket_connect_timeout': 5,
-                'socket_timeout': 5,
-            },
-            'PARSER_CLASS': 'redis.connection.HiredisParser',
-            'PICKLER': 'pickle.dumps',
-            'UNPICKLER': 'pickle.loads',
-        },
-        'KEY_PREFIX': 'orderai',
-        'TIMEOUT': 300,  # 5 dakika default cache
-        'VERSION': 1,
-    }
-}
-
-# Session'ları Redis'te sakla (hızlandırma)
-SESSION_ENGINE = 'django.contrib.sessions.backends.cache'
-SESSION_CACHE_ALIAS = 'default'
-SESSION_COOKIE_AGE = 86400  # 24 saat
-SESSION_SAVE_EVERY_REQUEST = False  # Her request'te kaydetme
+    raise Exception("DATABASE_URL ortam değişkeni ayarlanmamış ve DEBUG=False. Production için veritabanı yapılandırılmalı.")
 
 # --- ŞİFRE DOĞRULAMA ---
 AUTH_PASSWORD_VALIDATORS = [
@@ -190,23 +130,17 @@ TIME_ZONE = 'Europe/Istanbul'
 USE_I18N = True
 USE_TZ = True
 
-# --- STATİK VE MEDYA DOSYALARI (OPTİMİZE EDİLDİ) ---
+# --- STATİK VE MEDYA DOSYALARI ---
 STATIC_URL = '/static/'
 STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
-
-# WhiteNoise optimizasyonları
-STATICFILES_STORAGE = 'whitenoise.storage.CompressedStaticFilesStorage'
-WHITENOISE_USE_FINDERS = True
-WHITENOISE_AUTOREFRESH = True
-WHITENOISE_MAX_AGE = 31536000  # 1 yıl cache
-WHITENOISE_SKIP_COMPRESS_EXTENSIONS = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'zip', 'gz', 'tgz', 'bz2', 'tbz', 'xz', 'br']
+STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 
 MEDIA_URL = '/media/'
 MEDIA_ROOT = os.path.join(BASE_DIR, 'mediafiles')
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
-# --- REST FRAMEWORK AYARLARI (CACHE İLE OPTİMİZE) ---
+# --- REST FRAMEWORK AYARLARI ---
 REST_FRAMEWORK = {
     'DEFAULT_RENDERER_CLASSES': (
         'core.renderers.Utf8JSONRenderer',
@@ -219,16 +153,6 @@ REST_FRAMEWORK = {
         'rest_framework.permissions.IsAuthenticated',
     ),
     'EXCEPTION_HANDLER': 'core.exceptions.custom_exception_handler',
-    'DEFAULT_THROTTLE_CLASSES': [
-        'rest_framework.throttling.AnonRateThrottle',
-        'rest_framework.throttling.UserRateThrottle'
-    ],
-    'DEFAULT_THROTTLE_RATES': {
-        'anon': '100/hour',
-        'user': '1000/hour'
-    },
-    'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.LimitOffsetPagination',
-    'PAGE_SIZE': 20
 }
 
 # --- CORS AYARLARI ---
@@ -245,19 +169,22 @@ RENDER_EXTERNAL_URL = os.environ.get('RENDER_EXTERNAL_URL')
 if RENDER_EXTERNAL_URL:
     CORS_ALLOWED_ORIGINS.append(RENDER_EXTERNAL_URL)
 
-# === CHANNELS CONFIGURATION ===
+# === CHANNELS ve CELERY için REDIS Yapılandırması ===
+REDIS_URL = os.environ.get('REDIS_URL', 'redis://localhost:6379/0')
+
+# Upstash TLS/SSL bağlantıları için
+if REDIS_URL.startswith('rediss://'):
+    REDIS_URL += '?ssl_cert_reqs=none'
+
 CHANNEL_LAYERS = {
     'default': {
         'BACKEND': 'channels_redis.core.RedisChannelLayer',
         'CONFIG': {
             "hosts": [REDIS_URL],
-            "capacity": 1500,
-            "expiry": 60,
         },
     },
 }
 
-# === CELERY CONFIGURATION (OPTİMİZE EDİLDİ) ===
 CELERY_BROKER_URL = REDIS_URL
 CELERY_RESULT_BACKEND = REDIS_URL
 CELERY_ACCEPT_CONTENT = ['json']
@@ -265,14 +192,11 @@ CELERY_TASK_SERIALIZER = 'json'
 CELERY_RESULT_SERIALIZER = 'json'
 CELERY_TIMEZONE = TIME_ZONE
 
-# Celery 6.0 hazırlığı için
-CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP = True
-
-# === RENDER İÇİN MEMORY VE PERFORMANCE OPTİMİZE EDİLMİŞ CELERY AYARLARI ===
-CELERY_WORKER_CONCURRENCY = 2  # Memory için düşük
+# === RENDER İÇİN MEMORY OPTİMİZE EDİLMİŞ CELERY AYARLARI ===
+CELERY_WORKER_CONCURRENCY = 2  # 16'dan 2'ye düşürüldü
 CELERY_WORKER_PREFETCH_MULTIPLIER = 1
 CELERY_TASK_ACKS_LATE = True
-CELERY_WORKER_MAX_TASKS_PER_CHILD = 100
+CELERY_WORKER_MAX_TASKS_PER_CHILD = 100  # 1000'den 100'e düşürüldü
 CELERY_WORKER_DISABLE_RATE_LIMITS = True
 CELERY_TASK_REJECT_ON_WORKER_LOST = True
 
@@ -280,16 +204,7 @@ CELERY_TASK_REJECT_ON_WORKER_LOST = True
 CELERY_WORKER_POOL_RESTARTS = True
 CELERY_WORKER_MAX_MEMORY_PER_CHILD = 200000  # 200MB limit per worker
 
-# Performance optimization
-CELERY_TASK_COMPRESSION = 'gzip'
-CELERY_RESULT_COMPRESSION = 'gzip'
-CELERY_TASK_ROUTES = {
-    'send_bulk_order_notifications': {'queue': 'high_priority'},
-    'send_order_update_notification': {'queue': 'high_priority'},
-    'cleanup_old_notifications': {'queue': 'low_priority'},
-}
-
-# --- SIMPLE JWT AYARLARI (OPTİMİZE EDİLDİ) ---
+# --- SIMPLE JWT AYARLARI ---
 SIMPLE_JWT = {
     'ACCESS_TOKEN_LIFETIME': timedelta(minutes=int(os.environ.get('JWT_ACCESS_TOKEN_LIFETIME_MINUTES', '60'))),
     'REFRESH_TOKEN_LIFETIME': timedelta(days=int(os.environ.get('JWT_REFRESH_TOKEN_LIFETIME_DAYS', '7'))),
@@ -378,11 +293,11 @@ if not GOOGLE_APPLICATION_CREDENTIALS:
 
 ANDROID_PACKAGE_NAME = os.environ.get('ANDROID_PACKAGE_NAME', 'com.orderai.app')
 
-# === SOCKET.IO AYARLARI (OPTİMİZE EDİLDİ) ===
+# === SOCKET.IO AYARLARI ===
 SOCKETIO_SETTINGS = {
-    'ping_timeout': 30000,  # 60000'den 30000'e düşürüldü
-    'ping_interval': 15000,  # 25000'den 15000'e düşürüldü
-    'max_http_buffer_size': 500000,  # 1MB'dan 500KB'a düşürüldü
+    'ping_timeout': 60000,
+    'ping_interval': 25000,
+    'max_http_buffer_size': 1000000,
     'allow_upgrades': True,
     'compression': True,
     'cookie': False,
@@ -391,51 +306,15 @@ SOCKETIO_SETTINGS = {
 
 SOCKETIO_SETTINGS['cors_allowed_origins'] = CORS_ALLOWED_ORIGINS
 
-print("🚀 Production ortam - High Performance Socket.IO ayarları kullanılıyor")
+print("🏠 Production ortam - Memory Optimized Socket.IO ayarları kullanılıyor")
 
 SOCKETIO_ASYNC_MODE = 'threading'
 
-# === LOGGING CONFIGURATION (PERFORMANCE İÇİN OPTİMİZE) ===
-LOGGING = {
-    'version': 1,
-    'disable_existing_loggers': False,
-    'formatters': {
-        'verbose': {
-            'format': '{levelname} {asctime} {module} {message}',
-            'style': '{',
-        },
-    },
-    'handlers': {
-        'console': {
-            'class': 'logging.StreamHandler',
-            'formatter': 'verbose'
-        },
-    },
-    'root': {
-        'handlers': ['console'],
-        'level': 'INFO',
-    },
-    'loggers': {
-        'django.db.backends': {
-            'level': 'WARNING',  # SQL query log'larını azalt
-            'handlers': ['console'],
-            'propagate': False,
-        },
-    },
-}
-
 # === DEBUG LOG AYARLARI ===
-print(f"🔧 Socket.IO Ayarları (Optimized):")
+print(f"🔧 Socket.IO Ayarları:")
 print(f"   - Ping Timeout: {SOCKETIO_SETTINGS['ping_timeout']}ms")
 print(f"   - Ping Interval: {SOCKETIO_SETTINGS['ping_interval']}ms")
-print(f"   - Max HTTP Buffer: {SOCKETIO_SETTINGS['max_http_buffer_size']} bytes")
 print(f"🔧 Celery Memory Optimization:")
 print(f"   - Worker Concurrency: {CELERY_WORKER_CONCURRENCY}")
 print(f"   - Max Tasks Per Child: {CELERY_WORKER_MAX_TASKS_PER_CHILD}")
 print(f"   - Max Memory Per Child: {CELERY_WORKER_MAX_MEMORY_PER_CHILD}KB")
-print(f"🔧 Database Optimization:")
-print(f"   - Connection Max Age: {DATABASES['default']['CONN_MAX_AGE']}s")
-print(f"   - Health Checks: {DATABASES['default']['CONN_HEALTH_CHECKS']}")
-print(f"🔧 Cache System:")
-print(f"   - Backend: Redis")
-print(f"   - Default Timeout: {CACHES['default']['TIMEOUT']}s")
