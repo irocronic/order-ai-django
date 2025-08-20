@@ -1,11 +1,11 @@
 services:
-  # 1. Django Web Servisi (IPv4 DATABASE URL ile)
+  # 1. Django Web Servisi (UVICORN KOMUT DÜZELTİLDİ)
   - type: web
     name: orderai-web
     env: python
     plan: starter
     buildCommand: "./build.sh"
-    startCommand: "uvicorn makarna_project.asgi:application --host 0.0.0.0 --port $PORT --workers 1 --worker-connections 1000 --backlog 2048"
+    startCommand: "uvicorn makarna_project.asgi:application --host 0.0.0.0 --port $PORT --workers 1"
     healthCheckPath: /
     envVars:
       - key: PYTHON_VERSION
@@ -39,7 +39,7 @@ services:
       - key: GOOGLE_APPLICATION_CREDENTIALS_PATH
         value: "/etc/secrets/google-credentials.json"
 
-  # 2. Celery Worker Servisi (IPv4 DATABASE URL ile)
+  # 2. Celery Worker Servisi (MEMORY VE PERFORMANCE OPTİMİZE EDİLDİ)
   - type: worker
     name: orderai-worker
     env: python
@@ -57,7 +57,7 @@ services:
       - key: DATABASE_URL
         value: "postgresql://postgres.sovfgoqxqggtizuaqqzi:0952koray1985Ka@aws-1-eu-central-1.pooler.supabase.com:6543/postgres"
       - key: REDIS_URL
-        value: "rediss://default:ASbBAAImcDE3ZmUyMGJkNzhjMTg0MDQyYTI0YTY5MzE0ZDY4MDhmZnAxOTkyMQ@artistic-kiwi-9921.upstash.io:6379"
+        value: "rediss://default:ASbBAAImcDE3ZmUyMGJkNzhjMTg0NDQyYTI0YTY5MzE0ZDY4MDhmZnAxOTkyMQ@artistic-kiwi-9921.upstash.io:6379"
       
       # --- Heroku'dan Gelen Gerekli Değişkenler (Worker için de gerekli) ---
       - key: ANDROID_PACKAGE_NAME
