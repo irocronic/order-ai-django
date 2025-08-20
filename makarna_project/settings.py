@@ -94,37 +94,53 @@ REDIS_URL = os.environ.get('REDIS_URL', 'redis://localhost:6379/0')
 if REDIS_URL.startswith('rediss://'):
     REDIS_URL += '?ssl_cert_reqs=none'
 
-# --- VERİTABANI AYARLARI (PSYCOPG3 İLE UYUMLU) ---
+# --- VERİTABANI AYARLARI (RENDER PRODUCTION İÇİN OVERRIDE) ---
 DATABASES = {
     'default': {}
 }
 
-DATABASE_URL_ENV = os.environ.get('DATABASE_URL')
-
-if DATABASE_URL_ENV:
-    # Direct connection için (en hızlı) - psycopg3 uyumlu
+# === RENDER İÇİN ZORLA IPv4 DATABASE URL ===
+if not DEBUG:  # Production ortamında
+    # Render için IPv4 Transaction Pooler kullan
+    DATABASE_URL_OVERRIDE = "postgresql://postgres.sovfgoqxqggtizuaqqzi:0952koray1985Ka@aws-1-eu-central-1.pooler.supabase.com:6543/postgres"
+    print(f"🔄 RENDER PRODUCTION: IPv4 Database URL kullanılıyor: {DATABASE_URL_OVERRIDE[:50]}...")
+    
     DATABASES['default'] = dj_database_url.config(
-        default=DATABASE_URL_ENV,
-        conn_max_age=300,  # Daha uzun connection reuse (5 dakika)
+        default=DATABASE_URL_OVERRIDE,
+        conn_max_age=300,
         ssl_require=True,
         conn_health_checks=True,
     )
     
-    # psycopg3 uyumlu ayarlar
     DATABASES['default']['OPTIONS'] = {
         'sslmode': 'require',
         'connect_timeout': 5,
         'application_name': 'orderai_render',
     }
     
-elif DEBUG:
-    print("--- LOKAL GELİŞTİRME: SQLite KULLANILIYOR ---")
-    DATABASES['default'] = {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
-    }
 else:
-    raise Exception("DATABASE_URL ortam değişkeni ayarlanmamış ve DEBUG=False. Production için veritabanı yapılandırılmalı.")
+    # Development için normal flow
+    DATABASE_URL_ENV = os.environ.get('DATABASE_URL')
+    
+    if DATABASE_URL_ENV:
+        DATABASES['default'] = dj_database_url.config(
+            default=DATABASE_URL_ENV,
+            conn_max_age=300,
+            ssl_require=True,
+            conn_health_checks=True,
+        )
+        
+        DATABASES['default']['OPTIONS'] = {
+            'sslmode': 'require',
+            'connect_timeout': 5,
+            'application_name': 'orderai_render',
+        }
+    else:
+        print("--- LOKAL GELİŞTİRME: SQLite KULLANILIYOR ---")
+        DATABASES['default'] = {
+            'ENGINE': 'django.db.backends.sqlite3',
+            'NAME': BASE_DIR / 'db.sqlite3',
+        }
 
 # === PERFORMANCE OPTİMİZASYONLARI ===
 # Database connection pooling
