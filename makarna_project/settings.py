@@ -5,7 +5,7 @@ import dj_database_url
 from dotenv import load_dotenv
 import json
 
-# --- TEMEL AYARLAR ---
+# --- TEMEL AYARLARI ---
 BASE_DIR = Path(__file__).resolve().parent.parent
 dotenv_path = os.path.join(BASE_DIR, '.env')
 if os.path.exists(dotenv_path):
@@ -14,30 +14,27 @@ if os.path.exists(dotenv_path):
 SECRET_KEY = os.environ.get('DJANGO_SECRET_KEY', 'django-insecure-yerel-icin-guvensiz-bir-anahtar')
 DEBUG = os.environ.get('DJANGO_DEBUG', 'True') == 'True'
 
-# --- HOST AYARLARI ---
-HEROKU_APP_NAME = "makarna-project-2025-b5ed84d445c5.herokuapp.com"
+# --- HOST AYARLARI (RENDER İÇİN GÜNCELLENDİ) ---
+# --- GÜNCELLEME BAŞLANGICI ---
+# Bu bölüm, Heroku'ya özel yapılandırmayı kaldırıp Render'ın dinamik URL'sini
+# ve diğer ortam değişkenlerini kullanacak şekilde yeniden düzenlendi.
+ALLOWED_HOSTS = []
 
+# Render.com, deploy edilen servisin URL'sini bu ortam değişkeni ile sağlar.
+RENDER_EXTERNAL_HOSTNAME = os.environ.get('RENDER_EXTERNAL_HOSTNAME')
+if RENDER_EXTERNAL_HOSTNAME:
+    ALLOWED_HOSTS.append(RENDER_EXTERNAL_HOSTNAME)
+
+# Kendi özel alan adınızı (custom domain) da bir ortam değişkeninden ekleyebilirsiniz.
+# Örnek: DJANGO_ALLOWED_HOSTS=ornekalanadim.com,www.ornekalanadim.com
 allowed_hosts_env = os.environ.get('DJANGO_ALLOWED_HOSTS')
 if allowed_hosts_env:
-    ALLOWED_HOSTS = [host.strip() for host in allowed_hosts_env.split(',') if host.strip()]
-else:
-    ALLOWED_HOSTS = []
-    if DEBUG:
-        ALLOWED_HOSTS.extend([
-            'localhost',
-            '127.0.0.1',
-            '172.20.10.7',
-            '192.168.1.249',
-            '192.168.1.106',
-            HEROKU_APP_NAME,
-        ])
-    else:
-        if HEROKU_APP_NAME:
-            ALLOWED_HOSTS.append(HEROKU_APP_NAME)
-        pass
+    ALLOWED_HOSTS.extend([host.strip() for host in allowed_hosts_env.split(',') if host.strip()])
 
-if not DEBUG and not ALLOWED_HOSTS:
-    raise ValueError("Production'da ALLOWED_HOSTS boş olamaz. Lütfen DJANGO_ALLOWED_HOSTS ortam değişkenini ayarlayın.")
+# Geliştirme ortamı (DEBUG=True) için localhost ekler.
+if DEBUG:
+    ALLOWED_HOSTS.extend(['localhost', '127.0.0.1'])
+# --- GÜNCELLEME SONU ---
 
 AUTH_USER_MODEL = 'core.CustomUser'
 
@@ -102,11 +99,14 @@ DATABASES = {
 DATABASE_URL_ENV = os.environ.get('DATABASE_URL')
 
 if DATABASE_URL_ENV:
+    # --- GÜNCELLEME BAŞLANGICI ---
+    # conn_max_age=0 Heroku için önerilir, Render için 600 daha iyi bir varsayılandır.
     DATABASES['default'] = dj_database_url.config(
         default=DATABASE_URL_ENV,
-        conn_max_age=0,
+        conn_max_age=600,
         ssl_require=os.environ.get('DATABASE_SSL_REQUIRE', 'True') == 'True'
     )
+    # --- GÜNCELLEME SONU ---
 elif DEBUG:
     print("--- LOKAL GELİŞTİRME: SQLite KULLANILIYOR ---")
     DATABASES['default'] = {
@@ -164,14 +164,24 @@ CORS_ALLOWED_ORIGINS = [
     "http://localhost:60387",
 ]
 
+# --- GÜNCELLEME BAŞLANGICI ---
+# Render URL'sini de CORS'a eklemek için ortam değişkeni kullanıyoruz.
+# render.yaml dosyasında RENDER_EXTERNAL_URL'yi tanımlamanız gerekecektir.
+RENDER_EXTERNAL_URL = os.environ.get('RENDER_EXTERNAL_URL')
+if RENDER_EXTERNAL_URL:
+    CORS_ALLOWED_ORIGINS.append(RENDER_EXTERNAL_URL)
+# --- GÜNCELLEME SONU ---
+
+
 # === CHANNELS ve CELERY için REDIS Yapılandırması ===
 REDIS_URL = os.environ.get('REDIS_URL', 'redis://localhost:6379/0')
 
-# === DEĞİŞİKLİK BURADA: SSL ayarı doğru formata getirildi ===
-# Heroku'nun Redis'i SSL kullanır (rediss://). 'redis' kütüphanesi,
-# sertifika doğrulamasını atlamak için URL'de "ssl_cert_reqs=none" parametresini bekler.
+# --- GÜNCELLEME BAŞLANGICI ---
+# Upstash TLS/SSL bağlantıları için bu kontrol önemlidir.
+# Bu satır zaten doğru, bir değişiklik gerekmiyor, sadece teyit ediliyor.
 if REDIS_URL.startswith('rediss://'):
     REDIS_URL += '?ssl_cert_reqs=none'
+# --- GÜNCELLEME SONU ---
 
 CHANNEL_LAYERS = {
     'default': {
@@ -266,27 +276,21 @@ if not DEBUG and not ADMIN_EMAIL_RECIPIENTS:
 elif DEBUG and not ADMIN_EMAIL_RECIPIENTS:
     print("UYARI: Geliştirme ortamında yeni üyelik bildirimleri için DJANGO_ADMIN_EMAIL_RECIPIENTS ayarlanmamış. Bildirim gönderilmeyecek.")
 
-# === GOOGLE & SUBSCRIPTION AYARLARI ===
-GOOGLE_APPLICATION_CREDENTIALS = None
-GOOGLE_SERVICE_JSON_STR = os.environ.get("GOOGLE_SERVICE_JSON")
+# === GOOGLE & SUBSCRIPTION AYARLARI (RENDER İÇİN GÜNCELLENDİ) ===
+# --- GÜNCELLEME BAŞLANGICI ---
+# Render'da "Secret File" olarak eklenen dosyanın yolunu okumak için bu yapı daha güvenilirdir.
+# GOOGLE_APPLICATION_CREDENTIALS_PATH ortam değişkenini Render panelinde
+# /etc/secrets/google-credentials.json olarak ayarlayacaksınız.
+GOOGLE_APPLICATION_CREDENTIALS = os.environ.get('GOOGLE_APPLICATION_CREDENTIALS_PATH')
 
-if GOOGLE_SERVICE_JSON_STR:
-    try:
-        credentials_json = json.loads(GOOGLE_SERVICE_JSON_STR)
-        credentials_path = os.path.join(BASE_DIR, 'google-credentials.json')
-        with open(credentials_path, 'w') as f:
-            json.dump(credentials_json, f)
-        
-        os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = credentials_path
-        GOOGLE_APPLICATION_CREDENTIALS = credentials_path
-        print("✅ Google servis anahtarı ortam değişkeninden başarıyla yüklendi.")
-
-    except (json.JSONDecodeError, TypeError) as e:
-        print(f"❌ UYARI: GOOGLE_SERVICE_JSON ortam değişkeni geçerli bir JSON değil. Hata: {e}")
-    except Exception as e:
-        print(f"❌ UYARI: Google servis anahtarı dosyası oluşturulurken bir hata oluştu: {e}")
-else:
-    print("⚠️ UYARI: GOOGLE_SERVICE_JSON ortam değişkeni ayarlanmamış. Abonelik doğrulama çalışmayacak.")
+if not GOOGLE_APPLICATION_CREDENTIALS:
+    # Lokal geliştirme için projenin ana dizinindeki dosyayı kullanır.
+    local_credentials_path = os.path.join(BASE_DIR, 'google-credentials.json')
+    if os.path.exists(local_credentials_path):
+        GOOGLE_APPLICATION_CREDENTIALS = local_credentials_path
+    else:
+        print("UYARI: GOOGLE_APPLICATION_CREDENTIALS_PATH ayarlanmamış ve lokalde google-credentials.json bulunamadı. Abonelik doğrulama çalışmayabilir.")
+# --- GÜNCELLEME SONU ---
 
 ANDROID_PACKAGE_NAME = os.environ.get('ANDROID_PACKAGE_NAME', 'com.orderai.app')
 
@@ -298,53 +302,39 @@ SOCKETIO_SETTINGS = {
     'allow_upgrades': True,
     'compression': True,
     'cookie': False,
-    'cors_allowed_origins': CORS_ALLOWED_ORIGINS,
     'cors_credentials': True,
 }
 
-if 'DYNO' in os.environ or 'herokuapp.com' in os.environ.get('HEROKU_APP_NAME', ''):
-    print("🔧 Heroku ortamı tespit edildi - Socket.IO ayarları optimize ediliyor...")
-    SOCKETIO_SETTINGS.update({
-        'ping_timeout': 30000,
-        'ping_interval': 10000,
-        'engineio_logger': True,
-        'socketio_logger': True,
-        'transports': ['websocket', 'polling'],
-        'upgrade_timeout': 10000,
-        'close_timeout': 10000,
-    })
-else:
-    print("🏠 Local/Production ortam - Normal Socket.IO ayarları kullanılıyor")
+# --- GÜNCELLEME BAŞLANGICI ---
+# CORS_ALLOWED_ORIGINS listesi yukarıda dinamik olarak ayarlandığı için
+# buradaki referansı direkt o listeye yapıyoruz.
+SOCKETIO_SETTINGS['cors_allowed_origins'] = CORS_ALLOWED_ORIGINS
+# --- GÜNCELLEME SONU ---
+
+
+# --- GÜNCELLEME BAŞLANGICI ---
+# Heroku'ya özel Dyno kontrolü kaldırıldı. Render için bu tür optimizasyonlara
+# genellikle gerek yoktur veya platform tarafından yönetilir.
+print("🏠 Local/Production ortam - Normal Socket.IO ayarları kullanılıyor")
+# --- GÜNCELLEME SONU ---
 
 SOCKETIO_ASYNC_MODE = 'threading'
 
-if 'DYNO' in os.environ:
-    DATA_UPLOAD_MAX_MEMORY_SIZE = 5 * 1024 * 1024
-    FILE_UPLOAD_MAX_MEMORY_SIZE = 5 * 1024 * 1024
-    CONN_MAX_AGE = 0
-else:
-    CONN_MAX_AGE = 60
+# --- GÜNCELLEME BAŞLANGICI ---
+# Heroku'ya özel Dyno kontrolü kaldırıldı. CONN_MAX_AGE ayarı veritabanı
+# bölümüne taşındı.
+# --- GÜNCELLEME SONU ---
 
 # === DYNO KEEP-ALIVE SİSTEMİ (OPSİYONEL) ===
-HEROKU_KEEP_ALIVE_ENABLED = os.environ.get('HEROKU_KEEP_ALIVE_ENABLED', 'True') == 'True'
-HEROKU_KEEP_ALIVE_URL = os.environ.get('HEROKU_KEEP_ALIVE_URL', f"https://{HEROKU_APP_NAME}/api/health/")
-
-if 'DYNO' in os.environ and HEROKU_KEEP_ALIVE_ENABLED:
-    print(f"🏃‍♂️ Heroku Keep-Alive sistemi aktif: {HEROKU_KEEP_ALIVE_URL}")
-    try:
-        from celery.schedules import crontab
-        CELERYBEAT_SCHEDULE = getattr(globals(), 'CELERYBEAT_SCHEDULE', {})
-        CELERYBEAT_SCHEDULE['heroku-keep-alive'] = {
-            'task': 'core.tasks.keep_dyno_awake',
-            'schedule': crontab(minute='*/25'),
-            'kwargs': {'url': HEROKU_KEEP_ALIVE_URL}
-        }
-    except ImportError:
-        print("⚠️ Celery bulunamadı - Keep-alive task schedule edilemedi")
+# --- GÜNCELLEME BAŞLANGICI ---
+# Bu bölüm Heroku'ya özel olduğu için kaldırıldı veya yorum satırına alındı.
+# Render'ın "Free" planları uykuya dalabilir, ancak ücretli planlarda uygulama sürekli çalışır.
+# Gerekirse, Render'ın Cron Jobs özelliğini kullanarak bir "health check" endpoint'ine istek atabilirsiniz.
+# HEROKU_KEEP_ALIVE_ENABLED = os.environ.get('HEROKU_KEEP_ALIVE_ENABLED', 'True') == 'True'
+# ... (ilgili diğer satırlar)
+# --- GÜNCELLEME SONU ---
 
 # === DEBUG LOG AYARLARI ===
 print(f"🔧 Socket.IO Ayarları:")
 print(f"   - Ping Timeout: {SOCKETIO_SETTINGS['ping_timeout']}ms")
 print(f"   - Ping Interval: {SOCKETIO_SETTINGS['ping_interval']}ms")
-print(f"   - Heroku Mode: {'DYNO' in os.environ}")
-print(f"   - Keep-Alive: {HEROKU_KEEP_ALIVE_ENABLED}")
