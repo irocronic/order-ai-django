@@ -1,9 +1,9 @@
 services:
-  # 1. Django Web Servisi (ASGI sunucusu ile Socket.IO için)
+  # 1. Django Web Service (ASGI server for Socket.IO)
   - type: web
     name: orderai-web
     env: python
-    plan: free # Başlangıç için ücretsiz plan. İstediğiniz zaman "starter" olarak değiştirebilirsiniz.
+    plan: free # Free plan for start. You can change to "starter" anytime.
     buildCommand: "./build.sh"
     startCommand: "uvicorn makarna_project.asgi:application --host 0.0.0.0 --port $PORT"
     healthCheckPath: /
@@ -11,15 +11,15 @@ services:
       - key: PYTHON_VERSION
         value: 3.11.4
       - key: DJANGO_SECRET_KEY
-        generateValue: true # Render sizin için güvenli bir anahtar üretecek.
+        generateValue: true # Render will generate a secure key for you.
       - key: DJANGO_DEBUG
-        value: false # Production için her zaman false olmalı.
+        value: false # Should always be false for production.
       - key: DATABASE_URL
-        value: "postgresql://postgres:********@db.sovfgoqxqggtizuaqqzi.supabase.co:5432/postgres" # SİZİN SUPABASE URL'NİZ
+        value: "postgresql://postgres:********@db.sovfgoqxqggtizuaqqzi.supabase.co:5432/postgres" # YOUR SUPABASE URL
       - key: REDIS_URL
-        value: "rediss://default:********@artistic-kiwi-9921.upstash.io:6379" # SİZİN UPSTASH URL'NİZ
+        value: "rediss://default:********@artistic-kiwi-9921.upstash.io:6379" # YOUR UPSTASH URL
       
-      # --- Heroku'dan Gelen Gerekli Değişkenler ---
+      # --- Required Variables from Heroku ---
       - key: ANDROID_PACKAGE_NAME
         value: "com.orderai.app"
       - key: DJANGO_ADMIN_EMAIL_RECIPIENTS
@@ -27,7 +27,7 @@ services:
       - key: DJANGO_EMAIL_HOST_USER
         value: "akma.koray@gmail.com"
       - key: DJANGO_EMAIL_HOST_PASSWORD
-        sync: false # ÖNEMLİ: Bu değeri Render panelinden manuel olarak girin.
+        sync: false # IMPORTANT: Enter this value manually from Render panel.
       - key: DJANGO_SECURE_SSL_REDIRECT
         value: "True"
       - key: DJANGO_SESSION_COOKIE_SECURE
@@ -37,13 +37,13 @@ services:
       - key: PYTHONUNBUFFERED
         value: "1"
       - key: GOOGLE_APPLICATION_CREDENTIALS_PATH
-        value: "/etc/secrets/google-credentials.json" # Secret File için yol
+        value: "/etc/secrets/google-credentials.json" # Path for Secret File
 
-  # 2. Celery Worker Servisi
+  # 2. Celery Worker Service
   - type: worker
     name: orderai-worker
     env: python
-    plan: free # Başlangıç için ücretsiz plan.
+    plan: free # Free plan for start.
     buildCommand: "pip install -r requirements.txt"
     startCommand: "celery -A makarna_project worker -l info"
     envVars:
@@ -55,11 +55,11 @@ services:
           name: orderai-web
           envVarKey: DJANGO_SECRET_KEY
       - key: DATABASE_URL
-        value: "postgresql://postgres:********@db.sovfgoqxqggtizuaqqzi.supabase.co:5432/postgres" # SİZİN SUPABASE URL'NİZ
+        value: "postgresql://postgres:********@db.sovfgoqxqggtizuaqqzi.supabase.co:5432/postgres" # YOUR SUPABASE URL
       - key: REDIS_URL
-        value: "rediss://default:********@artistic-kiwi-9921.upstash.io:6379" # SİZİN UPSTASH URL'NİZ
+        value: "rediss://default:********@artistic-kiwi-9921.upstash.io:6379" # YOUR UPSTASH URL
       
-      # --- Heroku'dan Gelen Gerekli Değişkenler (Worker için de gerekli) ---
+      # --- Required Variables (Also needed for Worker) ---
       - key: ANDROID_PACKAGE_NAME
         value: "com.orderai.app"
       - key: DJANGO_ADMIN_EMAIL_RECIPIENTS
@@ -67,8 +67,8 @@ services:
       - key: DJANGO_EMAIL_HOST_USER
         value: "akma.koray@gmail.com"
       - key: DJANGO_EMAIL_HOST_PASSWORD
-        sync: false # ÖNEMLİ: Bu değeri Render panelinden manuel olarak girin.
+        sync: false # IMPORTANT: Enter this value manually from Render panel.
       - key: PYTHONUNBUFFERED
         value: "1"
       - key: GOOGLE_APPLICATION_CREDENTIALS_PATH
-        value: "/etc/secrets/google-credentials.json" # Secret File için yol
+        value: "/etc/secrets/google-credentials.json" # Path for Secret File
