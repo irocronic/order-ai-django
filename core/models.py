@@ -29,6 +29,8 @@ STAFF_PERMISSION_CHOICES = [
     ('manage_campaigns', 'Kampanya Yönetimi'),
 ]
 
+# ==================== GÜNCELLEME BURADA BAŞLIYOR ====================
+# Eksik olan 'waiting_customer_seated' değeri eklendi.
 NOTIFICATION_EVENT_TYPES = [
     ('guest_order_pending_approval', 'Misafir Siparişi Onay Bekliyor'),
     ('order_pending_approval', 'Kayıtlı Kullanıcı Siparişi Onay Bekliyor'),
@@ -52,9 +54,11 @@ NOTIFICATION_EVENT_TYPES = [
     ('waiting_customer_added', 'Yeni Bekleyen Müşteri Eklendi'),
     ('waiting_customer_updated', 'Bekleyen Müşteri Güncellendi'),
     ('waiting_customer_removed', 'Bekleyen Müşteri Silindi'),
+    ('waiting_customer_seated', 'Bekleyen Müşteri Oturtuldu'), # <-- YENİ EKLENEN SATIR
     ('stock_adjusted', 'Stok Ayarlandı/Güncellendi'),
     ('pager_status_updated', 'Çağrı Cihazı Durumu Güncellendi'),
 ]
+# ==================== GÜNCELLEME BURADA BİTİYOR ====================
 
 # Varsayılan Bildirim İzinleri
 DEFAULT_BUSINESS_OWNER_NOTIFICATION_PERMISSIONS = [key for key, desc in NOTIFICATION_EVENT_TYPES]
