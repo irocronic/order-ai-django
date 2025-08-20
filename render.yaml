@@ -3,37 +3,47 @@ services:
   - type: web
     name: orderai-web
     env: python
-    plan: starter # İhtiyacınıza göre değiştirin (örn: standard)
+    plan: free # Başlangıç için ücretsiz plan. İstediğiniz zaman "starter" olarak değiştirebilirsiniz.
     buildCommand: "./build.sh"
     startCommand: "uvicorn makarna_project.asgi:application --host 0.0.0.0 --port $PORT"
     healthCheckPath: /
     envVars:
       - key: PYTHON_VERSION
-        value: 3.11.4 # Projenizin Python sürümüyle eşleştirin
+        value: 3.11.4 # requirements.txt dosyanızdaki sürüme göre güncelleyebilirsiniz.
       - key: DJANGO_SECRET_KEY
-        generateValue: true # Render sizin için güvenli bir anahtar üretecek
+        generateValue: true # Render sizin için güvenli bir anahtar üretecek.
       - key: DJANGO_DEBUG
-        value: false
-      # --- GÜNCELLEME BAŞLANGICI: Harici servis URL'leri doğrudan eklendi ---
+        value: false # Production için her zaman false olmalı.
       - key: DATABASE_URL
         value: "postgresql://postgres:********@db.sovfgoqxqggtizuaqqzi.supabase.co:5432/postgres" # SİZİN SUPABASE URL'NİZ
       - key: REDIS_URL
         value: "rediss://default:********@artistic-kiwi-9921.upstash.io:6379" # SİZİN UPSTASH URL'NİZ
-      # --- GÜNCELLEME SONU ---
       
-      # --- HEROKU'DAN ALDIĞINIZ DİĞER ORTAM DEĞİŞKENLERİNİ BURAYA EKLEYİN ---
-      # ÖRNEK:
+      # --- Heroku'dan Gelen Gerekli Değişkenler ---
       - key: ANDROID_PACKAGE_NAME
-        value: com.orderai.app
+        value: "com.orderai.app"
       - key: DJANGO_ADMIN_EMAIL_RECIPIENTS
-        value: "sizin-admin-email@adresiniz.com"
-      # GOOGLE_SERVICE_JSON gibi çok satırlı değişkenleri Render panelinden "Secret File" olarak eklemek daha sağlıklıdır.
+        value: "akma.koray@gmail.com"
+      - key: DJANGO_EMAIL_HOST_USER
+        value: "akma.koray@gmail.com"
+      - key: DJANGO_EMAIL_HOST_PASSWORD
+        sync: false # ÖNEMLİ: Bu değeri Render panelinden manuel olarak girin.
+      - key: DJANGO_SECURE_SSL_REDIRECT
+        value: "True"
+      - key: DJANGO_SESSION_COOKIE_SECURE
+        value: "True"
+      - key: DJANGO_CSRF_COOKIE_SECURE
+        value: "True"
+      - key: PYTHONUNBUFFERED
+        value: "1"
+      - key: GOOGLE_APPLICATION_CREDENTIALS_PATH
+        value: "/etc/secrets/google-credentials.json" # Secret File için yol
 
   # 2. Celery Worker Servisi
   - type: worker
     name: orderai-worker
     env: python
-    plan: starter
+    plan: free # Başlangıç için ücretsiz plan.
     buildCommand: "pip install -r requirements.txt"
     startCommand: "celery -A makarna_project worker -l info"
     envVars:
@@ -44,28 +54,21 @@ services:
           type: web
           name: orderai-web
           envVarKey: DJANGO_SECRET_KEY
-      # --- GÜNCELLEME BAŞLANGICI: Harici servis URL'leri doğrudan eklendi ---
       - key: DATABASE_URL
         value: "postgresql://postgres:********@db.sovfgoqxqggtizuaqqzi.supabase.co:5432/postgres" # SİZİN SUPABASE URL'NİZ
       - key: REDIS_URL
         value: "rediss://default:********@artistic-kiwi-9921.upstash.io:6379" # SİZİN UPSTASH URL'NİZ
-      # --- GÜNCELLEME SONU ---
-
-      # --- Web servisi ile aynı diğer ortam değişkenlerini buraya da ekleyin ---
+      
+      # --- Heroku'dan Gelen Gerekli Değişkenler (Worker için de gerekli) ---
       - key: ANDROID_PACKAGE_NAME
-        value: com.orderai.app
+        value: "com.orderai.app"
       - key: DJANGO_ADMIN_EMAIL_RECIPIENTS
-        value: "sizin-admin-email@adresiniz.com"
-
-# --- GÜNCELLEME BAŞLANGICI: Harici servis tanımlamaları kaldırıldı ---
-# URL'ler doğrudan yukarıdaki envVars'a eklendiği için bu bloklara artık gerek yok.
-# Bu, yapılandırmayı daha sade hale getirir.
-#
-# - type: pserv
-#   name: orderai-db
-#   ...
-#
-# - type: redis
-#   name: orderai-redis
-#   ...
-# --- GÜNCELLEME SONU ---
+        value: "akma.koray@gmail.com"
+      - key: DJANGO_EMAIL_HOST_USER
+        value: "akma.koray@gmail.com"
+      - key: DJANGO_EMAIL_HOST_PASSWORD
+        sync: false # ÖNEMLİ: Bu değeri Render panelinden manuel olarak girin.
+      - key: PYTHONUNBUFFERED
+        value: "1"
+      - key: GOOGLE_APPLICATION_CREDENTIALS_PATH
+        value: "/etc/secrets/google-credentials.json" # Secret File için yol
