@@ -15,7 +15,7 @@ services:
       - key: DJANGO_DEBUG
         value: false # Should always be false for production.
       - key: DATABASE_URL
-        value: "postgresql://postgres:********@db.sovfgoqxqggtizuaqqzi.supabase.co:5432/postgres" # YOUR SUPABASE URL
+        value: "postgresql://postgres:[YOUR-PASSWORD]@db.sovfgoqxqggtizuaqqzi.supabase.co:5432/postgres?sslmode=require&options=-c%20default_transaction_isolation=read_committed"
       - key: REDIS_URL
         value: "rediss://default:********@artistic-kiwi-9921.upstash.io:6379" # YOUR UPSTASH URL
       
@@ -55,7 +55,7 @@ services:
           name: orderai-web
           envVarKey: DJANGO_SECRET_KEY
       - key: DATABASE_URL
-        value: "postgresql://postgres:********@db.sovfgoqxqggtizuaqqzi.supabase.co:5432/postgres" # YOUR SUPABASE URL
+        value: "postgresql://postgres:[YOUR-PASSWORD]@db.sovfgoqxqggtizuaqqzi.supabase.co:5432/postgres?sslmode=require&options=-c%20default_transaction_isolation=read_committed"
       - key: REDIS_URL
         value: "rediss://default:********@artistic-kiwi-9921.upstash.io:6379" # YOUR UPSTASH URL
       
