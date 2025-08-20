@@ -1,11 +1,11 @@
 services:
-  # 1. Django Web Servisi (ASGI sunucusu ile Socket.IO için)
+  # 1. Django Web Servisi (PERFORMANCE OPTİMİZE EDİLDİ)
   - type: web
     name: orderai-web
     env: python
-    plan: free
+    plan: starter  # free'den starter'a yükseltildi
     buildCommand: "./build.sh"
-    startCommand: "uvicorn makarna_project.asgi:application --host 0.0.0.0 --port $PORT"
+    startCommand: "uvicorn makarna_project.asgi:application --host 0.0.0.0 --port $PORT --workers 1 --worker-connections 1000 --backlog 2048"
     healthCheckPath: /
     envVars:
       - key: PYTHON_VERSION
@@ -15,7 +15,7 @@ services:
       - key: DJANGO_DEBUG
         value: false
       - key: DATABASE_URL
-        value: "postgresql://postgres.sovfgoqxqggtizuaqqzi:0952koray1985Ka@aws-1-eu-central-1.pooler.supabase.com:6543/postgres"
+        value: "postgresql://postgres:0952koray1985Ka@db.sovfgoqxqggtizuaqqzi.supabase.co:5432/postgres"
       - key: REDIS_URL
         value: "rediss://default:ASbBAAImcDE3ZmUyMGJkNzhjMTg0MDQyYTI0YTY5MzE0ZDY4MDhmZnAxOTkyMQ@artistic-kiwi-9921.upstash.io:6379"
       
@@ -39,13 +39,13 @@ services:
       - key: GOOGLE_APPLICATION_CREDENTIALS_PATH
         value: "/etc/secrets/google-credentials.json"
 
-  # 2. Celery Worker Servisi (MEMORY OPTİMİZE EDİLDİ)
+  # 2. Celery Worker Servisi (MEMORY VE PERFORMANCE OPTİMİZE EDİLDİ)
   - type: worker
     name: orderai-worker
     env: python
     plan: starter
     buildCommand: "./build.sh"
-    startCommand: "celery -A makarna_project worker -l info --concurrency=2 --max-tasks-per-child=100"
+    startCommand: "celery -A makarna_project worker -l info --concurrency=2 --max-tasks-per-child=100 --prefetch-multiplier=1"
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.4
@@ -55,7 +55,7 @@ services:
           name: orderai-web
           envVarKey: DJANGO_SECRET_KEY
       - key: DATABASE_URL
-        value: "postgresql://postgres.sovfgoqxqggtizuaqqzi:0952koray1985Ka@aws-1-eu-central-1.pooler.supabase.com:6543/postgres"
+        value: "postgresql://postgres:0952koray1985Ka@db.sovfgoqxqggtizuaqqzi.supabase.co:5432/postgres"
       - key: REDIS_URL
         value: "rediss://default:ASbBAAImcDE3ZmUyMGJkNzhjMTg0MDQyYTI0YTY5MzE0ZDY4MDhmZnAxOTkyMQ@artistic-kiwi-9921.upstash.io:6379"
       
