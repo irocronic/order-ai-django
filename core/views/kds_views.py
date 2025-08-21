@@ -95,8 +95,9 @@ class KDSOrderViewSet(viewsets.ReadOnlyModelViewSet):
 
         logger.debug(f"KDS View Query: Fetching orders for KDS '{target_kds_screen.name}' (ID: {target_kds_screen.id}), Business: '{user_business.name}' by user '{user.username}'.")
         
-        # <<< DEĞİŞİKLİK 1: status__in filtresine STATUS_READY_FOR_PICKUP eklendi >>>
-        # Bu, garson tarafından alınmayı bekleyen siparişlerin KDS'te görünür kalmasını sağlar.
+        # ================= OPTİMİZASYON GÜNCELLEMESİ =================
+        # Prefetch sorgusunu daha detaylı hale getirerek OrderItem'a bağlı
+        # menu_item ve variant gibi verileri de tek seferde çekiyoruz.
         relevant_orders = Order.objects.filter(
             business=user_business,
             is_paid=False,
@@ -105,9 +106,6 @@ class KDSOrderViewSet(viewsets.ReadOnlyModelViewSet):
         ).exclude(
             status__in=[Order.STATUS_COMPLETED, Order.STATUS_CANCELLED, Order.STATUS_REJECTED]
         ).annotate(
-            # <<< DEĞİŞİKLİK 2: Alt sorgu daha net hale getirildi >>>
-            # Bir siparişin KDS'te görünmesi için, bu KDS'e ait, teslim edilmemiş ve
-            # durumu 'pending_kds' veya 'preparing_kds' olan en az bir kalemi olmalıdır.
             has_actionable_items_for_this_kds=Exists(
                 OrderItem.objects.filter(
                     order=OuterRef('pk'),
@@ -115,8 +113,8 @@ class KDSOrderViewSet(viewsets.ReadOnlyModelViewSet):
                     is_awaiting_staff_approval=False,
                     delivered=False,
                     kds_status__in=[
-                        OrderItem.KDS_ITEM_STATUS_CHOICES[0][0], # 'pending_kds'
-                        OrderItem.KDS_ITEM_STATUS_CHOICES[1][0], # 'preparing_kds'
+                        OrderItem.KDS_ITEM_STATUS_PENDING,
+                        OrderItem.KDS_ITEM_STATUS_PREPARING,
                     ]
                 )
             )
@@ -126,15 +124,17 @@ class KDSOrderViewSet(viewsets.ReadOnlyModelViewSet):
             Prefetch(
                 'order_items',
                 queryset=OrderItem.objects.select_related(
-                    'menu_item__category__assigned_kds',
-                    'menu_item__represented_campaign',
+                    'menu_item',  # OrderItem -> MenuItem ilişkisini optimize et
+                    'variant',    # OrderItem -> MenuItemVariant ilişkisini optimize et
                     'item_prepared_by_staff'
                 ).prefetch_related('extras__variant')
             )
         ).distinct().order_by('created_at')
+        # ================= GÜNCELLEME SONU =========================
         
         return relevant_orders
-
+        
+    # ... ViewSet'in geri kalanı aynı kalabilir ...
     @action(detail=True, methods=['post'], url_path='start-preparation')
     @transaction.atomic
     def start_preparation(self, request, kds_slug=None, pk=None):
@@ -183,7 +183,7 @@ class KDSOrderViewSet(viewsets.ReadOnlyModelViewSet):
             menu_item__category_id__in=list(category_ids_for_this_kds), 
             is_awaiting_staff_approval=False,
             delivered=False,
-            kds_status=OrderItem.KDS_ITEM_STATUS_CHOICES[0][0] # 'pending_kds'
+            kds_status=OrderItem.KDS_ITEM_STATUS_PENDING
         )
         
         logger.info(f"  [KDS VIEW] KDS '{target_kds_screen.name}' için 'pending_kds' durumunda bulunan ve filtrelenen ürün sayısı: {items_to_prepare.count()}")
@@ -202,7 +202,7 @@ class KDSOrderViewSet(viewsets.ReadOnlyModelViewSet):
                 f"KDS Action (start_preparation) - 400 Nedeni (İç Kontrol): Order #{order.id}, KDS '{target_kds_screen.name}' (ID: {target_kds_screen.id}) için 'pending_kds' "
                 f"durumunda ürün bulunamadı. Bu KDS için mevcut aktif kalem durumları (tekrar kontrol): {current_statuses_for_error_debug}"
             )
-            if all_active_items_for_this_kds_again.filter(kds_status__in=[OrderItem.KDS_ITEM_STATUS_CHOICES[1][0], OrderItem.KDS_ITEM_STATUS_CHOICES[2][0]]).exists():
+            if all_active_items_for_this_kds_again.filter(kds_status__in=[OrderItem.KDS_ITEM_STATUS_PREPARING, OrderItem.KDS_ITEM_STATUS_READY]).exists():
                 return Response({'detail': f"Bu KDS ({target_kds_screen.name}) ekranındaki ürünler zaten hazırlanıyor veya hazır durumda. (Durumlar: {current_statuses_for_error_debug})"}, status=status.HTTP_400_BAD_REQUEST)
             return Response({'detail': f"Bu KDS ({target_kds_screen.name}) ekranı için hazırlanmaya başlanacak yeni ürün bulunmuyor. (Durumlar: {current_statuses_for_error_debug})"}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -214,7 +214,7 @@ class KDSOrderViewSet(viewsets.ReadOnlyModelViewSet):
                 f"için KDS '{target_kds_screen.name}' (TargetKDS_ID: {target_kds_screen.id}). "
                 f"Eski KDS Durumu: '{item.kds_status}', Yeni: 'preparing_kds'."
             )
-            item.kds_status = OrderItem.KDS_ITEM_STATUS_CHOICES[1][0] 
+            item.kds_status = OrderItem.KDS_ITEM_STATUS_PREPARING
             item.item_prepared_by_staff = request.user
             item.save(update_fields=['kds_status', 'item_prepared_by_staff'])
             updated_item_ids.append(item.id)
@@ -265,7 +265,7 @@ class KDSOrderViewSet(viewsets.ReadOnlyModelViewSet):
             menu_item__category_id__in=list(category_ids_for_this_kds),
             is_awaiting_staff_approval=False,
             delivered=False,
-            kds_status__in=[OrderItem.KDS_ITEM_STATUS_CHOICES[0][0], OrderItem.KDS_ITEM_STATUS_CHOICES[1][0]]
+            kds_status__in=[OrderItem.KDS_ITEM_STATUS_PENDING, OrderItem.KDS_ITEM_STATUS_PREPARING]
         )
         
         logger.info(f"  [KDS VIEW] KDS '{target_kds_screen.name}' için 'pending_kds' veya 'preparing_kds' durumunda bulunan ve filtrelenen ürün sayısı: {items_to_mark_ready.count()}")
@@ -283,7 +283,7 @@ class KDSOrderViewSet(viewsets.ReadOnlyModelViewSet):
                 f"durumunda ürün bulunamadı. Bu KDS için mevcut aktif kalem durumları (tekrar kontrol): {current_statuses_for_error_debug}"
             )
             all_are_already_ready = all_active_items_for_this_kds_again.exists() and \
-                                      not all_active_items_for_this_kds_again.exclude(kds_status=OrderItem.KDS_ITEM_STATUS_CHOICES[2][0]).exists()
+                                      not all_active_items_for_this_kds_again.exclude(kds_status=OrderItem.KDS_ITEM_STATUS_READY).exists()
 
             if all_are_already_ready:
                 return Response({'detail': 'Bu KDS ekranındaki tüm ürünler zaten hazır olarak işaretlenmiş.'},status=status.HTTP_400_BAD_REQUEST)
@@ -300,7 +300,7 @@ class KDSOrderViewSet(viewsets.ReadOnlyModelViewSet):
                 )
                 continue
             logger.info(f"KDS Action (mark_ready_for_pickup): GÜNCELLENİYOR -> Item ID {item.id} ('{item.menu_item.name}', CatKDS ID: {item.menu_item.category.assigned_kds_id if item.menu_item.category and item.menu_item.category.assigned_kds else 'N/A'}) için KDS '{target_kds_screen.name}' (ID: {target_kds_screen.id}). Eski KDS Durumu: '{item.kds_status}', Yeni: 'ready_kds'.")
-            item.kds_status = OrderItem.KDS_ITEM_STATUS_CHOICES[2][0]
+            item.kds_status = OrderItem.KDS_ITEM_STATUS_READY
             if not item.item_prepared_by_staff:
                 item.item_prepared_by_staff = request.user
             item.save(update_fields=['kds_status', 'item_prepared_by_staff'])
@@ -318,7 +318,7 @@ class KDSOrderViewSet(viewsets.ReadOnlyModelViewSet):
         all_items_globally_ready_for_pickup = True
         if all_kds_relevant_and_undelivered_items_for_order.exists():
             for item_in_order_check in all_kds_relevant_and_undelivered_items_for_order:
-                if item_in_order_check.kds_status != OrderItem.KDS_ITEM_STATUS_CHOICES[2][0]:
+                if item_in_order_check.kds_status != OrderItem.KDS_ITEM_STATUS_READY:
                     all_items_globally_ready_for_pickup = False
                     break
         
@@ -336,7 +336,7 @@ class KDSOrderViewSet(viewsets.ReadOnlyModelViewSet):
                 )
 
         elif order.status == Order.STATUS_APPROVED:
-            if order.order_items.filter(kds_status=OrderItem.KDS_ITEM_STATUS_CHOICES[1][0]).exists():
+            if order.order_items.filter(kds_status=OrderItem.KDS_ITEM_STATUS_PREPARING).exists():
                 order.status = Order.STATUS_PREPARING
                 order.save(update_fields=['status'])
 

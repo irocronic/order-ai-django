@@ -22,7 +22,7 @@ from ..models import (
 )
 from ..serializers import OrderSerializer, OrderItemSerializer
 from ..utils.order_helpers import PermissionKeys, get_user_business
-# === DEĞİŞİKLİK BURADA: Import yolunu yeni util dosyasından alıyoruz ===
+# === DEĞİŞİKLİK BURADA: import yolunu yeni util dosyasından alıyoruz ===
 from ..utils.json_helpers import convert_decimals_to_strings
 from ..permissions import IsOnActiveShift
 from channels.layers import get_channel_layer
@@ -46,13 +46,27 @@ class OrderViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated, IsOnActiveShift]
     pagination_class = StandardResultsSetPagination
 
-    queryset = Order.objects.all().prefetch_related(
-        Prefetch('order_items', queryset=OrderItem.objects.select_related('menu_item__category__assigned_kds', 'item_prepared_by_staff', 'variant').prefetch_related('extras__variant')),
-        'table_users',
+    # ================= OPTİMİZASYON GÜNCELLEMESİ =================
+    # Bu queryset tanımı, N+1 problemini çözmek için eklenmiştir.
+    # Siparişler ve ilişkili tüm veriler (kalemler, ödemeler, personel vb.)
+    # artık çok daha verimli bir şekilde çekilecektir.
+    queryset = Order.objects.all().select_related(
+        'table',
+        'customer',
+        'business',
+        'taken_by_staff',
+        'prepared_by_kitchen_staff',
         'payment_info',
         'credit_payment_details',
-        'assigned_pager_instance',
-    ).select_related('table', 'customer', 'business', 'taken_by_staff', 'prepared_by_kitchen_staff')
+        'assigned_pager_instance'
+    ).prefetch_related(
+        Prefetch('order_items', queryset=OrderItem.objects.select_related(
+            'menu_item', 'variant', 'item_prepared_by_staff'
+        ).prefetch_related('extras__variant')),
+        'table_users'
+    )
+    # ================= GÜNCELLEME SONU =========================
+
 
     def get_serializer_context(self):
         context = super().get_serializer_context()

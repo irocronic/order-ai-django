@@ -1,7 +1,7 @@
 # core/views/staff_report_views.py
 
 from django.utils import timezone
-from django.db.models import Count, Sum, Value, DecimalField, Q
+from django.db.models import Count, Sum, Value, DecimalField, Q, OuterRef, Subquery
 from django.db.models.functions import Coalesce
 from datetime import timedelta, datetime
 from rest_framework.views import APIView
@@ -33,8 +33,8 @@ class StaffPerformanceReportView(APIView):
                 {"detail": "Bu raporu görüntülemek için işletme sahibi olmalısınız."},
                 status=status.HTTP_403_FORBIDDEN
             )
-
-        # ... (Tarih filtreleme mantığı aynı kalıyor) ...
+        
+        # Tarih filtreleme mantığı aynı kalıyor
         time_range = request.query_params.get('time_range', 'last_7_days')
         start_date_str = request.query_params.get('start_date')
         end_date_str = request.query_params.get('end_date')
@@ -63,54 +63,60 @@ class StaffPerformanceReportView(APIView):
             start_date_dt = (end_date_dt - timedelta(days=29)).replace(hour=0, minute=0, second=0, microsecond=0)
         else: # Varsayılan
             start_date_dt = (end_date_dt - timedelta(days=6)).replace(hour=0, minute=0, second=0, microsecond=0)
-
-
-        all_staff_in_business = CustomUser.objects.filter(
+        
+        # ================= OPTİMİZASYON GÜNCELLEMESİ =================
+        # Döngü içinde sorgu yapmak yerine, tüm verileri tek bir sorguda
+        # annotate ile hesaplıyoruz.
+        
+        staff_with_performance = CustomUser.objects.filter(
             associated_business=business_for_report,
             user_type__in=['staff', 'kitchen_staff'],
             is_active=True
+        ).annotate(
+            order_count=Count(
+                'orders_taken_by_staff',
+                filter=Q(
+                    orders_taken_by_staff__is_paid=True,
+                    orders_taken_by_staff__created_at__range=(start_date_dt, end_date_dt)
+                )
+            ),
+            total_turnover=Coalesce(
+                Sum(
+                    'orders_taken_by_staff__payment_info__amount',
+                    filter=Q(
+                        orders_taken_by_staff__is_paid=True,
+                        orders_taken_by_staff__created_at__range=(start_date_dt, end_date_dt)
+                    )
+                ),
+                Value(Decimal('0.00')),
+                output_field=DecimalField()
+            ),
+            prepared_item_count=Count(
+                'prepared_order_items',
+                filter=Q(
+                    prepared_order_items__order__created_at__range=(start_date_dt, end_date_dt)
+                )
+            )
         ).prefetch_related('accessible_kds_screens')
 
-        staff_members = [
-            staff for staff in all_staff_in_business
-            if PermissionKeys.TAKE_ORDERS in staff.staff_permissions or PermissionKeys.MANAGE_KDS in staff.staff_permissions
-        ]
-
+        # Serializer'a uygun formatta veri listesi oluşturuyoruz.
         staff_performance_data = []
+        for staff in staff_with_performance:
+            # Sadece ilgili personelleri rapora dahil et
+            if staff.order_count > 0 or staff.prepared_item_count > 0:
+                staff_performance_data.append({
+                    'staff_id': staff.id,
+                    'username': staff.username,
+                    'first_name': staff.first_name,
+                    'last_name': staff.last_name,
+                    'order_count': staff.order_count,
+                    'total_turnover': staff.total_turnover,
+                    'prepared_item_count': staff.prepared_item_count,
+                    'staff_permissions': staff.staff_permissions,
+                    'accessible_kds_names': list(staff.accessible_kds_screens.values_list('name', flat=True)),
+                    'profile_image_url': staff.profile_image_url,
+                })
+        # ================= GÜNCELLEME SONU =========================
 
-        for staff in staff_members:
-            orders_by_staff = Order.objects.filter(
-                business=business_for_report,
-                taken_by_staff=staff,
-                is_paid=True,
-                created_at__range=(start_date_dt, end_date_dt)
-            )
-            order_count = orders_by_staff.count()
-            turnover_data = Payment.objects.filter(order__in=orders_by_staff).aggregate(
-                total_turnover=Coalesce(Sum('amount'), Value(Decimal('0.00')), output_field=DecimalField())
-            )
-            total_turnover = turnover_data['total_turnover']
-
-            prepared_item_count = OrderItem.objects.filter(
-                item_prepared_by_staff=staff,
-                order__created_at__range=(start_date_dt, end_date_dt)
-            ).count()
-
-            kds_names = list(staff.accessible_kds_screens.values_list('name', flat=True))
-
-            staff_performance_data.append({
-                'staff_id': staff.id,
-                'username': staff.username,
-                'first_name': staff.first_name,
-                'last_name': staff.last_name,
-                'order_count': order_count,
-                'total_turnover': total_turnover,
-                'prepared_item_count': prepared_item_count,
-                'staff_permissions': staff.staff_permissions,
-                'accessible_kds_names': kds_names,
-                # --- YENİ VERİ EKLENDİ ---
-                'profile_image_url': staff.profile_image_url,
-            })
-        
         serializer = StaffPerformanceSerializer(staff_performance_data, many=True)
         return Response(serializer.data)

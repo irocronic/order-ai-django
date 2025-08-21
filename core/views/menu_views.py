@@ -5,7 +5,7 @@ from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.parsers import JSONParser, FormParser, MultiPartParser
 from rest_framework.exceptions import PermissionDenied, ValidationError
-from django.db.models import ProtectedError
+from django.db.models import ProtectedError, Prefetch
 import logging
 
 from django.utils import timezone
@@ -127,12 +127,21 @@ class MenuItemViewSet(LimitCheckMixin, viewsets.ModelViewSet):
             bundle_menu_item__isnull=False
         ).values_list('bundle_menu_item_id', flat=True)
 
+        # ================= OPTİMİZASYON GÜNCELLEMESİ =================
+        # Bu queryset, select_related ve prefetch_related ile N+1 problemini
+        # çözmek için güncellenmiştir.
         queryset = MenuItem.objects.filter(
             Q(business=user_business, is_active=True) & 
             (Q(is_campaign_bundle=False) | Q(id__in=list(valid_campaign_menu_item_ids)))
         ).select_related(
-            'category', 'category__assigned_kds', 'represented_campaign'
-        ).prefetch_related('variants__stock')
+            'category', 
+            'category__assigned_kds', 
+            'represented_campaign'
+        ).prefetch_related(
+            # Varyantları ve varyantlara bağlı stokları tek seferde ve verimli bir şekilde al
+            Prefetch('variants', queryset=MenuItemVariant.objects.select_related('stock'))
+        )
+        # ================= GÜNCELLEME SONU =========================
         
         return queryset.order_by('category__name', 'name')
 
