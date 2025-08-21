@@ -1,27 +1,27 @@
 services:
-  # 1. Django Web Servisi (Gunicorn + Uvicorn Worker ile Optimize Edildi)
+  # 1. Django Web Servisi (Starter Paket için Ayarlandı)
   - type: web
     name: orderai-web
     env: python
-    region: frankfurt  # <<< EKLENDİ: Konum Türkiye'ye en yakın bölge olarak ayarlandı.
-    plan: standard
+    region: frankfurt
+    plan: starter      # <<< GÜNCELLENDİ: Standard'dan Starter'a dönüldü.
     buildCommand: "./build.sh"
-    # <<< GÜNCELLENDİ: Gunicorn ile paralel istekleri karşılamak için optimize edildi.
-    startCommand: "gunicorn makarna_project.asgi:application --workers 3 --worker-class uvicorn.workers.UvicornWorker --bind 0.0.0.0:$PORT"
+    # <<< GÜNCELLENDİ: Düşük kaynaklar için worker sayısı 1'e indirildi.
+    startCommand: "gunicorn makarna_project.asgi:application --workers 1 --worker-class uvicorn.workers.UvicornWorker --bind 0.0.0.0:$PORT"
     healthCheckPath: /
     envVars:
       - key: PYTHON_VERSION
-        value: 3.12.4  # <<< GÜNCELLENDİ: runtime.txt ile tutarlı hale getirildi.
+        value: 3.12.4
       - key: DJANGO_SECRET_KEY
         generateValue: true
       - key: DJANGO_DEBUG
         value: false
       - key: DATABASE_URL
-        fromSecretFile: /etc/secrets/supabase_db_url # ÖNERİ: Hassas verileri Secret File'dan okumak daha güvenlidir.
+        fromSecretFile: /etc/secrets/supabase_db_url
       - key: REDIS_URL
-        fromSecretFile: /etc/secrets/upstash_redis_url # ÖNERİ: Hassas verileri Secret File'dan okumak daha güvenlidir.
+        fromSecretFile: /etc/secrets/upstash_redis_url
       - key: DJANGO_EMAIL_HOST_PASSWORD
-        fromSecretFile: /etc/secrets/django_email_password # ÖNERİ: Hassas verileri Secret File'dan okumak daha güvenlidir.
+        fromSecretFile: /etc/secrets/django_email_password
         
       # --- Uygulama Ayarları ---
       - key: ANDROID_PACKAGE_NAME
@@ -41,18 +41,18 @@ services:
       - key: GOOGLE_APPLICATION_CREDENTIALS_PATH
         value: "/etc/secrets/google-credentials.json"
 
-  # 2. Celery Worker Servisi
+  # 2. Celery Worker Servisi (Starter Paket için Ayarlandı)
   - type: worker
     name: orderai-worker
     env: python
-    region: frankfurt  # <<< EKLENDİ: Web servisi ile aynı bölgede olmalı.
-    plan: standard
+    region: frankfurt
+    plan: starter      # <<< GÜNCELLENDİ: Standard'dan Starter'a dönüldü.
     buildCommand: "./build.sh"
-    # <<< GÜNCELLENDİ: Standard planın kaynaklarına uygun concurrency.
-    startCommand: "celery -A makarna_project worker -l info --concurrency=4 --max-tasks-per-child=200 --prefetch-multiplier=1"
+    # <<< GÜNCELLENDİ: Düşük RAM için concurrency 2'ye düşürüldü.
+    startCommand: "celery -A makarna_project worker -l info --concurrency=2 --max-tasks-per-child=100 --prefetch-multiplier=1"
     envVars:
       - key: PYTHON_VERSION
-        value: 3.12.4  # <<< GÜNCELLENDİ: Web servisi ile tutarlı olmalı.
+        value: 3.12.4
       - key: DJANGO_SECRET_KEY
         fromService:
           type: web
