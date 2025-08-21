@@ -167,19 +167,10 @@ def send_order_update_task(order_id, event_type, message, extra_data=None):
             
             if send_socket_io_notification(kds_room, 'order_status_update', kds_data):
                 kds_success_count += 1
-
-        # 🔥 YENİ: Test için manuel emit de ekle
-        test_notification_data = {
-            'event_type': f'{event_type}_manual',
-            'order_id': order.id,
-            'message': f'Manual test: {message}',
-            'notification_id': f"manual_{uuid.uuid4()}",
-            'timestamp': datetime.now().isoformat()
-        }
         
-        # Test bildirimini de gönder
-        send_socket_io_notification(business_room, 'order_status_update', test_notification_data)
-        logger.info(f"[Celery Task] 🧪 Test notification sent for order {order_id}")
+        # === KALDIRILAN BÖLÜM ===
+        # Gereksiz test bildirimi gönderen kod bloğu buradan kaldırıldı.
+        # ==========================
 
         # Sonuç raporu
         if business_success:
