@@ -1,33 +1,35 @@
 services:
-  # 1. Django Web Servisi (ASGI + Uvicorn)
+  # 1. Django Web Servisi (Gunicorn + Uvicorn Worker ile Optimize Edildi)
   - type: web
     name: orderai-web
     env: python
-    plan: standard   # starter → standard
+    region: frankfurt  # <<< EKLENDİ: Konum Türkiye'ye en yakın bölge olarak ayarlandı.
+    plan: standard
     buildCommand: "./build.sh"
-    startCommand: "uvicorn makarna_project.asgi:application --host 0.0.0.0 --port $PORT --workers 2"
+    # <<< GÜNCELLENDİ: Gunicorn ile paralel istekleri karşılamak için optimize edildi.
+    startCommand: "gunicorn makarna_project.asgi:application --workers 3 --worker-class uvicorn.workers.UvicornWorker --bind 0.0.0.0:$PORT"
     healthCheckPath: /
     envVars:
       - key: PYTHON_VERSION
-        value: 3.11.4
+        value: 3.12.4  # <<< GÜNCELLENDİ: runtime.txt ile tutarlı hale getirildi.
       - key: DJANGO_SECRET_KEY
         generateValue: true
       - key: DJANGO_DEBUG
         value: false
       - key: DATABASE_URL
-        value: "postgresql://postgres.sovfgoqxqggtizuaqqzi:0952koray1985Ka@aws-1-eu-central-1.pooler.supabase.com:6543/postgres"
+        fromSecretFile: /etc/secrets/supabase_db_url # ÖNERİ: Hassas verileri Secret File'dan okumak daha güvenlidir.
       - key: REDIS_URL
-        value: "rediss://default:ASbBAAImcDE3ZmUyMGJkNzhjMTg0NDQyYTI0YTY5MzE0ZDY4MDhmZnAxOTkyMQ@artistic-kiwi-9921.upstash.io:6379"
-
-      # --- Heroku'dan Gelen Gerekli Değişkenler ---
+        fromSecretFile: /etc/secrets/upstash_redis_url # ÖNERİ: Hassas verileri Secret File'dan okumak daha güvenlidir.
+      - key: DJANGO_EMAIL_HOST_PASSWORD
+        fromSecretFile: /etc/secrets/django_email_password # ÖNERİ: Hassas verileri Secret File'dan okumak daha güvenlidir.
+        
+      # --- Uygulama Ayarları ---
       - key: ANDROID_PACKAGE_NAME
         value: "com.orderai.app"
       - key: DJANGO_ADMIN_EMAIL_RECIPIENTS
         value: "akma.koray@gmail.com"
       - key: DJANGO_EMAIL_HOST_USER
         value: "akma.koray@gmail.com"
-      - key: DJANGO_EMAIL_HOST_PASSWORD
-        sync: false
       - key: DJANGO_SECURE_SSL_REDIRECT
         value: "True"
       - key: DJANGO_SESSION_COOKIE_SECURE
@@ -43,31 +45,50 @@ services:
   - type: worker
     name: orderai-worker
     env: python
-    plan: standard   # starter → standard
+    region: frankfurt  # <<< EKLENDİ: Web servisi ile aynı bölgede olmalı.
+    plan: standard
     buildCommand: "./build.sh"
+    # <<< GÜNCELLENDİ: Standard planın kaynaklarına uygun concurrency.
     startCommand: "celery -A makarna_project worker -l info --concurrency=4 --max-tasks-per-child=200 --prefetch-multiplier=1"
     envVars:
       - key: PYTHON_VERSION
-        value: 3.11.4
+        value: 3.12.4  # <<< GÜNCELLENDİ: Web servisi ile tutarlı olmalı.
       - key: DJANGO_SECRET_KEY
         fromService:
           type: web
           name: orderai-web
           envVarKey: DJANGO_SECRET_KEY
+      # --- Ortak Değişkenler ---
       - key: DATABASE_URL
-        value: "postgresql://postgres.sovfgoqxqggtizuaqqzi:0952koray1985Ka@aws-1-eu-central-1.pooler.supabase.com:6543/postgres"
+        fromService:
+          type: web
+          name: orderai-web
+          envVarKey: DATABASE_URL
       - key: REDIS_URL
-        value: "rediss://default:ASbBAAImcDE3ZmUyMGJkNzhjMTg0NDQyYTI0YTY5MzE0ZDY4MDhmZnAxOTkyMQ@artistic-kiwi-9921.upstash.io:6379"
-
-      # --- Worker için de Gerekli ---
-      - key: ANDROID_PACKAGE_NAME
-        value: "com.orderai.app"
-      - key: DJANGO_ADMIN_EMAIL_RECIPIENTS
-        value: "akma.koray@gmail.com"
-      - key: DJANGO_EMAIL_HOST_USER
-        value: "akma.koray@gmail.com"
+        fromService:
+          type: web
+          name: orderai-web
+          envVarKey: REDIS_URL
       - key: DJANGO_EMAIL_HOST_PASSWORD
-        sync: false
+        fromService:
+          type: web
+          name: orderai-web
+          envVarKey: DJANGO_EMAIL_HOST_PASSWORD
+      - key: ANDROID_PACKAGE_NAME
+        fromService:
+          type: web
+          name: orderai-web
+          envVarKey: ANDROID_PACKAGE_NAME
+      - key: DJANGO_ADMIN_EMAIL_RECIPIENTS
+        fromService:
+          type: web
+          name: orderai-web
+          envVarKey: DJANGO_ADMIN_EMAIL_RECIPIENTS
+      - key: DJANGO_EMAIL_HOST_USER
+        fromService:
+          type: web
+          name: orderai-web
+          envVarKey: DJANGO_EMAIL_HOST_USER
       - key: PYTHONUNBUFFERED
         value: "1"
       - key: GOOGLE_APPLICATION_CREDENTIALS_PATH
