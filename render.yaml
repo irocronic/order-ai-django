@@ -17,7 +17,7 @@ services:
       - key: DATABASE_URL
         value: "postgresql://postgres.sovfgoqxqggtizuaqqzi:0952koray1985Ka@aws-1-eu-central-1.pooler.supabase.com:6543/postgres"
       - key: REDIS_URL
-        value: "rediss://default:ASbBAAImcDE3ZmUyMGJkNzhjMTg0MDQyYTI0YTY5MzE0ZDY4MDhmZnAxOTkyMQ@artistic-kiwi-9921.upstash.io:6379"
+        value: "rediss://default:ASbBAAImcDE3ZmUyMGJkNzhjMTg0NDQyYTI0YTY5MzE0ZDY4MDhmZnAxOTkyMQ@artistic-kiwi-9921.upstash.io:6379"
 
       # --- Heroku'dan Gelen Gerekli Değişkenler ---
       - key: ANDROID_PACKAGE_NAME
@@ -39,7 +39,7 @@ services:
       - key: GOOGLE_APPLICATION_CREDENTIALS_PATH
         value: "/etc/secrets/google-credentials.json"
 
-  # 2. Celery Worker Servisi (Daha Güçlü Concurrency)
+  # 2. Celery Worker Servisi
   - type: worker
     name: orderai-worker
     env: python
@@ -59,7 +59,7 @@ services:
       - key: REDIS_URL
         value: "rediss://default:ASbBAAImcDE3ZmUyMGJkNzhjMTg0NDQyYTI0YTY5MzE0ZDY4MDhmZnAxOTkyMQ@artistic-kiwi-9921.upstash.io:6379"
 
-      # --- Heroku'dan Gelen Gerekli Değişkenler (Worker için de gerekli) ---
+      # --- Worker için de Gerekli ---
       - key: ANDROID_PACKAGE_NAME
         value: "com.orderai.app"
       - key: DJANGO_ADMIN_EMAIL_RECIPIENTS
