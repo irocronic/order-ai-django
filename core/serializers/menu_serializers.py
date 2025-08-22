@@ -16,11 +16,12 @@ class CategorySerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Category
+        # GÜNCELLENDİ: 'kdv_rate' alanı eklendi
         fields = [
             'id', 'business', 'name', 'parent', 'image',
             'assigned_kds', 
             'assigned_kds_details',
-            'kdv_rate'
+            'kdv_rate' # <-- YENİ
         ]
 
     def validate_assigned_kds(self, value):
@@ -55,19 +56,15 @@ class MenuItemSerializer(serializers.ModelSerializer):
     image = serializers.URLField(max_length=1024, required=False, allow_null=True)
     is_campaign_bundle = serializers.BooleanField(read_only=True)
     price = serializers.SerializerMethodField()
+    # YENİ: kdv_rate alanı eklendi. Gerekli değil (required=False) çünkü kategoriden gelebilir.
     kdv_rate = serializers.DecimalField(max_digits=5, decimal_places=2, required=False)
 
     class Meta:
         model = MenuItem
         fields = [
             'id', 'business', 'name', 'image', 'description', 'category', 'category_id', 'variants',
-            'is_campaign_bundle', 'price', 'kdv_rate',
-            'is_active'  # <-- GÜNCELLEME: 'is_active' alanı eklendi
+            'is_campaign_bundle', 'price', 'kdv_rate' # <-- 'kdv_rate' EKLENDİ
         ]
-        # API üzerinden 'is_active' gönderilmese bile varsayılan olarak 'True' kabul edilmesini sağlar.
-        extra_kwargs = {
-            'is_active': {'required': False, 'default': True}
-        }
 
     def get_price(self, obj: MenuItem):
         if obj.is_campaign_bundle:
@@ -80,14 +77,18 @@ class MenuItemSerializer(serializers.ModelSerializer):
                 return None
         return None
     
+    # YENİ: Hibrit KDV modeli için create metodu override edildi.
     def create(self, validated_data):
+        # Eğer KDV oranı istekte belirtilmemişse ve kategori varsa, kategorinin KDV'sini al
         if 'kdv_rate' not in validated_data and 'category' in validated_data and validated_data['category'] is not None:
             category_instance = validated_data['category']
             validated_data['kdv_rate'] = category_instance.kdv_rate
         
         return super().create(validated_data)
 
+    # YENİ: Hibrit KDV modeli için update metodu override edildi.
     def update(self, instance, validated_data):
+        # Güncellemede, KDV oranı belirtilmemişse ve kategori değiştiriliyorsa, yeni kategorinin KDV'sini al
         if 'kdv_rate' not in validated_data and 'category' in validated_data and validated_data['category'] is not None:
              validated_data['kdv_rate'] = validated_data['category'].kdv_rate
         
@@ -111,6 +112,7 @@ class StockSerializer(serializers.ModelSerializer):
     variant_name = serializers.CharField(source='variant.name', read_only=True)
     product_name = serializers.SerializerMethodField()
     variant = serializers.PrimaryKeyRelatedField(queryset=MenuItemVariant.objects.all())
+
 
     class Meta:
         model = Stock
