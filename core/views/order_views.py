@@ -22,7 +22,6 @@ from ..models import (
 )
 from ..serializers import OrderSerializer, OrderItemSerializer
 from ..utils.order_helpers import PermissionKeys, get_user_business
-# === DEĞİŞİKLİK BURADA: Import yolunu yeni util dosyasından alıyoruz ===
 from ..utils.json_helpers import convert_decimals_to_strings
 from ..permissions import IsOnActiveShift
 from channels.layers import get_channel_layer
@@ -33,8 +32,6 @@ from ..signals.order_signals import send_order_update_notification
 from .order_actions import item_actions, status_actions, financial_actions, operational_actions
 
 logger = logging.getLogger(__name__)
-
-# Yerel fonksiyon tanımı kaldırıldı.
 
 class StandardResultsSetPagination(PageNumberPagination):
     page_size = 20
@@ -508,7 +505,15 @@ class OrderItemViewSet(mixins.DestroyModelMixin, mixins.UpdateModelMixin, viewse
             order.save(update_fields=['status'])
 
         logger.info(f"OrderItem ID {order_item.id} (Order #{order.id}) 'preparing_kds' olarak işaretlendi.")
-        transaction.on_commit(lambda: send_order_update_notification(order=order, created=False, update_fields=['status', 'order_items']))
+        
+        # <<< GÜNCELLEME: Olay türü burada belirleniyor >>>
+        transaction.on_commit(
+            lambda: send_order_update_notification(
+                order=order, 
+                created=False, 
+                specific_event_type='order_preparing_update' # Doğru olay türünü zorla
+            )
+        )
         
         serializer = OrderSerializer(order_item.order, context={'request': request})
         return Response(serializer.data, status=status.HTTP_200_OK)
@@ -530,16 +535,38 @@ class OrderItemViewSet(mixins.DestroyModelMixin, mixins.UpdateModelMixin, viewse
         order_item.save(update_fields=['kds_status', 'item_prepared_by_staff'])
         logger.info(f"OrderItem ID {order_item.id} (Order #{order.id}) 'ready_kds' olarak işaretlendi.")
 
-        all_kds_items_in_order = order.order_items.filter(menu_item__category__assigned_kds__isnull=False)
-        all_ready = not all_kds_items_in_order.exclude(kds_status=OrderItem.KDS_ITEM_STATUS_CHOICES[2][0]).exists()
+        all_kds_items_in_order = order.order_items.filter(
+            is_awaiting_staff_approval=False, 
+            delivered=False, 
+            menu_item__category__assigned_kds__isnull=False
+        )
+        
+        all_ready = not all_kds_items_in_order.exclude(kds_status=OrderItem.KDS_ITEM_STATUS_READY).exists()
 
+        # +++ ÇÖZÜM KODU BAŞLANGICI +++
+        notification_event_to_send = None
+        
         if all_ready:
             logger.info(f"Sipariş #{order.id} için tüm KDS ürünleri hazır. Genel durum güncelleniyor.")
-            order.status = Order.STATUS_READY_FOR_PICKUP
-            order.kitchen_completed_at = timezone.now()
-            order.save(update_fields=['status', 'kitchen_completed_at'])
+            if order.status != Order.STATUS_READY_FOR_PICKUP:
+                order.status = Order.STATUS_READY_FOR_PICKUP
+                order.kitchen_completed_at = timezone.now()
+                order.save(update_fields=['status', 'kitchen_completed_at'])
+            
+            notification_event_to_send = 'order_ready_for_pickup_update'
+        else:
+            logger.info(f"Sipariş #{order.id} için bazı kalemler hazır, ancak diğerleri bekliyor.")
+            # Siparişin genel durumu değişmedi, sadece bir kalemi güncellendi.
+            notification_event_to_send = 'order_item_updated'
         
-        transaction.on_commit(lambda: send_order_update_notification(order=order, created=False, update_fields=['status', 'order_items']))
+        transaction.on_commit(
+            lambda: send_order_update_notification(
+                order=order, 
+                created=False, 
+                specific_event_type=notification_event_to_send
+            )
+        )
+        # +++ ÇÖZÜM KODU SONU +++
         
         serializer = OrderSerializer(order_item.order, context={'request': request})
         return Response(serializer.data, status=status.HTTP_200_OK)
