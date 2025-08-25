@@ -1,228 +1,190 @@
-# core/socketio_handlers.py
+# core/token.py
 
-from urllib.parse import parse_qs
+from datetime import timezone as dt_timezone, timedelta
+from django.utils import timezone
 from django.conf import settings
-from rest_framework_simplejwt.tokens import AccessToken
-from rest_framework_simplejwt.exceptions import InvalidToken, TokenError
 from django.contrib.auth import get_user_model
-from django.db import transaction
-from asgiref.sync import async_to_sync
-from channels.db import database_sync_to_async
-import logging
-import asyncio
-import time
+from rest_framework_simplejwt.views import TokenObtainPairView
+from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
+from rest_framework.exceptions import AuthenticationFailed
+import pytz
 
-from .models import Order, Table, KDSScreen, Business, CustomUser
-from .utils.order_helpers import get_user_business, PermissionKeys
+# Gerekli modelleri import ediyoruz
+from .models import Business, ScheduledShift, NOTIFICATION_EVENT_TYPES
+from .serializers.kds_serializers import KDSScreenSerializer
+from subscriptions.models import Subscription, Plan
 
-logger = logging.getLogger(__name__)
 User = get_user_model()
 
-@database_sync_to_async
-def get_user_from_token(token_key):
-    """Verilen JWT token'ından kullanıcıyı doğrular ve döndürür."""
-    User = get_user_model()
-    try:
-        access_token = AccessToken(token_key)
-        user_id = access_token['user_id']
-        user = User.objects.select_related(
-            'owned_business', 'associated_business'
-        ).prefetch_related('accessible_kds_screens').get(id=user_id)
-        return user
-    except (InvalidToken, TokenError, User.DoesNotExist) as e:
-        logger.warning(f"SocketIO Token Hatası: {e} - Token (son 5): ...{token_key[-5:] if token_key and len(token_key) > 5 else token_key}")
-        return None
-    except Exception as e:
-        logger.error(f"SocketIO Token'dan kullanıcı alınırken beklenmedik hata: {e}", exc_info=True)
-        return None
+class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
+    
+    @classmethod
+    def get_token(cls, user):
+        token = super().get_token(user)
+        token['username'] = user.username
+        token['user_type'] = user.user_type
+        token['user_id'] = user.id
+        token['profile_image_url'] = user.profile_image_url
 
+        business = None
+        # === GÜNCELLEME BAŞLANGICI: Admin ve Müşteri kullanıcıları için özel token verisi ===
+        if user.user_type == 'admin' or user.is_superuser:
+            # Admin için işletme bilgisi yok, varsayılan/özel değerler atanır
+            token['business_id'] = None
+            token['is_setup_complete'] = True # Adminin kurulum yapmasına gerek yok
+            token['currency_code'] = 'TRY' # Varsayılan para birimi
+            token['subscription_status'] = 'active' # Adminin aboneliği her zaman aktif kabul edilir
+            token['trial_ends_at'] = None
+            token['subscription'] = {'plan_name': 'Admin Plan'} # Özel bir plan adı
+            token['staff_permissions'] = []
+            # Admin tüm bildirimleri alabilir
+            token['notification_permissions'] = [key for key, desc in NOTIFICATION_EVENT_TYPES]
+            token['accessible_kds_screens_details'] = []
 
-@database_sync_to_async
-def get_order_status_for_guest(table_uuid):
-    try:
-        table = Table.objects.get(uuid=table_uuid)
-        active_guest_order = Order.objects.filter(
-            table=table, customer__isnull=True, is_paid=False
-        ).exclude(
-            status__in=[Order.STATUS_REJECTED, Order.STATUS_CANCELLED, Order.STATUS_COMPLETED]
-        ).order_by('-created_at').first()
-
-        if active_guest_order:
-            return {
-                'event_type': 'initial_order_status_for_guest',
-                'order_id': active_guest_order.id,
-                'status': active_guest_order.status,
-                'status_display': active_guest_order.get_status_display(),
-                'message': f"Masa {table.table_number} için mevcut siparişinizin durumu: {active_guest_order.get_status_display()}"
-            }
-    except Table.DoesNotExist:
-        logger.warning(f"Socket.IO (Misafir): Odaya katılımda {table_uuid} için masa bulunamadı.")
-    except Exception as e:
-        logger.error(f"Socket.IO (Misafir): {table_uuid} için başlangıç durumu alınırken hata: {e}", exc_info=True)
-    return None
-
-@database_sync_to_async
-def can_user_access_kds(user, kds_slug, business):
-    """Kullanıcının belirtilen KDS ekranına erişimi olup olmadığını kontrol eder."""
-    try:
-        kds_screen = KDSScreen.objects.get(slug=kds_slug, business=business, is_active=True)
-        
-        if user.user_type == 'business_owner' and user.owned_business == kds_screen.business:
-            return True
-        
-        if user.user_type in ['staff', 'kitchen_staff']:
-            if user.associated_business == kds_screen.business:
-                return user.accessible_kds_screens.filter(id=kds_screen.id).exists()
-        
-        return False
-    except KDSScreen.DoesNotExist:
-        return False
-
-def register_events(sio_server):
-    @sio_server.event
-    async def connect(sid, environ, auth):
-        logger.info(f"Socket.IO bağlantı denemesi SID: {sid}")
-        token = None
-        if auth and isinstance(auth, dict) and 'token' in auth:
-            token = auth.get('token')
-        
-        if not token:
-            query_string = environ.get('QUERY_STRING', '')
-            qs = parse_qs(query_string)
-            token_list = qs.get('token')
-            if token_list:
-                token = token_list[0]
-
-        if token:
-            user = await get_user_from_token(token)
-            if user and user.is_authenticated:
-                
-                # === GÜNCELLEME BAŞLANGICI: Admin kullanıcısı için özel bağlantı mantığı ===
-                if user.user_type == 'admin' or user.is_superuser:
-                    user_room_name = f'user_{user.id}'
-                    admin_room_name = 'admin_room' # Tüm adminler için ortak bir oda
-                    await sio_server.enter_room(sid, user_room_name)
-                    await sio_server.enter_room(sid, admin_room_name)
-                    
-                    await sio_server.save_session(sid, {
-                        'user_id': user.id,
-                        'user_type': user.user_type,
-                        'type': 'authenticated_user'
-                    })
-                    
-                    await sio_server.emit('connected_and_ready', {'sid': sid}, room=sid)
-                    logger.info(f"Socket.IO: Admin kullanıcısı {user.username} (ID: {user.id}) bağlandı.")
-                    return True # Bağlantıyı kabul et ve fonksiyondan çık
-                # === GÜNCELLEME SONU ===
-
-                # Diğer kullanıcılar (business_owner, staff, etc.) için mevcut mantık devam ediyor
-                user_business = await database_sync_to_async(get_user_business)(user)
-                if user_business:
-                    business_id = user_business.id
-                    
-                    user_room_name = f'user_{user.id}'
-                    await sio_server.enter_room(sid, user_room_name)
-                    logger.info(f"Socket.IO (Connect): İstemci {sid} (Kullanıcı ID: {user.id}) kişisel odasına '{user_room_name}' katıldı.")
-                    
-                    business_room_name = f'business_{business_id}'
-                    await sio_server.enter_room(sid, business_room_name)
-                    logger.info(f"Socket.IO (Connect): İstemci {sid} (Kullanıcı ID: {user.id}) genel işletme odasına '{business_room_name}' katıldı.")
-
-                    await sio_server.save_session(sid, {
-                        'user_id': user.id,
-                        'user_type': user.user_type,
-                        'business_id': business_id,
-                        'type': 'authenticated_user'
-                    })
-                    
-                    await sio_server.emit('connected_and_ready', {'sid': sid}, room=sid)
-                    logger.info(f"Socket.IO: İstemci {sid} (Kullanıcı ID: {user.id}) bağlandı. 'connected_and_ready' olayı gönderildi.")
-                    return True
-                else:
-                    logger.warning(f"Socket.IO: İstemci {sid} (Kullanıcı: {user.username}) için işletme bilgisi bulunamadı. Bağlantı reddedildi.")
-                    return False
+        elif user.user_type == 'business_owner':
+            business = getattr(user, 'owned_business', None)
+        elif user.user_type in ['staff', 'kitchen_staff']:
+            business = getattr(user, 'associated_business', None)
+            token['staff_permissions'] = user.staff_permissions
+            token['notification_permissions'] = user.notification_permissions
+            if hasattr(user, 'accessible_kds_screens') and user.accessible_kds_screens.exists():
+                accessible_kds_data = KDSScreenSerializer(user.accessible_kds_screens.all(), many=True).data
+                token['accessible_kds_screens_details'] = accessible_kds_data
             else:
-                logger.warning(f"Socket.IO: İstemci {sid} bağlantısı reddedildi (Geçersiz/yetkisiz token).")
-                return False
-        else:
-            logger.info(f"Socket.IO: İstemci {sid} tokensiz bağlandı.")
-            await sio_server.save_session(sid, {'type': 'guest_candidate'})
-            return True
+                token['accessible_kds_screens_details'] = []
+        else: # customer
+            token['notification_permissions'] = user.notification_permissions
+            token['accessible_kds_screens_details'] = []
+            # Müşterinin işletme bilgileri olmaz
+            token['business_id'] = None
+            token['is_setup_complete'] = False
+            token['currency_code'] = None
+            token['subscription_status'] = None
+            token['trial_ends_at'] = None
+            token['subscription'] = None
+        # === GÜNCELLEME SONU ===
 
-    @sio_server.event
-    async def disconnect(sid):
-        session = await sio_server.get_session(sid)
-        if session:
-            logger.info(f"Socket.IO: İstemci {sid} (Kullanıcı ID: {session.get('user_id', 'Bilinmiyor')}) bağlantısı kesildi.")
-        else:
-            logger.info(f"Socket.IO: İstemci {sid} bağlantısı kesildi (session bilgisi yok).")
-
-    @sio_server.event
-    async def join_kds_room(sid, data):
-        session = await sio_server.get_session(sid)
-        if not session or session.get('type') != 'authenticated_user':
-            logger.warning(f"Socket.IO (KDS Join): SID {sid} için geçerli bir session bulunamadı.")
-            return
-
-        kds_slug = data.get('kds_slug')
-        user_id = session.get('user_id')
-        business_id = session.get('business_id')
-
-        if not all([kds_slug, user_id, business_id]):
-            logger.warning(f"Socket.IO (KDS Join): SID {sid} için session'dan veri alınamadı.")
-            return
-
-        try:
-            user = await database_sync_to_async(User.objects.get)(id=user_id)
-            business = await database_sync_to_async(Business.objects.get)(id=business_id)
-        except (User.DoesNotExist, Business.DoesNotExist):
-            logger.error(f"Socket.IO (KDS Join): SID {sid} için Kullanıcı veya İşletme bulunamadı.")
-            return
-
-        has_access = await can_user_access_kds(user, kds_slug, business)
+        if business:
+            token['business_id'] = business.id
+            token['is_setup_complete'] = business.is_setup_complete
+            token['currency_code'] = business.currency_code
+            
+            try:
+                subscription = business.subscription
+                token['subscription_status'] = subscription.status
+                token['trial_ends_at'] = subscription.expires_at.isoformat() if subscription.status == 'trial' and subscription.expires_at else None
+                
+                if subscription.plan:
+                    plan_data = {
+                        'plan_name': subscription.plan.name,
+                        'max_tables': subscription.plan.max_tables,
+                        'max_staff': subscription.plan.max_staff,
+                        'max_kds_screens': subscription.plan.max_kds_screens,
+                        'max_categories': subscription.plan.max_categories,
+                        'max_menu_items': subscription.plan.max_menu_items,
+                        'max_variants': subscription.plan.max_variants,
+                    }
+                    token['subscription'] = plan_data
+                else:
+                    token['subscription'] = None
+            except Subscription.DoesNotExist:
+                token['subscription_status'] = 'inactive'
+                token['trial_ends_at'] = None
+                token['subscription'] = None
         
-        if has_access:
-            if 'current_kds_room' in session and session['current_kds_room']:
-                await sio_server.leave_room(sid, session['current_kds_room'])
-                logger.info(f"Socket.IO (KDS): İstemci {sid} eski KDS odasından '{session['current_kds_room']}' ayrıldı.")
+        return token
 
-            kds_room_name = f'kds_{business_id}_{kds_slug}'
-            await sio_server.enter_room(sid, kds_room_name)
+    def validate(self, attrs):
+        data = super().validate(attrs)
+        user = self.user
+
+        if not user.is_active:
+            raise AuthenticationFailed(
+                "Hesabınız aktif değil. Lütfen yönetici ile iletişime geçin veya onay bekleyin.",
+                "account_inactive"
+            )
+        
+        # === YENİ KONTROL: Admin veya Müşteri ise diğer kontrolleri atla ===
+        if user.user_type in ['admin', 'customer'] or user.is_superuser:
+            pass # Admin ve Müşteri, vardiya ve abonelik kontrollerinden muaftır.
+        # === KONTROL SONU ===
+        elif user.user_type in ['staff', 'kitchen_staff']:
+            if not user.is_superuser:
+                business = user.associated_business
+                if not business:
+                    raise AuthenticationFailed("Bir işletmeye atanmamışsınız.", "no_business_assigned")
+                
+                try:
+                    business_tz = pytz.timezone(business.timezone)
+                except pytz.UnknownTimeZoneError:
+                    business_tz = pytz.timezone(settings.TIME_ZONE) 
+
+                now_in_business_tz = timezone.now().astimezone(business_tz)
+                today = now_in_business_tz.date()
+                yesterday = today - timedelta(days=1)
+                current_time = now_in_business_tz.time()
+                
+                potential_shifts = ScheduledShift.objects.filter(
+                    staff=user,
+                    date__in=[today, yesterday]
+                ).select_related('shift')
+
+                if not potential_shifts.exists():
+                    raise AuthenticationFailed(
+                        'Bugün için planlanmış bir vardiyanız bulunmadığından giriş yapamazsınız.',
+                        'no_shift_scheduled'
+                    )
+                
+                is_on_active_shift = False
+                for scheduled_shift in potential_shifts:
+                    shift = scheduled_shift.shift
+                    if shift.start_time <= shift.end_time:
+                        if scheduled_shift.date == today and shift.start_time <= current_time <= shift.end_time:
+                            is_on_active_shift = True
+                            break
+                    else:
+                        if (scheduled_shift.date == today and current_time >= shift.start_time) or \
+                           (scheduled_shift.date == yesterday and current_time <= shift.end_time):
+                            is_on_active_shift = True
+                            break
+                
+                if not is_on_active_shift:
+                    raise AuthenticationFailed(
+                        'Şu an aktif bir çalışma vardiyanız bulunmuyor. Lütfen vardiya saatleriniz içinde tekrar deneyin.',
+                        'no_active_shift_at_login'
+                    )
+
+        elif self.user.user_type == 'business_owner':
+            business = getattr(self.user, 'owned_business', None)
+            if not business:
+                raise AuthenticationFailed('Bu kullanıcıya ait bir işletme bulunamadı.', code='no_business_found')
             
-            session['current_kds_room'] = kds_room_name
-            await sio_server.save_session(sid, session)
-            
-            logger.info(f"Socket.IO (KDS): İstemci {sid} (Kullanıcı: {user.username}) EK OLARAK '{kds_room_name}' odasına başarıyla katıldı.")
-        else:
-            logger.warning(f"Socket.IO (KDS Join): SID {sid} kullanıcısı {user.username}, KDS ekranı '{kds_slug}' için YETKİSİZ.")
+            try:
+                subscription = business.subscription
+                if subscription.status in ['inactive', 'cancelled']:
+                        raise AuthenticationFailed(
+                            'Aboneliğiniz aktif değildir. Lütfen bir abonelik paketi seçin.',
+                            code='subscription_expired'
+                        )
+                if subscription.status == 'trial' and subscription.expires_at and subscription.expires_at < timezone.now():
+                    raise AuthenticationFailed(
+                        'Deneme süreniz sona ermiştir. Lütfen bir abonelik paketi seçin.',
+                        code='subscription_expired'
+                    )
+            except Subscription.DoesNotExist:
+                    raise AuthenticationFailed(
+                        'Abonelik bilgileriniz bulunamadı. Lütfen destek ile iletişime geçin.',
+                        code='subscription_error'
+                    )
+        
+        refresh = self.get_token(self.user)
+        data['refresh'] = str(refresh)
+        data['access'] = str(refresh.access_token)
+        
+        # Token payload'ındaki tüm veriyi response'a ekle
+        data.update(refresh.payload)
 
-    @sio_server.event
-    async def join_guest_table_room(sid, data):
-        table_uuid = data.get('table_uuid')
-        session = await sio_server.get_session(sid)
+        return data
 
-        if table_uuid and session and session.get('type') == 'guest_candidate':
-            if 'room_name' in session and session['room_name']:
-                await sio_server.leave_room(sid, session['room_name'])
-
-            guest_room_name = f'guest_table_{table_uuid}'
-            await sio_server.enter_room(sid, guest_room_name)
-            
-            session['room_name'] = guest_room_name
-            session['current_room_name'] = guest_room_name
-            session['type'] = 'guest_user'
-            session['table_uuid'] = table_uuid
-            await sio_server.save_session(sid, session)
-            logger.info(f"Socket.IO (Misafir): İstemci {sid}, '{guest_room_name}' odasına katıldı.")
-
-            initial_status_payload = await get_order_status_for_guest(table_uuid)
-            if initial_status_payload:
-                await sio_server.emit('order_update_for_guest_table', initial_status_payload, room=sid)
-                logger.info(f"Socket.IO (Misafir): Başlangıç sipariş durumu {sid} istemcisine gönderildi: {initial_status_payload}")
-            return True
-        elif session and session.get('type') != 'guest_candidate':
-            logger.warning(f"Socket.IO (Misafir): İstemci {sid} zaten farklı bir tipte ({session.get('type')}) bağlanmış, misafir odasına katılamaz.")
-            return False
-        else:
-            logger.warning(f"Socket.IO (Misafir): İstemci {sid} 'join_guest_table_room' için table_uuid sağlamadı veya geçerli bir session'a sahip değil.")
-            return False
+class CustomTokenObtainPairView(TokenObtainPairView):
+    serializer_class = CustomTokenObtainPairSerializer

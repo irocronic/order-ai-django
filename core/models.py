@@ -259,9 +259,9 @@ class Category(models.Model):
         help_text="Bu kategorideki ürünler hangi KDS ekranına yönlendirilecek?"
     )
     kdv_rate = models.DecimalField(
-        max_digits=5, 
-        decimal_places=2, 
-        default=10.00, 
+        max_digits=5,
+        decimal_places=2,
+        default=10.00,
         validators=[MinValueValidator(0), MaxValueValidator(100)],
         help_text="Bu kategori için varsayılan KDV oranı (%). Örn: 10.00"
     )
@@ -276,8 +276,8 @@ class Category(models.Model):
 class MenuItem(models.Model):
     business = models.ForeignKey(Business, on_delete=models.CASCADE, related_name='menu_items')
     name = models.CharField(max_length=100)
-    image = models.URLField(max_length=1024, null=True, blank=True) 
-    description = models.TextField(blank=True, null=True) 
+    image = models.URLField(max_length=1024, null=True, blank=True)
+    description = models.TextField(blank=True, null=True)
     category = models.ForeignKey(
         Category, on_delete=models.SET_NULL, null=True, blank=True, related_name='menu_items'
     )
@@ -288,9 +288,9 @@ class MenuItem(models.Model):
         help_text="Eğer varyant yoksa veya bu bir kampanya paketi ise ürünün fiyatı."
     )
     kdv_rate = models.DecimalField(
-        max_digits=5, 
-        decimal_places=2, 
-        default=10.00, 
+        max_digits=5,
+        decimal_places=2,
+        default=10.00,
         validators=[MinValueValidator(0), MaxValueValidator(100)],
         help_text="Ürüne özel KDV oranı (%). Boş bırakılırsa kategorinin varsayılanı kullanılır."
     )
@@ -679,15 +679,15 @@ class OrderItem(models.Model):
         verbose_name="Garson Teslim Alma Zamanı (Kalem)"
     )
     kdv_rate = models.DecimalField(
-        max_digits=5, 
-        decimal_places=2, 
-        default=10.00, 
+        max_digits=5,
+        decimal_places=2,
+        default=10.00,
         validators=[MinValueValidator(0), MaxValueValidator(100)],
         help_text="Bu ürün için sipariş anındaki KDV oranı."
     )
     kdv_amount = models.DecimalField(
-        max_digits=10, 
-        decimal_places=2, 
+        max_digits=10,
+        decimal_places=2,
         default=0.00,
         help_text="Bu kalem için hesaplanan toplam KDV tutarı (birim KDV * adet)."
     )
@@ -810,14 +810,11 @@ class ScheduledShift(models.Model):
     def __str__(self):
         return f"{self.staff.username} - {self.date.strftime('%d/%m/%Y')} - {self.shift.name}"
 
-
-
-
+# === YENİ MODEL ===
 class NotificationSetting(models.Model):
     """
     WebSocket üzerinden gönderilecek bildirim türlerinin aktif olup olmadığını yönetir.
     """
-    # Django'daki NOTIFICATION_EVENT_TYPES listesindeki ilk değer (anahtar)
     event_type = models.CharField(
         max_length=100, 
         primary_key=True, 
