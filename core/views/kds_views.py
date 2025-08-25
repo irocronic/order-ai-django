@@ -166,7 +166,6 @@ class KDSOrderViewSet(viewsets.ReadOnlyModelViewSet):
         category_ids_for_this_kds = Category.objects.filter(assigned_kds_id=target_kds_screen.id).values_list('id', flat=True)
 
         if not category_ids_for_this_kds:
-            logger.warning(f"KDS Action (start_preparation): KDS '{target_kds_screen.name}' (ID: {target_kds_screen.id}) için atanmış kategori bulunamadı.")
             return Response(
                 {'detail': f"Bu KDS ({target_kds_screen.name}) ekranı için atanmış kategori olmadığından hazırlanacak ürün bulunamadı."},
                 status=status.HTTP_400_BAD_REQUEST
@@ -232,6 +231,7 @@ class KDSOrderViewSet(viewsets.ReadOnlyModelViewSet):
         order.refresh_from_db()
         serializer = self.get_serializer(order)
         return Response(serializer.data)
+
 
     @action(detail=True, methods=['post'], url_path='mark-ready-for-pickup')
     @transaction.atomic
