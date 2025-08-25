@@ -1,5 +1,3 @@
-# core/views/kds_views.py
-
 # makarna_project/core/views/kds_views.py
 
 from rest_framework import viewsets, status
@@ -17,7 +15,6 @@ from decimal import Decimal
 from ..models import Order, CustomUser, OrderItem, CreditPaymentDetails, KDSScreen, Business, Category
 from ..serializers import KDSOrderSerializer
 from ..utils.order_helpers import get_user_business, PermissionKeys
-# GÜNCELLENDİ: Artık order nesnesi ile çağrılacak
 from ..signals.order_signals import send_order_update_notification
 
 logger = logging.getLogger(__name__)
@@ -181,7 +178,7 @@ class KDSOrderViewSet(viewsets.ReadOnlyModelViewSet):
             menu_item__category_id__in=list(category_ids_for_this_kds), 
             is_awaiting_staff_approval=False,
             delivered=False,
-            kds_status=OrderItem.KDS_ITEM_STATUS_CHOICES[0][0] # 'pending_kds'
+            kds_status=OrderItem.KDS_ITEM_STATUS_PENDING
         )
         
         logger.info(f"  [KDS VIEW] KDS '{target_kds_screen.name}' için 'pending_kds' durumunda bulunan ve filtrelenen ürün sayısı: {items_to_prepare.count()}")
@@ -200,7 +197,7 @@ class KDSOrderViewSet(viewsets.ReadOnlyModelViewSet):
                 f"KDS Action (start_preparation) - 400 Nedeni (İç Kontrol): Order #{order.id}, KDS '{target_kds_screen.name}' (ID: {target_kds_screen.id}) için 'pending_kds' "
                 f"durumunda ürün bulunamadı. Bu KDS için mevcut aktif kalem durumları (tekrar kontrol): {current_statuses_for_error_debug}"
             )
-            if all_active_items_for_this_kds_again.filter(kds_status__in=[OrderItem.KDS_ITEM_STATUS_CHOICES[1][0], OrderItem.KDS_ITEM_STATUS_CHOICES[2][0]]).exists():
+            if all_active_items_for_this_kds_again.filter(kds_status__in=[OrderItem.KDS_ITEM_STATUS_PREPARING, OrderItem.KDS_ITEM_STATUS_READY]).exists():
                 return Response({'detail': f"Bu KDS ({target_kds_screen.name}) ekranındaki ürünler zaten hazırlanıyor veya hazır durumda. (Durumlar: {current_statuses_for_error_debug})"}, status=status.HTTP_400_BAD_REQUEST)
             return Response({'detail': f"Bu KDS ({target_kds_screen.name}) ekranı için hazırlanmaya başlanacak yeni ürün bulunmuyor. (Durumlar: {current_statuses_for_error_debug})"}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -212,7 +209,7 @@ class KDSOrderViewSet(viewsets.ReadOnlyModelViewSet):
                 f"için KDS '{target_kds_screen.name}' (TargetKDS_ID: {target_kds_screen.id}). "
                 f"Eski KDS Durumu: '{item.kds_status}', Yeni: 'preparing_kds'."
             )
-            item.kds_status = OrderItem.KDS_ITEM_STATUS_CHOICES[1][0] 
+            item.kds_status = OrderItem.KDS_ITEM_STATUS_PREPARING 
             item.item_prepared_by_staff = request.user
             item.save(update_fields=['kds_status', 'item_prepared_by_staff'])
             updated_item_ids.append(item.id)
@@ -235,6 +232,7 @@ class KDSOrderViewSet(viewsets.ReadOnlyModelViewSet):
         order.refresh_from_db()
         serializer = self.get_serializer(order)
         return Response(serializer.data)
+
 
     @action(detail=True, methods=['post'], url_path='mark-ready-for-pickup')
     @transaction.atomic
@@ -271,7 +269,6 @@ class KDSOrderViewSet(viewsets.ReadOnlyModelViewSet):
         )
         logger.info(f"KDS '{target_kds_screen.name}': Order #{order.id} için {updated_item_count} kalem 'KDS Hazır' olarak işaretlendi.")
 
-        # Siparişteki KDS ile ilgili TÜM ürünleri tekrar sorgula
         all_kds_relevant_items = OrderItem.objects.filter(
             order=order,
             is_awaiting_staff_approval=False,
@@ -279,32 +276,37 @@ class KDSOrderViewSet(viewsets.ReadOnlyModelViewSet):
             menu_item__category__assigned_kds__isnull=False
         )
         
-        # Eğer KDS'e ait başka ürün kalmadıysa veya hepsi hazırsa, siparişin genel durumunu güncelle
         all_items_globally_ready = not all_kds_relevant_items.exclude(kds_status=OrderItem.KDS_ITEM_STATUS_READY).exists()
         
+        # +++ EKSTRA LOGLAMA +++
+        logger.info(f"[KDS VIEW] all_items_globally_ready_for_pickup set to {all_items_globally_ready}")
+        if not all_items_globally_ready:
+            still_pending_items = all_kds_relevant_items.exclude(kds_status=OrderItem.KDS_ITEM_STATUS_READY)
+            logger.warning(f"[KDS VIEW] Henüz hazır olmayan kalemler var: {[f'{item.menu_item.name} ({item.kds_status})' for item in still_pending_items]}")
+        # +++ EKSTRA LOGLAMA SONU +++
+        
         if all_items_globally_ready:
-            # Tüm ürünler hazır, siparişin genel durumunu güncelle
             if order.status != Order.STATUS_READY_FOR_PICKUP:
                 order.status = Order.STATUS_READY_FOR_PICKUP
                 order.kitchen_completed_at = timezone.now()
                 order.save(update_fields=['status', 'kitchen_completed_at'])
-                logger.info(f"Order ID {order.id} tüm KDS kalemleri hazır olduğu için durumu '{Order.STATUS_READY_FOR_PICKUP}' olarak güncellendi.")
+                logger.info(f"[KDS VIEW] Order ID {order.id} tüm KDS kalemleri hazır olduğu için durumu '{Order.STATUS_READY_FOR_PICKUP}' olarak güncellendi.")
                 
-                # Belirgin ve DOĞRU bildirimi gönder
+                logger.info(f"[KDS VIEW] Bildirim gönderiliyor. Order ID: {order.id}, update_fields: ['status', 'kitchen_completed_at']") # Ekstra log
                 transaction.on_commit(
                     lambda: send_order_update_notification(
-                        order=order, created=False, update_fields=['status', 'kitchen_completed_at']
+                        order=order,
+                        created=False,
+                        update_fields=['status', 'kitchen_completed_at']
                     )
                 )
         else:
-            # Siparişin sadece bir kısmı hazır, genel durumu değiştirme.
-            # Sadece NÖTR bir güncelleme bildirimi gönder ki ekranlar veriyi yenilesin.
-            logger.info(f"Order ID {order.id} için bazı kalemler hazır, ancak diğer KDS'lerde bekleyenler var. Sadece genel güncelleme bildirimi gönderilecek.")
+            logger.info(f"Order ID {order.id} için bazı kalemler hazır, ancak diğerleri bekliyor. Sadece genel güncelleme bildirimi gönderilecek.")
             transaction.on_commit(
                 lambda: send_order_update_notification(
                     order=order, 
                     created=False, 
-                    specific_event_type='order_updated' # <-- ANAHTAR DEĞİŞİKLİK
+                    specific_event_type='order_updated'
                 )
             )
             
