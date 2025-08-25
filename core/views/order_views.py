@@ -22,7 +22,6 @@ from ..models import (
 )
 from ..serializers import OrderSerializer, OrderItemSerializer
 from ..utils.order_helpers import PermissionKeys, get_user_business
-# === DEĞİŞİKLİK BURADA: Import yolunu yeni util dosyasından alıyoruz ===
 from ..utils.json_helpers import convert_decimals_to_strings
 from ..permissions import IsOnActiveShift
 from channels.layers import get_channel_layer
@@ -33,8 +32,6 @@ from ..signals.order_signals import send_order_update_notification
 from .order_actions import item_actions, status_actions, financial_actions, operational_actions
 
 logger = logging.getLogger(__name__)
-
-# Yerel fonksiyon tanımı kaldırıldı.
 
 class StandardResultsSetPagination(PageNumberPagination):
     page_size = 20
@@ -159,7 +156,6 @@ class OrderViewSet(viewsets.ModelViewSet):
         return obj
 
     def _check_order_modifiable(self, order: Order, action_name: str = "Bu işlem"):
-        """Siparişin değiştirilebilir olup olmadığını kontrol eden yardımcı metot."""
         allowed_actions_for_paid_order = ["retrieve", "list", "perform_destroy", "print_bill_action"]
         if order.is_paid and getattr(self, 'action', '') not in allowed_actions_for_paid_order:
             raise PermissionDenied(f"Ödenmiş siparişler üzerinde '{action_name}' yapılamaz.")
@@ -397,15 +393,22 @@ class OrderItemViewSet(mixins.DestroyModelMixin, mixins.UpdateModelMixin, viewse
             
             all_items_delivered = not order.order_items.filter(delivered=False).exists()
             order_updated_main_fields = []
-            if all_items_delivered and order.delivered_at is None:
-                order.delivered_at = timezone.now()
-                order_updated_main_fields.append('delivered_at')
-                logger.info(f"OrderItem güncellemesi sonucu Order ID {order.id} tamamen teslim edildi olarak işaretlendi.")
-            
-            if order_updated_main_fields:
+            if all_items_delivered:
+                # Siparişteki tüm ürünler teslim edildiğinde COMPLETED ve delivered_at güncellenmeli
+                if order.status != Order.STATUS_COMPLETED:
+                    order.status = Order.STATUS_COMPLETED
+                    logger.info(f"OrderItem güncellemesi sonucu Order ID {order.id} tamamen teslim edildi ve COMPLETED olarak işaretlendi.")
+                    order_updated_main_fields.append('status')
+                if order.delivered_at is None:
+                    order.delivered_at = timezone.now()
+                    order_updated_main_fields.append('delivered_at')
+                order.save(update_fields=order_updated_main_fields)
+            elif order_updated_main_fields:
                 order.save(update_fields=order_updated_main_fields)
 
         final_order_serializer = OrderSerializer(order, context={'request': self.request})
+        
+        transaction.on_commit(lambda: send_order_update_notification(order=order, created=False, update_fields=order_updated_main_fields if order_updated_main_fields else ['order_items']))
         
         try:
             from makarna_project.asgi import sio
@@ -513,7 +516,6 @@ class OrderItemViewSet(mixins.DestroyModelMixin, mixins.UpdateModelMixin, viewse
         serializer = OrderSerializer(order_item.order, context={'request': request})
         return Response(serializer.data, status=status.HTTP_200_OK)
 
-
     @action(detail=True, methods=['post'], url_path='mark-ready')
     @transaction.atomic
     def mark_item_ready(self, request, pk=None):
@@ -547,7 +549,6 @@ class OrderItemViewSet(mixins.DestroyModelMixin, mixins.UpdateModelMixin, viewse
     @action(detail=True, methods=['post'], url_path='mark-picked-up')
     @transaction.atomic
     def mark_item_picked_up(self, request, pk=None):
-        """Tek bir sipariş kalemini garson tarafından alınmış olarak işaretler."""
         order_item = self.get_object()
         order = order_item.order
         self._check_order_item_modifiable(order_item, "garson tarafından alınma")
@@ -570,7 +571,4 @@ class OrderItemViewSet(mixins.DestroyModelMixin, mixins.UpdateModelMixin, viewse
             order.save(update_fields=['status', 'picked_up_by_waiter_at'])
             transaction.on_commit(lambda: send_order_update_notification(order=order, created=False, update_fields=['status', 'order_items']))
         else:
-            transaction.on_commit(lambda: send_order_update_notification(order=order, created=False, update_fields=['order_items']))
-
-        order.refresh_from_db()
-        return Response(OrderSerializer(order, context=self.get_serializer_context()).data, status=status.HTTP_200_OK)
+            transaction.on
