@@ -1,842 +1,770 @@
-# core/models.py
+# core/admin.py
 
+from django.contrib import admin
+from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
+from django.utils.html import format_html
 from django.db import models
-# GÜNCELLEME: UserManager'ı import ediyoruz
-from django.contrib.auth.models import AbstractUser, UserManager
-from django.conf import settings
-import uuid
-from django.utils import timezone
-from datetime import timedelta
-from django.utils.text import slugify
-from django.utils.translation import gettext_lazy as _
-from django.core.validators import MinValueValidator, MaxValueValidator
-import pytz
 
-# === YENİ KOD BAŞLANGICI: CustomUserManager ===
-# Bu sınıf, 'createsuperuser' komutunun davranışını özelleştirir.
-class CustomUserManager(UserManager):
-    def create_superuser(self, username, email=None, password=None, **extra_fields):
-        # Superuser için is_staff ve is_superuser alanlarını True yapar.
-        extra_fields.setdefault("is_staff", True)
-        extra_fields.setdefault("is_superuser", True)
-        # EN ÖNEMLİ DÜZELTME: user_type alanını 'admin' olarak ayarlar.
-        extra_fields.setdefault("user_type", "admin")
-        # Adminin ayrıca bir onaya ihtiyacı yoktur.
-        extra_fields.setdefault("is_approved_by_admin", True)
-
-
-        if extra_fields.get("is_staff") is not True:
-            raise ValueError("Superuser must have is_staff=True.")
-        if extra_fields.get("is_superuser") is not True:
-            raise ValueError("Superuser must have is_superuser=True.")
-
-        return self._create_user(username, email, password, **extra_fields)
-# === YENİ KOD SONU ===
-
-
-STAFF_PERMISSION_CHOICES = [
-    ('view_reports', 'Raporları Görüntüleme'),
-    ('manage_credit_sales', 'Veresiye Satış Yönetimi'),
-    ('manage_menu', 'Menü Yönetimi (Kategori, Ürün, Varyant)'),
-    ('manage_stock', 'Stok Yönetimi'),
-    ('manage_tables', 'Masa Yönetimi'),
-    ('view_completed_orders', 'Tamamlanmış Siparişleri Görüntüleme'),
-    ('view_pending_orders', 'Bekleyen Siparişleri Görüntüleme'),
-    ('take_orders', 'Sipariş Alma (Masa/Paket)'),
-    ('manage_staff', 'Personel Yönetimi'),
-    ('manage_waiting_customers', 'Bekleyen Müşteri Yönetimi'),
-    ('view_account_settings', 'Hesap Ayarlarını Görüntüleme/Düzenleme'),
-    ('manage_kds', 'Mutfak Ekranını Kullanma/Yönetme (Genel)'),
-    ('manage_kds_screens', 'KDS Ekran Tanımlarını Yönetme (Ekle/Sil/Düzenle)'),
-    ('manage_pagers', 'Çağrı Cihazı Yönetimi'),
-    ('manage_campaigns', 'Kampanya Yönetimi'),
-]
-
-NOTIFICATION_EVENT_TYPES = [
-    ('guest_order_pending_approval', 'Misafir Siparişi Onay Bekliyor'),
-    ('order_pending_approval', 'Kayıtlı Kullanıcı Siparişi Onay Bekliyor'),
-    ('existing_order_needs_reapproval', 'Mevcut Sipariş Tekrar Onay Bekliyor'),
-    ('new_approved_order', 'Yeni Onaylanmış Sipariş (Personel/İşletme Sahibi)'),
-    ('order_approved_for_kitchen', 'Sipariş Onaylandı (Mutfağa İletildi)'),
-    ('order_preparing_update', 'Sipariş Mutfakta Hazırlanıyor'),
-    ('order_ready_for_pickup_update', 'Sipariş Mutfakta Hazır (Alınmayı Bekliyor)'),
-    ('order_picked_up_by_waiter', 'Sipariş Garson Tarafından Mutfaktan Alındı'),
-    ('order_out_for_delivery_update', 'Sipariş Teslime Hazır (Müşteriye Gidiyor)'),
-    ('order_item_delivered', 'Sipariş Kalemi Teslim Edildi'),
-    ('order_fully_delivered', 'Sipariş Tümüyle Teslim Edildi'),
-    ('order_completed_update', 'Sipariş Tamamlandı (Ödendi)'),
-    ('order_cancelled_update', 'Sipariş İptal Edildi'),
-    ('order_rejected_update', 'Sipariş Reddedildi'),
-    ('order_updated', 'Sipariş Genel Güncellemesi'),
-    ('order_item_added', 'Siparişe Ürün Eklendi'),
-    ('order_item_removed', 'Siparişten Ürün Çıkarıldı'),
-    ('order_item_updated', 'Sipariş Kalemi Güncellendi'),
-    ('order_transferred', 'Sipariş Başka Masaya Transfer Edildi'),
-    ('waiting_customer_added', 'Yeni Bekleyen Müşteri Eklendi'),
-    ('waiting_customer_updated', 'Bekleyen Müşteri Güncellendi'),
-    ('waiting_customer_removed', 'Bekleyen Müşteri Silindi'),
-    ('waiting_customer_seated', 'Bekleyen Müşteri Oturtuldu'),
-    ('stock_adjusted', 'Stok Ayarlandı/Güncellendi'),
-    ('pager_status_updated', 'Çağrı Cihazı Durumu Güncellendi'),
-]
-
-DEFAULT_BUSINESS_OWNER_NOTIFICATION_PERMISSIONS = [key for key, desc in NOTIFICATION_EVENT_TYPES]
-DEFAULT_STAFF_NOTIFICATION_PERMISSIONS = [
-    'order_ready_for_pickup_update',
-    'order_picked_up_by_waiter',
-    'order_out_for_delivery_update',
-    'order_item_delivered',
-    'waiting_customer_seated',
-    'pager_status_updated',
-]
-DEFAULT_KITCHEN_NOTIFICATION_PERMISSIONS = [
-    'order_approved_for_kitchen',
-    'order_item_added',
-    'order_updated',
-]
-
-
-class CustomUser(AbstractUser):
-    USER_TYPE_CHOICES = (
-        ('admin', 'Admin'),
-        ('business_owner', 'İşletme Sahibi'),
-        ('customer', 'Müşteri'),
-        ('staff', 'Personel'),
-        ('kitchen_staff', 'Mutfak Personeli'),
-    )
-    user_type = models.CharField(max_length=20, choices=USER_TYPE_CHOICES, default='customer')
-    profile_image_url = models.URLField(
-        max_length=1024,
-        blank=True,
-        null=True,
-        verbose_name="Profil Fotoğrafı URL'i"
-    )
-    associated_business = models.ForeignKey(
-        'Business',
-        on_delete=models.CASCADE,
-        null=True,
-        blank=True,
-        related_name='staff_members',
-        help_text="Kullanıcı 'Personel' veya 'Mutfak Personeli' tipindeyse hangi işletmeye bağlı olduğunu gösterir."
-    )
-    staff_permissions = models.JSONField(
-        default=list,
-        blank=True,
-        help_text="Personelin veya Mutfak Personelinin erişebileceği ekran/özellik anahtarlarının listesi (JSON formatında)."
-    )
-    notification_permissions = models.JSONField(
-        default=list,
-        blank=True,
-        help_text="Kullanıcının abone olduğu bildirim olay türlerinin listesi (JSON formatında). Örn: ['order_approved_for_kitchen', 'waiting_customer_added']"
-    )
-    is_approved_by_admin = models.BooleanField(
-        default=False,
-        help_text="Yöneticinin bu kullanıcı hesabını onaylayıp onaylamadığını belirtir."
-    )
-    accessible_kds_screens = models.ManyToManyField(
-        'KDSScreen',
-        blank=True,
-        related_name='authorized_staff',
-        verbose_name="Erişilebilir KDS Ekranları",
-        help_text="Personelin veya Mutfak Personelinin erişebileceği KDS ekranları."
-    )
-    groups = models.ManyToManyField(
-        'auth.Group',
-        related_name='customuser_set_%(app_label)s_%(class)s',
-        blank=True,
-        help_text='The groups this user belongs to.',
-        verbose_name='groups'
-    )
-    user_permissions = models.ManyToManyField(
-        'auth.Permission',
-        related_name='customuser_set_%(app_label)s_%(class)s',
-        blank=True,
-        help_text='Specific permissions for this user.',
-        verbose_name='user permissions'
-    )
-
-    # === YENİ SATIR: Django'ya artık bizim özel user manager'ımızı kullanmasını söylüyoruz ===
-    objects = CustomUserManager()
-
-    def __str__(self):
-        return self.username
-
-class Business(models.Model):
-    owner = models.OneToOneField(
-        CustomUser,
-        on_delete=models.CASCADE,
-        related_name='owned_business',
-        limit_choices_to={'user_type': 'business_owner'},
-        help_text="Bu işletmenin sahibi olan kullanıcı."
-    )
-    name = models.CharField(max_length=100)
-    address = models.TextField()
-    phone = models.CharField(max_length=20, blank=True, null=True, verbose_name="Telefon Numarası")
-    is_setup_complete = models.BooleanField(default=False, help_text="İşletme sahibi kurulum sihirbazını tamamladı mı?")
-
-    class Currency(models.TextChoices):
-        TRY = 'TRY', _('Türk Lirası (₺)')
-        USD = 'USD', _('ABD Doları ($)')
-        EUR = 'EUR', _('Euro (€)')
-        GBP = 'GBP', _('İngiliz Sterlini (£)')
-
-    currency_code = models.CharField(
-        max_length=3,
-        choices=Currency.choices,
-        default=Currency.TRY,
-        verbose_name=_("Para Birimi")
-    )
-
-    TIMEZONE_CHOICES = [(tz, tz) for tz in pytz.common_timezones]
-
-    timezone = models.CharField(
-        max_length=100,
-        choices=TIMEZONE_CHOICES,
-        default='Europe/Istanbul',
-        verbose_name="Zaman Dilimi",
-        help_text="İşletmenin bulunduğu yerel zaman dilimi."
-    )
-
-    def __str__(self):
-        return self.name
-
-class KDSScreen(models.Model):
-    business = models.ForeignKey(Business, on_delete=models.CASCADE, related_name='kds_screens', verbose_name="İşletme")
-    name = models.CharField(max_length=100, verbose_name="KDS Ekran Adı")
-    slug = models.SlugField(max_length=120, unique=True, blank=True, help_text="Bu KDS ekranı için benzersiz kısa ad (URL için). Otomatik oluşturulur.")
-    description = models.TextField(blank=True, null=True, verbose_name="Açıklama")
-    is_active = models.BooleanField(default=True, verbose_name="Aktif Mi?")
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
-
-    class Meta:
-        verbose_name = "KDS Ekranı"
-        verbose_name_plural = "KDS Ekranları"
-        unique_together = ('business', 'name')
-        ordering = ['name']
-
-    def __str__(self):
-        return f"{self.name} - {self.business.name}"
-
-    def save(self, *args, **kwargs):
-        if not self.slug:
-            base_slug = slugify(f"{self.business.id}-{self.name}")
-            unique_slug = base_slug
-            counter = 1
-            while KDSScreen.objects.filter(business=self.business, slug=unique_slug).exclude(pk=self.pk).exists():
-                unique_slug = f"{base_slug}-{counter}"
-                counter += 1
-            self.slug = unique_slug
-        super().save(*args, **kwargs)
-
-class Table(models.Model):
-    business = models.ForeignKey(Business, on_delete=models.CASCADE, related_name='tables')
-    table_number = models.PositiveIntegerField()
-    uuid = models.UUIDField(default=uuid.uuid4, editable=False, unique=True)
-
-    class Meta:
-        unique_together = ('business', 'table_number')
-        verbose_name = "Masa"
-        verbose_name_plural = "Masalar"
-
-    def __str__(self):
-        return f"Masa {self.table_number} - {self.business.name}"
-
-class Category(models.Model):
-    business = models.ForeignKey(Business, on_delete=models.CASCADE, related_name='categories')
-    name = models.CharField(max_length=100)
-    parent = models.ForeignKey(
-        'self', on_delete=models.CASCADE, null=True, blank=True, related_name='subcategories'
-    )
-    image = models.URLField(max_length=1024, null=True, blank=True)
-    assigned_kds = models.ForeignKey(
-        KDSScreen,
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name='categories_routed_here',
-        verbose_name="Atanmış KDS Ekranı",
-        help_text="Bu kategorideki ürünler hangi KDS ekranına yönlendirilecek?"
-    )
-    kdv_rate = models.DecimalField(
-        max_digits=5,
-        decimal_places=2,
-        default=10.00,
-        validators=[MinValueValidator(0), MaxValueValidator(100)],
-        help_text="Bu kategori için varsayılan KDV oranı (%). Örn: 10.00"
-    )
-
-    class Meta:
-        verbose_name = "Kategori"
-        verbose_name_plural = "Kategoriler"
-
-    def __str__(self):
-        return self.name
-
-class MenuItem(models.Model):
-    business = models.ForeignKey(Business, on_delete=models.CASCADE, related_name='menu_items')
-    name = models.CharField(max_length=100)
-    image = models.URLField(max_length=1024, null=True, blank=True)
-    description = models.TextField(blank=True, null=True)
-    category = models.ForeignKey(
-        Category, on_delete=models.SET_NULL, null=True, blank=True, related_name='menu_items'
-    )
-    is_campaign_bundle = models.BooleanField(default=False, help_text="Bu menü öğesi bir kampanya paketini mi temsil ediyor?")
-    is_active = models.BooleanField(default=True, verbose_name="Menüde Aktif Mi?", help_text="Pasif ürünler yeni siparişlerde görünmez ama eski raporlarda kalır.")
-    price = models.DecimalField(
-        max_digits=10, decimal_places=2, null=True, blank=True,
-        help_text="Eğer varyant yoksa veya bu bir kampanya paketi ise ürünün fiyatı."
-    )
-    kdv_rate = models.DecimalField(
-        max_digits=5,
-        decimal_places=2,
-        default=10.00,
-        validators=[MinValueValidator(0), MaxValueValidator(100)],
-        help_text="Ürüne özel KDV oranı (%). Boş bırakılırsa kategorinin varsayılanı kullanılır."
-    )
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
-
-    class Meta:
-        verbose_name = "Menü Öğesi"
-        verbose_name_plural = "Menü Öğeleri"
-        unique_together = ('business', 'name')
-        ordering = ['name']
-
-    def __str__(self):
-        active_status = "" if self.is_active else " [Pasif]"
-        return f"{self.name}{active_status} - {self.business.name}"
-
-class MenuItemVariant(models.Model):
-    menu_item = models.ForeignKey(MenuItem, on_delete=models.CASCADE, related_name='variants')
-    name = models.CharField(max_length=100)
-    price = models.DecimalField(max_digits=8, decimal_places=2)
-    is_extra = models.BooleanField(default=False)
-    image = models.URLField(max_length=1024, null=True, blank=True)
-
-    class Meta:
-        verbose_name = "Menü Varyantı"
-        verbose_name_plural = "Menü Varyantları"
-        unique_together = ('menu_item', 'name')
-        ordering = ['name']
-
-    def __str__(self):
-        extra_str = " (Ekstra)" if self.is_extra else ""
-        active_status_menu_item = "" if self.menu_item.is_active else " [Ana Ürün Pasif]"
-        return f"{self.menu_item.name}{active_status_menu_item} - {self.name}{extra_str} ({self.price} TL)"
-
-class CampaignMenu(models.Model):
-    business = models.ForeignKey(Business, on_delete=models.CASCADE, related_name='campaigns')
-    name = models.CharField(max_length=150, verbose_name="Kampanya Adı")
-    description = models.TextField(blank=True, null=True, verbose_name="Açıklama")
-    image = models.URLField(max_length=1024, null=True, blank=True, verbose_name="Kampanya Görseli")
-    campaign_price = models.DecimalField(max_digits=10, decimal_places=2, verbose_name="Kampanya Fiyatı")
-    is_active = models.BooleanField(default=True, verbose_name="Aktif Mi?")
-    start_date = models.DateField(null=True, blank=True, verbose_name="Başlangıç Tarihi")
-    end_date = models.DateField(null=True, blank=True, verbose_name="Bitiş Tarihi")
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
-    bundle_menu_item = models.OneToOneField(
-        MenuItem,
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name='represented_campaign',
-        help_text="Bu kampanyayı temsil eden özel menü öğesi."
-    )
-
-    class Meta:
-        verbose_name = "Kampanya Menüsü"
-        verbose_name_plural = "Kampanya Menüleri"
-        ordering = ['-created_at']
-
-    def __str__(self):
-        return f"{self.name} ({self.campaign_price} TL) - {self.business.name}"
-
-class CampaignMenuItem(models.Model):
-    campaign_menu = models.ForeignKey(CampaignMenu, on_delete=models.CASCADE, related_name='campaign_items')
-    menu_item = models.ForeignKey(MenuItem, on_delete=models.CASCADE, help_text="Kampanyaya dahil edilecek ana ürün.")
-    variant = models.ForeignKey(MenuItemVariant, on_delete=models.CASCADE, null=True, blank=True, help_text="Eğer ürünün belirli bir varyantı kampanyaya dahilse.")
-    quantity = models.PositiveIntegerField(default=1, verbose_name="Miktar")
-
-    class Meta:
-        verbose_name = "Kampanya Menü Öğesi"
-        verbose_name_plural = "Kampanya Menü Öğeleri"
-        unique_together = ('campaign_menu', 'menu_item', 'variant')
-
-    def __str__(self):
-        display_name = self.menu_item.name if self.menu_item else "Silinmiş Ürün"
-        if self.variant:
-            display_name += f" ({self.variant.name})"
-        return f"{self.quantity} x {display_name} (Kampanya: {self.campaign_menu.name})"
-
-class Stock(models.Model):
-    variant = models.OneToOneField(
-        MenuItemVariant,
-        on_delete=models.CASCADE,
-        related_name='stock'
-    )
-    quantity = models.PositiveIntegerField(default=0)
-    last_updated = models.DateTimeField(auto_now=True)
-    track_stock = models.BooleanField(
-        default=True,
-        verbose_name="Stok Takibi Aktif",
-        help_text="Bu ürünün stoğu takip edilecek mi? Pasif ise miktar ve uyarılar dikkate alınmaz."
-    )
-    alert_threshold = models.PositiveIntegerField(
-        null=True,
-        blank=True,
-        verbose_name="Uyarı Eşiği",
-        help_text="Stok bu sayının altına düştüğünde uyarı verilir. Boş bırakılırsa uyarı verilmez."
-    )
-
-    class Meta:
-        verbose_name = "Stok"
-        verbose_name_plural = "Stoklar"
-
-    def __str__(self):
-        track_status = "" if self.track_stock else " (Takip Dışı)"
-        return f"Stok: {self.variant} - {self.quantity}{track_status}"
-
-class StockMovement(models.Model):
-    MOVEMENT_TYPES = [
-        ('INITIAL', 'Başlangıç Stoku'),
-        ('ADDITION', 'Stok Girişi (Alım/Üretim)'),
-        ('SALE', 'Satış'),
-        ('RETURN', 'Müşteri İadesi'),
-        ('ADJUSTMENT_IN', 'Sayım Düzeltme (Fazla)'),
-        ('ADJUSTMENT_OUT', 'Sayım Düzeltme (Eksik)'),
-        ('WASTAGE', 'Zayiat/Fire'),
-        ('MANUAL_EDIT', 'Manuel Düzenleme'),
-    ]
-
-    stock = models.ForeignKey(Stock, on_delete=models.CASCADE, related_name='movements')
-    variant = models.ForeignKey(MenuItemVariant, on_delete=models.CASCADE, related_name='stock_movements')
-    movement_type = models.CharField(max_length=20, choices=MOVEMENT_TYPES)
-    quantity_change = models.IntegerField()
-    quantity_before = models.PositiveIntegerField()
-    quantity_after = models.PositiveIntegerField()
-    timestamp = models.DateTimeField(auto_now_add=True)
-    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, help_text="Bu hareketi yapan kullanıcı.")
-    description = models.TextField(blank=True, null=True)
-    related_order = models.ForeignKey('Order', on_delete=models.SET_NULL, null=True, blank=True, related_name='stock_movements_as_order')
-
-    class Meta:
-        ordering = ['-timestamp']
-        verbose_name = "Stok Hareketi"
-        verbose_name_plural = "Stok Hareketleri"
-
-    def __str__(self):
-        variant_display = "Bilinmeyen Varyant"
-        if self.variant:
-            menu_item_name = self.variant.menu_item.name if self.variant.menu_item else "Bilinmeyen Ürün"
-            variant_display = f"{menu_item_name} ({self.variant.name})"
-        timestamp_display = self.timestamp.strftime('%d/%m/%Y %H:%M') if self.timestamp else "Bilinmeyen Zaman"
-        return f"{variant_display} - {self.get_movement_type_display()}: {self.quantity_change} @ {timestamp_display}"
-
-class Pager(models.Model):
-    PAGER_STATUS_CHOICES = [
-        ('available', 'Boşta'),
-        ('in_use', 'Kullanımda'),
-        ('charging', 'Şarj Oluyor'),
-        ('low_battery', 'Düşük Batarya'),
-        ('out_of_service', 'Servis Dışı'),
-    ]
-
-    business = models.ForeignKey(Business, on_delete=models.CASCADE, related_name='pagers', verbose_name="İşletme")
-    device_id = models.CharField(max_length=100, verbose_name="Cihaz ID (MAC vb.)")
-    name = models.CharField(max_length=100, blank=True, null=True, verbose_name="Cihaz Adı (Takma Ad)")
-    status = models.CharField(max_length=20, choices=PAGER_STATUS_CHOICES, default='available', verbose_name="Durum")
-    last_status_update = models.DateTimeField(auto_now=True, verbose_name="Son Durum Güncelleme")
-    current_order = models.OneToOneField(
-        'Order',
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name='assigned_pager_instance',
-        verbose_name="Mevcut Atanmış Sipariş"
-    )
-    notes = models.TextField(blank=True, null=True, verbose_name="Cihaz Notları")
-
-    class Meta:
-        unique_together = ('business', 'device_id')
-        verbose_name = "Çağrı Cihazı (Pager)"
-        verbose_name_plural = "Çağrı Cihazları (Pagerlar)"
-        ordering = ['business', 'name', 'device_id']
-
-    def __str__(self):
-        return f"{self.name or self.device_id} ({self.get_status_display()}) - {self.business.name}"
-
-class Order(models.Model):
-    ORDER_TYPE_CHOICES = (
-        ('table', 'Masa Siparişi'),
-        ('takeaway', 'Takeaway Siparişi'),
-    )
-
-    STATUS_PENDING_APPROVAL = 'pending_approval'
-    STATUS_APPROVED = 'approved'
-    STATUS_PREPARING = 'preparing'
-    STATUS_READY_FOR_PICKUP = 'ready_for_pickup'
-    STATUS_READY_FOR_DELIVERY = 'ready_for_delivery'
-    STATUS_REJECTED = 'rejected'
-    STATUS_COMPLETED = 'completed'
-    STATUS_CANCELLED = 'cancelled'
-
-    ORDER_STATUS_CHOICES = [
-        (STATUS_PENDING_APPROVAL, 'Onay Bekliyor'),
-        (STATUS_APPROVED, 'Onaylandı (Mutfağa İletildi)'),
-        (STATUS_PREPARING, 'Mutfakta Hazırlanıyor'),
-        (STATUS_READY_FOR_PICKUP, 'Mutfakta Hazır (Garson Bekliyor)'),
-        (STATUS_READY_FOR_DELIVERY, 'Teslime Hazır (Garson Aldı)'),
-        (STATUS_REJECTED, 'Reddedildi'),
-        (STATUS_COMPLETED, 'Tamamlandı (Ödendi)'),
-        (STATUS_CANCELLED, 'İptal Edildi'),
-    ]
-
-    customer = models.ForeignKey(
-        CustomUser,
-        on_delete=models.SET_NULL,
-        related_name='orders_placed',
-        null=True,
-        blank=True
-    )
-    business = models.ForeignKey(Business, on_delete=models.CASCADE, related_name='business_orders')
-    table = models.ForeignKey(
-        Table, on_delete=models.SET_NULL, related_name='table_orders', null=True, blank=True
-    )
-    order_type = models.CharField(max_length=20, choices=ORDER_TYPE_CHOICES, default='table')
-    customer_name = models.CharField(max_length=100, blank=True, null=True)
-    customer_phone = models.CharField(max_length=20, blank=True, null=True)
-    created_at = models.DateTimeField(
-        auto_now_add=True,
-        db_index=True,
-        verbose_name="Oluşturulma Tarihi (Müşteri/Personel)"
-    )
-    approved_at = models.DateTimeField(
-        null=True, blank=True, db_index=True,
-        help_text="Personel tarafından onaylandığı veya mutfağa ilk iletildiği zaman.",
-        verbose_name="Onaylanma/Mutfağa İletilme Tarihi"
-    )
-    kitchen_completed_at = models.DateTimeField(
-        null=True, blank=True, db_index=True,
-        help_text="Siparişin TÜM kalemlerinin mutfak tarafından 'hazır' olarak işaretlendiği zaman.",
-        verbose_name="Mutfakta Hazır Olma Tarihi"
-    )
-    picked_up_by_waiter_at = models.DateTimeField(
-        null=True, blank=True, db_index=True,
-        help_text="Siparişin garson tarafından mutfaktan teslim alındığı zaman (müşteriye götürülmek üzere).",
-        verbose_name="Garson Teslim Alma Tarihi"
-    )
-    delivered_at = models.DateTimeField(
-        null=True, blank=True, db_index=True,
-        help_text="Siparişin müşteriye teslim edildiği zaman.",
-        verbose_name="Müşteriye Teslim Edilme Tarihi"
-    )
-    is_paid = models.BooleanField(default=False, db_index=True)
-    is_split_table = models.BooleanField(default=False)
-    taken_by_staff = models.ForeignKey(
-        CustomUser,
-        on_delete=models.SET_NULL,
-        related_name='orders_taken_by_staff',
-        null=True,
-        blank=True,
-        limit_choices_to=models.Q(user_type='staff') | models.Q(user_type='business_owner'),
-        help_text="Siparişi alan/onaylayan garson veya işletme sahibi."
-    )
-    prepared_by_kitchen_staff = models.ForeignKey(
-        CustomUser,
-        on_delete=models.SET_NULL,
-        related_name='orders_prepared_in_kitchen',
-        null=True,
-        blank=True,
-        limit_choices_to=models.Q(user_type__in=['kitchen_staff', 'staff', 'business_owner']),
-        help_text="Siparişi mutfakta hazırlayan/onaylayan personel (Genel)."
-    )
-    status = models.CharField(
-        max_length=30,
-        choices=ORDER_STATUS_CHOICES,
-        default=STATUS_APPROVED,
-        db_index=True,
-        help_text="Siparişin genel durumu."
-    )
-    uuid = models.UUIDField(
-        default=uuid.uuid4,
-        editable=False,
-        unique=True,
-        null=True,
-        blank=True,
-        db_index=True,
-        help_text="Paket servis siparişleri için misafir menüsü QR kod linki."
-    )
-    total_kdv_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0.00, verbose_name="Toplam KDV Tutarı")
-    grand_total = models.DecimalField(max_digits=10, decimal_places=2, default=0.00, verbose_name="Genel Toplam (KDV Dahil)")
-
-    class Meta:
-        verbose_name = "Sipariş"
-        verbose_name_plural = "Siparişler"
-        ordering = ['-created_at']
-
-    def save(self, *args, **kwargs):
-        if self._state.adding and self.order_type == 'takeaway':
-            if self.uuid is None:
-                self.uuid = uuid.uuid4()
-        
-        if not self._state.adding and self.order_type == 'table':
-            self.uuid = None
-
-        super().save(*args, **kwargs)
-
-    def __str__(self):
-        customer_display = "Misafir"
-        if self.customer:
-            customer_display = self.customer.username
-        elif self.customer_name:
-            customer_display = self.customer_name
-
-        status_display = self.get_status_display()
-        pager_info = ""
-        try:
-            if hasattr(self, 'assigned_pager_instance') and self.assigned_pager_instance:
-                pager_obj = self.assigned_pager_instance
-                pager_info = f" (Pager: {pager_obj.name or pager_obj.device_id})"
-        except Pager.DoesNotExist:
-            pass
-        except AttributeError:
-            pass
-
-        if self.order_type == 'table' and self.table:
-            return f"Sipariş {self.id} ({customer_display}) - Masa {self.table.table_number} [{status_display}]{pager_info}"
-        else:
-            return f"Sipariş {self.id} ({customer_display}) - Paket [{status_display}]{pager_info}"
-
-class OrderTableUser(models.Model):
-    order = models.ForeignKey(Order, on_delete=models.CASCADE, related_name='table_users')
-    name = models.CharField(max_length=100)
-
-    class Meta:
-        verbose_name = "Sipariş Masa Kullanıcısı"
-        verbose_name_plural = "Sipariş Masa Kullanıcıları"
-
-    def __str__(self):
-        return self.name
-
-class OrderItem(models.Model):
-    KDS_ITEM_STATUS_PENDING = 'pending_kds'
-    KDS_ITEM_STATUS_PREPARING = 'preparing_kds'
-    KDS_ITEM_STATUS_READY = 'ready_kds'
-    KDS_ITEM_STATUS_PICKED_UP = 'picked_up_kds'
-
-    KDS_ITEM_STATUS_CHOICES = (
-        (KDS_ITEM_STATUS_PENDING, 'KDS Beklemede'),
-        (KDS_ITEM_STATUS_PREPARING, 'KDS Hazırlanıyor'),
-        (KDS_ITEM_STATUS_READY, 'KDS Hazır'),
-        (KDS_ITEM_STATUS_PICKED_UP, 'Garson Aldı'),
-    )
-
-    order = models.ForeignKey(Order, on_delete=models.CASCADE, related_name='order_items')
-    menu_item = models.ForeignKey(
-        MenuItem,
-        related_name='order_items',
-        on_delete=models.PROTECT,
-        help_text="Siparişe eklenen ana menü öğesi."
-    )
-    variant = models.ForeignKey(
-        MenuItemVariant,
-        on_delete=models.PROTECT,
-        null=True,
-        blank=True,
-        related_name='order_items_as_variant',
-        help_text="Sipariş edilen ürünün varyantı (eğer varsa)."
-    )
-    quantity = models.PositiveIntegerField(default=1)
-    table_user = models.CharField(max_length=100, blank=True, null=True)
-    delivered = models.BooleanField(default=False, help_text="Bu kalem müşteriye teslim edildi mi?")
-    price = models.DecimalField(max_digits=10, decimal_places=2, default=0, help_text="Bu kalemin (ekstralar dahil) KDV hariç birim fiyatı.")
-    is_awaiting_staff_approval = models.BooleanField(default=False, help_text="Bu kalem misafir tarafından eklendi ve personel onayı mı bekliyor?")
-    kds_status = models.CharField(
-        max_length=20,
-        choices=KDS_ITEM_STATUS_CHOICES,
-        default=KDS_ITEM_STATUS_PENDING,
-        null=True,
-        blank=True,
-        help_text="Bu sipariş kaleminin atandığı KDS'teki hazırlık durumu."
-    )
-    item_prepared_by_staff = models.ForeignKey(
-        settings.AUTH_USER_MODEL,
-        on_delete=models.SET_NULL,
-        related_name='prepared_order_items',
-        null=True,
-        blank=True,
-        limit_choices_to=models.Q(user_type__in=['kitchen_staff', 'staff', 'business_owner']),
-        help_text="Bu kalemi KDS'te hazırlayan veya hazır işaretleyen personel."
-    )
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
-    waiter_picked_up_at = models.DateTimeField(
-        null=True,
-        blank=True,
-        help_text="Kalemin garson tarafından mutfaktan alındığı zaman.",
-        verbose_name="Garson Teslim Alma Zamanı (Kalem)"
-    )
-    kdv_rate = models.DecimalField(
-        max_digits=5,
-        decimal_places=2,
-        default=10.00,
-        validators=[MinValueValidator(0), MaxValueValidator(100)],
-        help_text="Bu ürün için sipariş anındaki KDV oranı."
-    )
-    kdv_amount = models.DecimalField(
-        max_digits=10,
-        decimal_places=2,
-        default=0.00,
-        help_text="Bu kalem için hesaplanan toplam KDV tutarı (birim KDV * adet)."
-    )
-
-    class Meta:
-        verbose_name = "Sipariş Kalemi"
-        verbose_name_plural = "Sipariş Kalemleri"
-
-    def __str__(self):
-        approval_status = " (Personel Onayı Bekliyor)" if self.is_awaiting_staff_approval else ""
-        kds_display_text = self.get_kds_status_display() if self.kds_status else ""
-        kds_status_info = f" [KDS: {kds_display_text}]" if kds_display_text else ""
-        menu_item_name = self.menu_item.name if self.menu_item else "Bilinmeyen/Silinmiş Ürün"
-        return f"{self.quantity} x {menu_item_name}{approval_status}{kds_status_info} ({self.price} TL)"
+# --- YENİ: Subscription modeli buraya import edildi ---
+from subscriptions.models import Subscription
+
+from .models import (
+    Business, Table, MenuItem, Order, OrderItem, Payment, Category,
+    MenuItemVariant, Stock, WaitingCustomer, CreditPaymentDetails,
+    StockMovement, CustomUser, OrderTableUser, OrderItemExtra,
+    Pager, CampaignMenu, CampaignMenuItem,
+    KDSScreen,
+    Shift, ScheduledShift,
+    STAFF_PERMISSION_CHOICES, NOTIFICATION_EVENT_TYPES
+)
+
+# CustomUserAdmin sınıfında değişiklik yok, aynı kalıyor
+@admin.register(CustomUser)
+class CustomUserAdmin(BaseUserAdmin):
+    list_display = ('username', 'email', 'first_name', 'last_name', 'user_type',
+                    'associated_business', 'is_staff', 'is_active', 'is_approved_by_admin')
+    list_filter = BaseUserAdmin.list_filter + ('user_type', 'associated_business', 'is_active', 'is_approved_by_admin')
+    search_fields = BaseUserAdmin.search_fields + ('associated_business__name',)
     
-    def get_kds_status_display(self):
-        return dict(self.KDS_ITEM_STATUS_CHOICES).get(self.kds_status, self.kds_status)
-
-class OrderItemExtra(models.Model):
-    order_item = models.ForeignKey(OrderItem, on_delete=models.CASCADE, related_name='extras')
-    variant = models.ForeignKey(MenuItemVariant, on_delete=models.CASCADE)
-    quantity = models.PositiveIntegerField(default=1)
-
-    class Meta:
-        verbose_name = "Sipariş Kalemi Ekstrası"
-        verbose_name_plural = "Sipariş Kalemi Ekstraları"
-
-    def __str__(self):
-        return f"Ekstra: {self.variant.name} x {self.quantity}"
-
-class Payment(models.Model):
-    PAYMENT_CHOICES = [
-        ('credit_card', 'Kredi Kartı'),
-        ('cash', 'Nakit'),
-        ('food_card', 'Yemek Kartı'),
-    ]
-    order = models.OneToOneField(Order, on_delete=models.CASCADE, related_name='payment_info')
-    payment_type = models.CharField(max_length=20, choices=PAYMENT_CHOICES)
-    amount = models.DecimalField(max_digits=10, decimal_places=2)
-    payment_date = models.DateTimeField(auto_now_add=True)
-
-    class Meta:
-        verbose_name = "Ödeme"
-        verbose_name_plural = "Ödemeler"
-
-    def __str__(self):
-        return f"Ödeme: Sipariş {self.order.id} - {self.get_payment_type_display()}"
-
-class WaitingCustomer(models.Model):
-    business = models.ForeignKey(Business, on_delete=models.CASCADE, related_name='waiting_customers')
-    name = models.CharField(max_length=100)
-    phone = models.CharField(max_length=20, blank=True, null=True)
-    party_size = models.PositiveIntegerField(default=1, help_text="Müşteri grubundaki kişi sayısı.")
-    notes = models.TextField(blank=True, null=True, help_text="Müşteri ile ilgili özel notlar.")
-    is_waiting = models.BooleanField(default=True)
-    created_at = models.DateTimeField(auto_now_add=True)
-    called_at = models.DateTimeField(null=True, blank=True, help_text="Müşterinin çağrıldığı zaman.")
-    seated_at = models.DateTimeField(null=True, blank=True, help_text="Müşterinin masaya oturtulduğu zaman.")
-
-    class Meta:
-        verbose_name = "Bekleyen Müşteri"
-        verbose_name_plural = "Bekleyen Müşteriler"
-        ordering = ['-created_at']
-
-    def __str__(self):
-        return f"{self.name} ({self.party_size} kişi) - Bekliyor: {self.is_waiting}"
-
-class CreditPaymentDetails(models.Model):
-    order = models.OneToOneField(
-        Order,
-        on_delete=models.CASCADE,
-        related_name='credit_payment_details'
+    fieldsets = (
+        (None, {'fields': ('username', 'password')}),
+        ('Personal info', {'fields': ('first_name', 'last_name', 'email')}),
+        ('Permissions & Type', {
+            'fields': (
+                'is_active', 'is_staff', 'is_superuser', 
+                'is_approved_by_admin',
+                'user_type',
+                'groups', 'user_permissions'
+            )
+        }),
+        ('Business, Staff, KDS & Notification Info', {
+            'fields': ('associated_business', 'staff_permissions', 'notification_permissions', 'accessible_kds_screens')
+        }),
+        ('Important dates', {'fields': ('last_login', 'date_joined')}),
     )
-    notes = models.TextField(blank=True, null=True)
-    created_at = models.DateTimeField(auto_now_add=True)
-    paid_at = models.DateTimeField(null=True, blank=True)
-
-    class Meta:
-        verbose_name = "Veresiye Detayı"
-        verbose_name_plural = "Veresiye Detayları"
-
-    def __str__(self):
-        customer_display = self.order.customer.username if self.order.customer else self.order.customer_name
-        status = "Ödendi" if self.paid_at else "Ödenmedi"
-        return f"Veresiye: Sipariş {self.order.id} ({customer_display or 'Bilinmiyor'}) - Durum: {status}"
-
-class Shift(models.Model):
-    business = models.ForeignKey(Business, on_delete=models.CASCADE, related_name='shifts', verbose_name="İşletme")
-    name = models.CharField(max_length=100, help_text="Örn: Sabah Vardiyası, Akşam Vardiyası")
-    start_time = models.TimeField(verbose_name="Başlangıç Saati")
-    end_time = models.TimeField(verbose_name="Bitiş Saati")
-    color = models.CharField(max_length=7, default='#3788D8', help_text="Takvimde görünecek renk kodu (Hex). Örn: #FF5733")
-
-    class Meta:
-        unique_together = ('business', 'name')
-        verbose_name = "Vardiya Şablonu"
-        verbose_name_plural = "Vardiya Şablonları"
-        ordering = ['start_time']
-
-    def __str__(self):
-        return f"{self.name} ({self.start_time.strftime('%H:%M')} - {self.end_time.strftime('%H:%M')})"
-
-class ScheduledShift(models.Model):
-    staff = models.ForeignKey(
-        CustomUser,
-        on_delete=models.CASCADE,
-        related_name='scheduled_shifts',
-        limit_choices_to=models.Q(user_type__in=['staff', 'kitchen_staff']),
-        verbose_name="Personel"
+    
+    add_fieldsets = BaseUserAdmin.add_fieldsets + (
+        (None, {
+            'classes': ('wide',),
+            'fields': ('user_type', 'associated_business', 'staff_permissions', 'notification_permissions', 'accessible_kds_screens',
+                       'first_name', 'last_name', 'email', 
+                       'is_active', 'is_approved_by_admin'),
+        }),
     )
-    shift = models.ForeignKey(Shift, on_delete=models.CASCADE, related_name='scheduled_instances', verbose_name="Vardiya")
-    date = models.DateField(verbose_name="Tarih")
+    filter_horizontal = BaseUserAdmin.filter_horizontal + ('accessible_kds_screens',)
+    
+    actions = ['approve_selected_users', 'deactivate_selected_users', 'activate_selected_users']
 
-    class Meta:
-        unique_together = ('staff', 'date')
-        verbose_name = "Planlanmış Vardiya"
-        verbose_name_plural = "Planlanmış Vardiyalar"
-        ordering = ['date', 'shift__start_time']
+    def approve_selected_users(self, request, queryset):
+        updated_count = queryset.filter(
+            is_approved_by_admin=False, 
+            user_type__in=['customer', 'business_owner']
+        ).update(is_active=True, is_approved_by_admin=True)
+        self.message_user(request, f"{updated_count} kullanıcı başarıyla onaylandı ve aktifleştirildi.")
+    approve_selected_users.short_description = "Seçili kullanıcıları onayla ve aktifleştir"
 
-    def __str__(self):
-        return f"{self.staff.username} - {self.date.strftime('%d/%m/%Y')} - {self.shift.name}"
+    def deactivate_selected_users(self, request, queryset):
+        updated_count = queryset.update(is_active=False)
+        self.message_user(request, f"{updated_count} kullanıcı başarıyla pasifleştirildi.")
+    deactivate_selected_users.short_description = "Seçili kullanıcıları pasifleştir"
 
-# === YENİ MODEL ===
-class NotificationSetting(models.Model):
-    """
-    WebSocket üzerinden gönderilecek bildirim türlerinin aktif olup olmadığını yönetir.
-    """
-    event_type = models.CharField(
-        max_length=100, 
-        primary_key=True, 
-        verbose_name="Bildirim Olay Tipi (Anahtar)"
-    )
-    is_active = models.BooleanField(
-        default=True, 
-        verbose_name="Aktif Mi?",
-        help_text="Bu bildirim türü aktifse Redis üzerinden gönderilir. Pasif ise gönderilmez."
-    )
-    description = models.CharField(
-        max_length=255, 
-        blank=True, 
-        null=True, 
-        verbose_name="Açıklama"
+    def activate_selected_users(self, request, queryset):
+        updated_count = queryset.filter(is_approved_by_admin=True).update(is_active=True)
+        self.message_user(request, f"{updated_count} onaylı kullanıcı başarıyla aktifleştirildi.")
+    activate_selected_users.short_description = "Seçili (onaylı) kullanıcıları aktifleştir"
+
+    def formfield_for_manytomany(self, db_field, request, **kwargs):
+        if db_field.name == "accessible_kds_screens":
+            obj_id = request.resolver_match.kwargs.get('object_id')
+            if obj_id:
+                user_instance = self.get_object(request, object_id=obj_id)
+                if user_instance:
+                    target_business = user_instance.associated_business or getattr(user_instance, 'owned_business', None)
+                    if target_business:
+                        kwargs["queryset"] = KDSScreen.objects.filter(business=target_business)
+                    else:
+                        kwargs["queryset"] = KDSScreen.objects.none()
+        return super().formfield_for_manytomany(db_field, request, **kwargs)
+
+
+# --- YENİ: Subscription modelini Business admin içinde yönetmek için bir inline oluşturuyoruz ---
+class SubscriptionInline(admin.StackedInline):
+    model = Subscription
+    can_delete = False
+    verbose_name_plural = 'Abonelik Bilgileri'
+    # Gösterilecek ve düzenlenecek alanlar
+    fields = ('plan', 'status', 'expires_at', 'provider', 'provider_subscription_id')
+    autocomplete_fields = ('plan',)
+    readonly_fields = ('provider', 'provider_subscription_id',)
+
+
+@admin.register(Business)
+class BusinessAdmin(admin.ModelAdmin):
+    # GÜNCELLENDİ: list_display, yeni metotları kullanacak şekilde değiştirildi.
+    list_display = ('name', 'owner_username', 'is_setup_complete', 'get_subscription_status', 'get_subscription_expires_at')
+    
+    search_fields = ('name', 'owner__username')
+    
+    # GÜNCELLEME: list_filter, yeni ilişki üzerinden sorgu yapacak şekilde değiştirildi.
+    list_filter = ('owner','is_setup_complete', 'subscription__status', 'subscription__plan')
+    
+    # GÜNCELLEME: İlişkili model alanları 'list_editable' içinde kullanılamaz.
+    list_editable = ('is_setup_complete',)
+    
+    # YENİ: Oluşturduğumuz SubscriptionInline'ı buraya ekliyoruz.
+    inlines = [SubscriptionInline]
+    
+    readonly_fields = ('owner',)
+    
+    # GÜNCELLENDİ: fieldsets içindeki abonelik alanları artık inline'da yönetildiği için kaldırıldı.
+    fieldsets = (
+        ('Temel Bilgiler', {
+            'fields': ('name', 'owner', 'address', 'phone')
+        }),
+        ('Uygulama Ayarları', {
+            'fields': ('is_setup_complete', 'currency_code', 'timezone')
+        }),
     )
 
-    class Meta:
-        verbose_name = "Bildirim Ayarı"
-        verbose_name_plural = "Bildirim Ayarları"
-        ordering = ['event_type']
+    # Sorgu optimizasyonu için eklendi
+    list_select_related = ('owner', 'subscription', 'subscription__plan') 
 
-    def __str__(self):
-        status = "Aktif" if self.is_active else "Pasif"
-        return f"{self.event_type} - {status}"
+    def owner_username(self, obj):
+        return obj.owner.username
+    owner_username.short_description = 'Sahip (Kullanıcı Adı)'
+    
+    # YENİ: Abonelik durumunu göstermek için metot
+    @admin.display(description='Abonelik Durumu', ordering='subscription__status')
+    def get_subscription_status(self, obj):
+        try:
+            # hasattr kontrolü, subscription nesnesi henüz oluşmamışsa (nadir durum) hata vermesini engeller
+            if hasattr(obj, 'subscription') and obj.subscription:
+                return obj.subscription.get_status_display()
+        except Subscription.DoesNotExist:
+            pass # Bu durumda alttaki None dönecek
+        return "Abonelik Yok"
+
+    # YENİ: Abonelik bitiş tarihini göstermek için metot
+    @admin.display(description='Abonelik Bitiş', ordering='subscription__expires_at')
+    def get_subscription_expires_at(self, obj):
+        try:
+            if hasattr(obj, 'subscription') and obj.subscription and obj.subscription.expires_at:
+                return obj.subscription.expires_at.strftime('%d.%m.%Y')
+            return "-"
+        except Subscription.DoesNotExist:
+            return "-"
+
+# ... Bu dosyada bulunan diğer tüm Admin sınıflarınız (TableAdmin, KDSScreenAdmin, vb.) aynı şekilde kalmalıdır ...
+# Sadece BusinessAdmin sınıfını yukarıdaki gibi değiştirmeniz yeterlidir.
+
+@admin.register(Table)
+class TableAdmin(admin.ModelAdmin):
+    list_display = ('table_number', 'business', 'uuid')
+    list_filter = ('business',)
+    search_fields = ('table_number', 'business__name', 'uuid')
+    list_editable = ('table_number',)
+    list_display_links = ('uuid',)
+
+
+@admin.register(KDSScreen)
+class KDSScreenAdmin(admin.ModelAdmin):
+    list_display = ('name', 'business', 'slug', 'is_active', 'created_at')
+    list_filter = ('business', 'is_active')
+    search_fields = ('name', 'slug', 'business__name')
+    prepopulated_fields = {'slug': ('business', 'name',)}
+    list_editable = ('is_active',)
+    readonly_fields = ('created_at', 'updated_at')
+
+    fieldsets = (
+        (None, {'fields': ('business', 'name', 'slug')}),
+        ('Detaylar ve Durum', {'fields': ('description', 'is_active')}),
+        ('Tarihler', {'fields': ('created_at', 'updated_at')}),
+    )
+
+
+@admin.register(Category)
+class CategoryAdmin(admin.ModelAdmin):
+    list_display = ('name', 'business', 'parent_category_name', 'assigned_kds_name', 'image_tag_preview')
+    list_filter = ('business', 'parent', 'assigned_kds')
+    search_fields = ('name', 'business__name', 'parent__name', 'assigned_kds__name')
+    readonly_fields = ('image_tag_preview',)
+    autocomplete_fields = ['parent', 'assigned_kds']
+
+    def parent_category_name(self, obj):
+        return obj.parent.name if obj.parent else "-"
+    parent_category_name.short_description = 'Üst Kategori'
+
+    def assigned_kds_name(self, obj):
+        return obj.assigned_kds.name if obj.assigned_kds else "-"
+    assigned_kds_name.short_description = 'Atanmış KDS'
+    assigned_kds_name.admin_order_field = 'assigned_kds__name'
+
+
+    def image_tag_preview(self, obj):
+        if obj.image:
+            return format_html('<img src="{}" width="50" height="50" style="object-fit: cover;" />', obj.image.url if hasattr(obj.image, 'url') else obj.image)
+        return "-"
+    image_tag_preview.short_description = 'Görsel Önizleme'
+
+    def get_queryset(self, request):
+        qs = super().get_queryset(request)
+        if request.user.is_superuser:
+            return qs
+        if hasattr(request.user, 'owned_business') and request.user.owned_business:
+            return qs.filter(business=request.user.owned_business)
+        if hasattr(request.user, 'associated_business') and request.user.associated_business:
+            return qs.filter(business=request.user.associated_business)
+        return qs.none()
+
+    def formfield_for_foreignkey(self, db_field, request, **kwargs):
+        user = request.user
+        if not user.is_superuser:
+            if db_field.name == "business":
+                if hasattr(user, 'owned_business') and user.owned_business:
+                    kwargs["queryset"] = Business.objects.filter(pk=user.owned_business.pk)
+                    kwargs["initial"] = user.owned_business.pk
+                    kwargs["disabled"] = True
+                elif hasattr(user, 'associated_business') and user.associated_business:
+                    kwargs["queryset"] = Business.objects.filter(pk=user.associated_business.pk)
+                    kwargs["initial"] = user.associated_business.pk
+                    kwargs["disabled"] = True
+                else:
+                    kwargs["queryset"] = Business.objects.none()
+            
+            if db_field.name == "assigned_kds":
+                target_business = None
+                obj_id = request.resolver_match.kwargs.get('object_id')
+                if obj_id:
+                    category_instance = self.get_object(request, object_id=obj_id)
+                    if category_instance:
+                        target_business = category_instance.business
+                elif hasattr(user, 'owned_business') and user.owned_business:
+                    target_business = user.owned_business
+                elif hasattr(user, 'associated_business') and user.associated_business:
+                    target_business = user.associated_business
+                
+                if target_business:
+                    kwargs["queryset"] = KDSScreen.objects.filter(business=target_business)
+                else:
+                    pass
+        return super().formfield_for_foreignkey(db_field, request, **kwargs)
+
+
+class MenuItemVariantInline(admin.TabularInline):
+    model = MenuItemVariant
+    extra = 1
+    fields = ('name', 'price', 'is_extra', 'image')
+
+@admin.register(MenuItem)
+class MenuItemAdmin(admin.ModelAdmin):
+    list_display = ('name', 'business', 'category_name', 'description_short', 'image_tag_preview', 'is_campaign_bundle')
+    list_filter = ('business', 'category', 'is_campaign_bundle', 'category__assigned_kds')
+    search_fields = ('name', 'description', 'business__name', 'category__name', 'category__assigned_kds__name')
+    inlines = [MenuItemVariantInline]
+    readonly_fields = ('image_tag_preview',)
+    list_per_page = 20
+    autocomplete_fields = ['category']
+
+    def category_name(self, obj):
+        if obj.category:
+            kds_name = f" (KDS: {obj.category.assigned_kds.name})" if obj.category.assigned_kds else ""
+            return f"{obj.category.name}{kds_name}"
+        return "-"
+    category_name.short_description = 'Kategori (KDS)'
+    category_name.admin_order_field = 'category__name'
+
+    def description_short(self, obj):
+        return (obj.description[:75] + '...') if len(obj.description) > 75 else obj.description
+    description_short.short_description = 'Açıklama'
+    
+    def image_tag_preview(self, obj):
+        if obj.image:
+            return format_html('<img src="{}" width="50" height="50" style="object-fit: cover;" />', obj.image.url if hasattr(obj.image, 'url') else obj.image)
+        return "-"
+    image_tag_preview.short_description = 'Görsel Önizleme'
+
+    def get_queryset(self, request):
+        qs = super().get_queryset(request)
+        if request.user.is_superuser:
+            return qs
+        if hasattr(request.user, 'owned_business') and request.user.owned_business:
+            return qs.filter(business=request.user.owned_business)
+        if hasattr(request.user, 'associated_business') and request.user.associated_business:
+            return qs.filter(business=request.user.associated_business)
+        return qs.none()
+
+    def formfield_for_foreignkey(self, db_field, request, **kwargs):
+        user = request.user
+        if not user.is_superuser:
+            if db_field.name == "business":
+                if hasattr(user, 'owned_business') and user.owned_business:
+                    kwargs["queryset"] = Business.objects.filter(pk=user.owned_business.pk)
+                    kwargs["initial"] = user.owned_business.pk
+                    kwargs["disabled"] = True
+                elif hasattr(user, 'associated_business') and user.associated_business:
+                    kwargs["queryset"] = Business.objects.filter(pk=user.associated_business.pk)
+                    kwargs["initial"] = user.associated_business.pk
+                    kwargs["disabled"] = True
+                else:
+                    kwargs["queryset"] = Business.objects.none()
+            
+            if db_field.name == "category":
+                target_business = None
+                obj_id = request.resolver_match.kwargs.get('object_id')
+                if obj_id:
+                    menu_item_instance = self.get_object(request, object_id=obj_id)
+                    if menu_item_instance:
+                        target_business = menu_item_instance.business
+                elif hasattr(user, 'owned_business') and user.owned_business:
+                    target_business = user.owned_business
+                elif hasattr(user, 'associated_business') and user.associated_business:
+                    target_business = user.associated_business
+                
+                if target_business:
+                    kwargs["queryset"] = Category.objects.filter(business=target_business)
+                else:
+                    kwargs["queryset"] = Category.objects.none()
+        return super().formfield_for_foreignkey(db_field, request, **kwargs)
+
+
+class OrderItemExtraInline(admin.TabularInline):
+    model = OrderItemExtra
+    extra = 0
+    readonly_fields = ('variant_price',)
+
+    def variant_price(self, obj):
+        return obj.variant.price
+    variant_price.short_description = "Ekstra Birim Fiyat"
+
+class OrderItemInline(admin.TabularInline):
+    model = OrderItem
+    extra = 0
+    readonly_fields = (
+        'menu_item_name', 'variant_name', 'calculated_price', 
+        'is_awaiting_staff_approval', 'get_assigned_kds_for_item',
+        'kds_status_display', 'item_prepared_by_staff_username'
+    )
+    inlines = [OrderItemExtraInline]
+    
+    fields = (
+        'menu_item', 'variant', 'quantity', 'table_user', 
+        'delivered', 'price', 'calculated_price', 'is_awaiting_staff_approval', 
+        'get_assigned_kds_for_item', 'kds_status', 'item_prepared_by_staff'
+    )
+    autocomplete_fields = ['menu_item', 'variant', 'item_prepared_by_staff']
+
+    def menu_item_name(self, obj):
+        return obj.menu_item.name
+    menu_item_name.short_description = "Ürün Adı"
+    
+    def variant_name(self, obj):
+        if obj.variant:
+            return obj.variant.name
+        return "-"
+    variant_name.short_description = "Varyant Adı"
+
+    def calculated_price(self,obj):
+        return obj.price
+    calculated_price.short_description = "Birim Fiyat (Hesaplanan)"
+
+    def get_assigned_kds_for_item(self, obj):
+        if obj.menu_item and obj.menu_item.category and obj.menu_item.category.assigned_kds:
+            return obj.menu_item.category.assigned_kds.name
+        return "-"
+    get_assigned_kds_for_item.short_description = "Atanmış KDS"
+
+    def kds_status_display(self, obj):
+        return obj.get_kds_status_display()
+    kds_status_display.short_description = "KDS Durumu"
+
+    def item_prepared_by_staff_username(self, obj):
+        return obj.item_prepared_by_staff.username if obj.item_prepared_by_staff else "-"
+    item_prepared_by_staff_username.short_description = "KDS'te Hazırlayan"
+
+class OrderTableUserInline(admin.TabularInline):
+    model = OrderTableUser
+    extra = 0
+
+class PaymentInline(admin.StackedInline):
+    model = Payment
+    can_delete = False
+    readonly_fields = ('payment_date',)
+    fields = ('payment_type', 'amount', 'payment_date')
+
+class CreditPaymentDetailsInline(admin.StackedInline):
+    model = CreditPaymentDetails
+    readonly_fields = ('created_at', 'paid_at')
+    fields = ('notes', 'created_at', 'paid_at')
+
+
+@admin.register(Order)
+class OrderAdmin(admin.ModelAdmin):
+    list_display = (
+        'id', 'business', 'table_display', 'order_type', 'status_display',
+        'customer_display', 'taken_by_staff_username', 
+        'prepared_by_kitchen_staff_username',
+        'assigned_pager_display',
+        'created_at', 'is_paid', 'kitchen_completed_at', 'delivered_at'
+    )
+    list_filter = ('business', 'order_type', 'status', 'is_paid', 'created_at', 'is_split_table', 'taken_by_staff', 'prepared_by_kitchen_staff', 'assigned_pager_instance__status')
+    search_fields = (
+        'id', 'table__table_number', 'customer__username', 'customer_name', 
+        'business__name', 'taken_by_staff__username', 'prepared_by_kitchen_staff__username',
+        'assigned_pager_instance__device_id', 'assigned_pager_instance__name'
+    )
+    readonly_fields = ('created_at', 'id', 'kitchen_completed_at', 'delivered_at', 'assigned_pager_display')
+    inlines = [OrderItemInline, OrderTableUserInline, PaymentInline, CreditPaymentDetailsInline]
+    date_hierarchy = 'created_at'
+    list_select_related = ('business', 'table', 'customer', 'taken_by_staff', 'prepared_by_kitchen_staff', 'assigned_pager_instance')
+    list_per_page = 25
+    
+    fieldsets = (
+        ("Genel Bilgiler", {
+            'fields': ('id', 'business', 'order_type', 'table', 'is_split_table', 'assigned_pager_display') 
+        }),
+        ("Müşteri Bilgileri", {
+            'fields': ('customer', 'customer_name', 'customer_phone')
+        }),
+        ("Personel ve Durum", {
+            'fields': (
+                'status',
+                'taken_by_staff', 
+                'prepared_by_kitchen_staff',
+                'is_paid', 
+                'created_at',
+                'kitchen_completed_at',
+                'delivered_at',
+            )
+        }),
+    )
+
+    def status_display(self, obj):
+        return obj.get_status_display()
+    status_display.short_description = "Durum"
+    status_display.admin_order_field = 'status'
+
+    def table_display(self, obj):
+        return obj.table.table_number if obj.table else ("Paket" if obj.order_type == 'takeaway' else "-")
+    table_display.short_description = "Masa/Tip"
+
+    def customer_display(self, obj):
+        if obj.customer:
+            return obj.customer.username
+        return obj.customer_name or "Misafir"
+    customer_display.short_description = "Müşteri"
+
+    def taken_by_staff_username(self, obj):
+        return obj.taken_by_staff.username if obj.taken_by_staff else "-"
+    taken_by_staff_username.short_description = "Siparişi Alan"
+    taken_by_staff_username.admin_order_field = 'taken_by_staff__username'
+
+    def prepared_by_kitchen_staff_username(self, obj):
+        return obj.prepared_by_kitchen_staff.username if obj.prepared_by_kitchen_staff else "-"
+    prepared_by_kitchen_staff_username.short_description = "Hazırlayan (Mutfak - Genel)"
+    prepared_by_kitchen_staff_username.admin_order_field = 'prepared_by_kitchen_staff__username'
+
+    def assigned_pager_display(self, obj: Order) -> str:
+        try:
+            if hasattr(obj, 'assigned_pager_instance') and obj.assigned_pager_instance:
+                pager = obj.assigned_pager_instance
+                return f"{pager.name or pager.device_id} ({pager.get_status_display()})"
+        except Pager.DoesNotExist:
+            return "-"
+        except AttributeError:
+            return "-"
+        return "-"
+    assigned_pager_display.short_description = "Atanmış Pager"
+    assigned_pager_display.admin_order_field = 'assigned_pager_instance__device_id'
+
+    def get_queryset(self, request):
+        qs = super().get_queryset(request)
+        if request.user.is_superuser:
+            return qs
+        if hasattr(request.user, 'owned_business') and request.user.owned_business:
+            return qs.filter(business=request.user.owned_business)
+        if hasattr(request.user, 'associated_business') and request.user.associated_business:
+            return qs.filter(business=request.user.associated_business)
+        return qs.none()
+
+    def formfield_for_foreignkey(self, db_field, request, **kwargs):
+        user = request.user
+        if not user.is_superuser:
+            if db_field.name == "business":
+                if hasattr(user, 'owned_business') and user.owned_business:
+                    kwargs["queryset"] = Business.objects.filter(pk=user.owned_business.pk)
+                    kwargs["initial"] = user.owned_business.pk
+                    kwargs["disabled"] = True
+                elif hasattr(user, 'associated_business') and user.associated_business:
+                    kwargs["queryset"] = Business.objects.filter(pk=user.associated_business.pk)
+                    kwargs["initial"] = user.associated_business.pk
+                    kwargs["disabled"] = True
+                else:
+                    kwargs["queryset"] = Business.objects.none()
+            elif db_field.name in ["taken_by_staff", "prepared_by_kitchen_staff"]:
+                target_business = None
+                obj_id = request.resolver_match.kwargs.get('object_id')
+                if obj_id:
+                    order_instance = self.get_object(request, object_id=obj_id)
+                    if order_instance:
+                        target_business = order_instance.business
+                elif hasattr(user, 'owned_business') and user.owned_business:
+                    target_business = user.owned_business
+                elif hasattr(user, 'associated_business') and user.associated_business:
+                    target_business = user.associated_business
+
+                if target_business:
+                    if db_field.name == "taken_by_staff":
+                        kwargs["queryset"] = CustomUser.objects.filter(
+                            models.Q(associated_business=target_business, user_type='staff') |
+                            models.Q(owned_business=target_business, user_type='business_owner')
+                        ).distinct()
+                    elif db_field.name == "prepared_by_kitchen_staff":
+                        kwargs["queryset"] = CustomUser.objects.filter(
+                            models.Q(associated_business=target_business, user_type__in=['kitchen_staff', 'staff']) |
+                            models.Q(owned_business=target_business, user_type='business_owner')
+                        ).distinct()
+                else:
+                    kwargs["queryset"] = CustomUser.objects.none()
+            elif db_field.name == "table":
+                target_business = None
+                obj_id = request.resolver_match.kwargs.get('object_id')
+                if obj_id:
+                    order_instance = self.get_object(request, object_id=obj_id)
+                    if order_instance:
+                        target_business = order_instance.business
+                elif hasattr(user, 'owned_business') and user.owned_business:
+                    target_business = user.owned_business
+                elif hasattr(user, 'associated_business') and user.associated_business:
+                    target_business = user.associated_business
+                
+                if target_business:
+                    kwargs["queryset"] = Table.objects.filter(business=target_business)
+                else:
+                    kwargs["queryset"] = Table.objects.none()
+
+        return super().formfield_for_foreignkey(db_field, request, **kwargs)
+
+
+@admin.register(Payment)
+class PaymentAdmin(admin.ModelAdmin):
+    list_display = ('order_id_display', 'payment_type', 'amount', 'payment_date')
+    list_filter = ('payment_type', 'payment_date', 'order__business')
+    search_fields = ('order__id', 'order__customer_name', 'order__customer__username')
+    readonly_fields = ('payment_date',)
+    date_hierarchy = 'payment_date'
+
+    def order_id_display(self, obj):
+        return obj.order.id
+    order_id_display.short_description = 'Sipariş ID'
+    order_id_display.admin_order_field = 'order__id'
+
+
+@admin.register(MenuItemVariant)
+class MenuItemVariantAdmin(admin.ModelAdmin):
+    list_display = ('name', 'menu_item_name', 'price', 'is_extra', 'image_tag_preview')
+    list_filter = ('menu_item__business', 'is_extra', 'menu_item__category', 'menu_item')
+    search_fields = ('name', 'menu_item__name')
+    readonly_fields = ('image_tag_preview',)
+    list_select_related = ('menu_item', 'menu_item__business')
+
+    def menu_item_name(self, obj):
+        return obj.menu_item.name
+    menu_item_name.short_description = 'Ana Ürün'
+    menu_item_name.admin_order_field = 'menu_item__name'
+
+    def image_tag_preview(self, obj):
+        if obj.image:
+            return format_html('<img src="{}" width="50" height="50" style="object-fit: cover;" />', obj.image.url if hasattr(obj.image, 'url') else obj.image)
+        return "-"
+    image_tag_preview.short_description = 'Görsel Önizleme'
+
+# ----- GÜNCELLENEN Admin Sınıfı: StockAdmin -----
+@admin.register(Stock)
+class StockAdmin(admin.ModelAdmin):
+    # Yeni alanlar list_display'e eklendi
+    list_display = ('variant_display', 'quantity', 'track_stock', 'alert_threshold', 'business_name', 'last_updated')
+    # track_stock filtresi eklendi
+    list_filter = ('variant__menu_item__business', 'track_stock', 'last_updated')
+    search_fields = ('variant__name', 'variant__menu_item__name', 'variant__menu_item__business__name')
+    readonly_fields = ('last_updated',)
+    list_select_related = ('variant', 'variant__menu_item', 'variant__menu_item__business')
+    # Yeni alanlar düzenlenebilir yapıldı
+    list_editable = ('quantity', 'track_stock', 'alert_threshold')
+
+    def variant_display(self, obj):
+        return f"{obj.variant.menu_item.name} - {obj.variant.name}"
+    variant_display.short_description = 'Ürün Varyantı'
+    variant_display.admin_order_field = 'variant__name'
+    
+    def business_name(self, obj):
+        return obj.variant.menu_item.business.name
+    business_name.short_description = 'İşletme'
+    business_name.admin_order_field = 'variant__menu_item__business__name'
+# ----- GÜNCELLEME SONU -----
+
+@admin.register(StockMovement)
+class StockMovementAdmin(admin.ModelAdmin):
+    list_display = ('variant_name_display', 'movement_type_display', 'quantity_change', 'quantity_before','quantity_after', 'user_display', 'timestamp', 'related_order_id_display')
+    list_filter = ('movement_type', 'variant__menu_item__business', 'user', 'timestamp')
+    search_fields = ('variant__name', 'variant__menu_item__name', 'user__username', 'description', 'related_order__id')
+    readonly_fields = ('quantity_before', 'quantity_after', 'timestamp', 'user', 'stock', 'variant', 'related_order')
+    date_hierarchy = 'timestamp'
+    list_per_page = 25
+    list_select_related = ('variant', 'variant__menu_item', 'user', 'related_order', 'stock')
+
+    def variant_name_display(self, obj):
+        return f"{obj.variant.menu_item.name} ({obj.variant.name})"
+    variant_name_display.short_description = 'Ürün Varyantı'
+    variant_name_display.admin_order_field = 'variant__menu_item__name'
+
+    def movement_type_display(self, obj):
+        return obj.get_movement_type_display()
+    movement_type_display.short_description = 'Hareket Tipi'
+    movement_type_display.admin_order_field = 'movement_type'
+
+    def user_display(self, obj):
+        return obj.user.username if obj.user else "-"
+    user_display.short_description = 'Kullanıcı'
+    user_display.admin_order_field = 'user__username'
+
+    def related_order_id_display(self, obj):
+        return obj.related_order.id if obj.related_order else '-'
+    related_order_id_display.short_description = 'İlişkili Sipariş ID'
+    related_order_id_display.admin_order_field = 'related_order__id'
+
+
+@admin.register(WaitingCustomer)
+class WaitingCustomerAdmin(admin.ModelAdmin):
+    list_display = ('name', 'phone', 'business', 'party_size', 'is_waiting', 'created_at', 'called_at', 'seated_at')
+    list_filter = ('is_waiting', 'business', 'created_at')
+    search_fields = ('name', 'phone', 'business__name')
+    readonly_fields = ('created_at', 'called_at', 'seated_at')
+    list_editable = ('is_waiting',)
+    fieldsets = (
+        (None, {'fields': ('business', 'name', 'phone', 'party_size', 'notes')}),
+        ('Durum ve Zamanlar', {'fields': ('is_waiting', 'created_at', 'called_at', 'seated_at')}),
+    )
+
+@admin.register(CreditPaymentDetails)
+class CreditPaymentDetailsAdmin(admin.ModelAdmin):
+    list_display = ('order_id_display', 'get_customer_name', 'get_customer_phone', 'notes_short', 'created_at', 'paid_at')
+    list_filter = ('paid_at', 'created_at', 'order__business')
+    search_fields = ('order__id', 'order__customer_name', 'order__customer__username', 'notes')
+    readonly_fields = ('created_at', 'paid_at', 'order')
+    date_hierarchy = 'created_at'
+    list_select_related = ('order', 'order__customer')
+
+    def order_id_display(self, obj):
+        return obj.order.id
+    order_id_display.short_description = 'Sipariş ID'
+    order_id_display.admin_order_field = 'order__id'
+
+    def get_customer_name(self, obj):
+        if obj.order.customer:
+            return obj.order.customer.get_full_name() or obj.order.customer.username
+        return obj.order.customer_name or "Misafir"
+    get_customer_name.short_description = 'Müşteri Adı'
+    get_customer_name.admin_order_field = 'order__customer_name'
+
+    def get_customer_phone(self, obj):
+        return obj.order.customer_phone or "-"
+    get_customer_phone.short_description = 'Müşteri Telefon'
+    get_customer_phone.admin_order_field = 'order__customer_phone'
+
+    def notes_short(self, obj):
+        return (obj.notes[:50] + '...') if obj.notes and len(obj.notes) > 50 else obj.notes
+    notes_short.short_description = 'Notlar'
+
+@admin.register(Pager)
+class PagerAdmin(admin.ModelAdmin):
+    list_display = ('device_id', 'name', 'get_business_name', 'get_status_display_with_color', 'get_current_order_info', 'last_status_update', 'notes_short_display')
+    list_filter = ('business', 'status')
+    search_fields = ('device_id', 'name', 'business__name', 'current_order__id', 'current_order__customer_name')
+    list_editable = ('name',)
+    readonly_fields = ('last_status_update',)
+    raw_id_fields = ('current_order',)
+    list_per_page = 25
+    list_select_related = ('business', 'current_order', 'current_order__table')
+
+    fieldsets = (
+        (None, {'fields': ('business', 'device_id', 'name')}),
+        ('Durum ve Atama Bilgileri', {'fields': ('status', 'current_order', 'last_status_update')}),
+        ('Ek Notlar', {'fields': ('notes',)}),
+    )
+
+    def get_business_name(self, obj: Pager) -> str:
+        return obj.business.name
+    get_business_name.short_description = "İşletme"
+    get_business_name.admin_order_field = 'business__name'
+
+    def get_status_display_with_color(self, obj: Pager) -> str:
+        status_val = obj.status
+        display_text = obj.get_status_display()
+        color = "black"
+        if status_val == 'available': color = "green"
+        elif status_val == 'in_use': color = "orange"
+        elif status_val == 'charging': color = "blue"
+        elif status_val == 'low_battery': color = "darkorange"
+        elif status_val == 'out_of_service': color = "red"
+        return format_html('<span style="color: {}; font-weight: bold;">{}</span>', color, display_text)
+    get_status_display_with_color.short_description = "Durum"
+    get_status_display_with_color.admin_order_field = 'status'
+
+    def get_current_order_info(self, obj: Pager) -> str:
+        if obj.current_order:
+            order = obj.current_order
+            table_info = f"Masa {order.table.table_number}" if order.table else "Paket"
+            customer_info = order.customer_name or (order.customer.username if order.customer else "Misafir")
+            return f"#{order.id} ({table_info} - {customer_info})"
+        return "-"
+    get_current_order_info.short_description = "Atanmış Sipariş"
+    get_current_order_info.admin_order_field = 'current_order__id'
+
+    def notes_short_display(self, obj: Pager) -> str:
+        if obj.notes and len(obj.notes) > 30:
+            return obj.notes[:30] + "..."
+        return obj.notes or "-"
+    notes_short_display.short_description = "Notlar"
+
+
+class CampaignMenuItemInline(admin.TabularInline):
+    model = CampaignMenuItem
+    extra = 1
+    autocomplete_fields = ['menu_item', 'variant']
+
+@admin.register(CampaignMenu)
+class CampaignMenuAdmin(admin.ModelAdmin):
+    list_display = ('name', 'business', 'campaign_price', 'is_active', 'start_date', 'end_date', 'image_tag_preview', 'bundle_menu_item_info')
+    list_filter = ('business', 'is_active', 'start_date', 'end_date')
+    search_fields = ('name', 'description', 'business__name')
+    inlines = [CampaignMenuItemInline]
+    readonly_fields = ('image_tag_preview', 'bundle_menu_item_info')
+    list_editable = ('is_active', 'campaign_price')
+
+    def image_tag_preview(self, obj):
+        if obj.image:
+            return format_html('<img src="{}" width="50" height="50" style="object-fit: cover;" />', obj.image.url if hasattr(obj.image, 'url') else obj.image)
+        return "-"
+    image_tag_preview.short_description = 'Görsel Önizleme'
+
+    def bundle_menu_item_info(self, obj):
+        if obj.bundle_menu_item:
+            return f"ID: {obj.bundle_menu_item.id} - Ad: {obj.bundle_menu_item.name}"
+        return "İlişkili Ürün Yok"
+    bundle_menu_item_info.short_description = 'Kampanya Menü Öğesi (Sistem)'
+
+@admin.register(CampaignMenuItem)
+class CampaignMenuItemAdmin(admin.ModelAdmin):
+    list_display = ('campaign_menu', 'menu_item_display', 'variant_display', 'quantity')
+    list_filter = ('campaign_menu__business', 'campaign_menu', 'menu_item__category')
+    search_fields = ('campaign_menu__name', 'menu_item__name', 'variant__name')
+    list_select_related = ('campaign_menu', 'menu_item', 'variant', 'menu_item__category')
+    autocomplete_fields = ['campaign_menu', 'menu_item', 'variant']
+
+    def menu_item_display(self, obj):
+        return obj.menu_item.name
+    menu_item_display.short_description = "Ana Ürün"
+
+    def variant_display(self, obj):
+        return obj.variant.name if obj.variant else "-"
+    variant_display.short_description = "Varyant"
