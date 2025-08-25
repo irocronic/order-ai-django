@@ -1,7 +1,8 @@
 # core/models.py
 
 from django.db import models
-from django.contrib.auth.models import AbstractUser
+# GÜNCELLEME: UserManager'ı import ediyoruz
+from django.contrib.auth.models import AbstractUser, UserManager
 from django.conf import settings
 import uuid
 from django.utils import timezone
@@ -10,6 +11,28 @@ from django.utils.text import slugify
 from django.utils.translation import gettext_lazy as _
 from django.core.validators import MinValueValidator, MaxValueValidator
 import pytz
+
+# === YENİ KOD BAŞLANGICI: CustomUserManager ===
+# Bu sınıf, 'createsuperuser' komutunun davranışını özelleştirir.
+class CustomUserManager(UserManager):
+    def create_superuser(self, username, email=None, password=None, **extra_fields):
+        # Superuser için is_staff ve is_superuser alanlarını True yapar.
+        extra_fields.setdefault("is_staff", True)
+        extra_fields.setdefault("is_superuser", True)
+        # EN ÖNEMLİ DÜZELTME: user_type alanını 'admin' olarak ayarlar.
+        extra_fields.setdefault("user_type", "admin")
+        # Adminin ayrıca bir onaya ihtiyacı yoktur.
+        extra_fields.setdefault("is_approved_by_admin", True)
+
+
+        if extra_fields.get("is_staff") is not True:
+            raise ValueError("Superuser must have is_staff=True.")
+        if extra_fields.get("is_superuser") is not True:
+            raise ValueError("Superuser must have is_superuser=True.")
+
+        return self._create_user(username, email, password, **extra_fields)
+# === YENİ KOD SONU ===
+
 
 STAFF_PERMISSION_CHOICES = [
     ('view_reports', 'Raporları Görüntüleme'),
@@ -29,8 +52,6 @@ STAFF_PERMISSION_CHOICES = [
     ('manage_campaigns', 'Kampanya Yönetimi'),
 ]
 
-# ==================== GÜNCELLEME BURADA BAŞLIYOR ====================
-# Eksik olan 'waiting_customer_seated' değeri eklendi.
 NOTIFICATION_EVENT_TYPES = [
     ('guest_order_pending_approval', 'Misafir Siparişi Onay Bekliyor'),
     ('order_pending_approval', 'Kayıtlı Kullanıcı Siparişi Onay Bekliyor'),
@@ -54,13 +75,11 @@ NOTIFICATION_EVENT_TYPES = [
     ('waiting_customer_added', 'Yeni Bekleyen Müşteri Eklendi'),
     ('waiting_customer_updated', 'Bekleyen Müşteri Güncellendi'),
     ('waiting_customer_removed', 'Bekleyen Müşteri Silindi'),
-    ('waiting_customer_seated', 'Bekleyen Müşteri Oturtuldu'), # <-- YENİ EKLENEN SATIR
+    ('waiting_customer_seated', 'Bekleyen Müşteri Oturtuldu'),
     ('stock_adjusted', 'Stok Ayarlandı/Güncellendi'),
     ('pager_status_updated', 'Çağrı Cihazı Durumu Güncellendi'),
 ]
-# ==================== GÜNCELLEME BURADA BİTİYOR ====================
 
-# Varsayılan Bildirim İzinleri
 DEFAULT_BUSINESS_OWNER_NOTIFICATION_PERMISSIONS = [key for key, desc in NOTIFICATION_EVENT_TYPES]
 DEFAULT_STAFF_NOTIFICATION_PERMISSIONS = [
     'order_ready_for_pickup_update',
@@ -135,6 +154,9 @@ class CustomUser(AbstractUser):
         help_text='Specific permissions for this user.',
         verbose_name='user permissions'
     )
+
+    # === YENİ SATIR: Django'ya artık bizim özel user manager'ımızı kullanmasını söylüyoruz ===
+    objects = CustomUserManager()
 
     def __str__(self):
         return self.username

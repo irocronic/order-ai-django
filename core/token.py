@@ -10,7 +10,7 @@ from rest_framework.exceptions import AuthenticationFailed
 import pytz
 
 # Gerekli modelleri import ediyoruz
-from .models import Business, ScheduledShift
+from .models import Business, ScheduledShift, NOTIFICATION_EVENT_TYPES
 from .serializers.kds_serializers import KDSScreenSerializer
 from subscriptions.models import Subscription, Plan
 
@@ -27,7 +27,22 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
         token['profile_image_url'] = user.profile_image_url
 
         business = None
-        if user.user_type == 'business_owner':
+        # === GÜNCELLEME BAŞLANGICI: Admin kullanıcısı için özel token verisi ===
+        if user.user_type == 'admin' or user.is_superuser:
+            # Admin için işletme bilgisi yok, varsayılan/özel değerler atanır
+            token['business_id'] = None
+            token['is_setup_complete'] = True # Adminin kurulum yapmasına gerek yok
+            token['currency_code'] = 'TRY' # Varsayılan para birimi
+            token['subscription_status'] = 'active' # Adminin aboneliği her zaman aktif kabul edilir
+            token['trial_ends_at'] = None
+            token['subscription'] = {'plan_name': 'Admin Plan'} # Özel bir plan adı
+            token['staff_permissions'] = []
+            # Admin tüm bildirimleri alabilir
+            token['notification_permissions'] = [key for key, desc in NOTIFICATION_EVENT_TYPES]
+            token['accessible_kds_screens_details'] = []
+
+        elif user.user_type == 'business_owner':
+        # === GÜNCELLEME SONU ===
             business = getattr(user, 'owned_business', None)
         elif user.user_type in ['staff', 'kitchen_staff']:
             business = getattr(user, 'associated_business', None)
@@ -38,7 +53,7 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
                 token['accessible_kds_screens_details'] = accessible_kds_data
             else:
                 token['accessible_kds_screens_details'] = []
-        else:
+        else: # customer
             token['notification_permissions'] = user.notification_permissions
             token['accessible_kds_screens_details'] = []
 
@@ -69,7 +84,7 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
                 token['subscription_status'] = 'inactive'
                 token['trial_ends_at'] = None
                 token['subscription'] = None
-        else:
+        elif user.user_type not in ['admin', 'customer']: # Admin ve customer dışındakiler için boş değerler
             token['business_id'] = None
             token['is_setup_complete'] = False
             token['currency_code'] = None
@@ -88,7 +103,11 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
                 "account_inactive"
             )
         
-        if user.user_type in ['staff', 'kitchen_staff']:
+        # === YENİ KONTROL: Admin ise diğer kontrolleri atla ===
+        if user.user_type == 'admin' or user.is_superuser:
+            pass # Admin, vardiya ve abonelik kontrollerinden muaftır.
+        # === KONTROL SONU ===
+        elif user.user_type in ['staff', 'kitchen_staff']:
             if not user.is_superuser:
                 business = user.associated_business
                 if not business:
@@ -134,7 +153,7 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
                         'no_active_shift_at_login'
                     )
 
-        if self.user.user_type == 'business_owner':
+        elif self.user.user_type == 'business_owner':
             business = getattr(self.user, 'owned_business', None)
             if not business:
                 raise AuthenticationFailed('Bu kullanıcıya ait bir işletme bulunamadı.', code='no_business_found')
@@ -162,52 +181,7 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
         data['access'] = str(refresh.access_token)
         
         # Token payload'ındaki tüm veriyi response'a ekle
-        data['user_id'] = self.user.id
-        data['username'] = self.user.username
-        data['email'] = self.user.email
-        data['first_name'] = self.user.first_name
-        data['last_name'] = self.user.last_name
-        data['user_type'] = self.user.user_type
-        data['is_active'] = self.user.is_active
-        data['is_approved_by_admin'] = self.user.is_approved_by_admin
-        data['notification_permissions'] = self.user.notification_permissions
-        data['profile_image_url'] = self.user.profile_image_url
-        
-        business = None
-        if self.user.user_type == 'business_owner':
-            business = getattr(self.user, 'owned_business', None)
-        elif self.user.user_type in ['staff', 'kitchen_staff']:
-            business = getattr(self.user, 'associated_business', None)
-            data['staff_permissions'] = self.user.staff_permissions
-            if hasattr(self.user, 'accessible_kds_screens') and self.user.accessible_kds_screens.exists():
-                accessible_kds_data = KDSScreenSerializer(self.user.accessible_kds_screens.all(), many=True).data
-                data['accessible_kds_screens_details'] = accessible_kds_data
-            else:
-                data['accessible_kds_screens_details'] = []
-
-        if business:
-            data['business_id'] = business.id
-            data['business_name'] = business.name
-            data['is_setup_complete'] = business.is_setup_complete
-            data['currency_code'] = business.currency_code
-            try:
-                subscription = business.subscription
-                data['subscription_status'] = subscription.status
-                data['trial_ends_at'] = subscription.expires_at.isoformat() if subscription.status == 'trial' and subscription.expires_at else None
-                if subscription.plan:
-                    data['subscription'] = {
-                        'plan_name': subscription.plan.name,
-                        'max_tables': subscription.plan.max_tables,
-                        'max_staff': subscription.plan.max_staff,
-                        'max_kds_screens': subscription.plan.max_kds_screens,
-                        'max_categories': subscription.plan.max_categories,
-                        'max_menu_items': subscription.plan.max_menu_items,
-                        'max_variants': subscription.plan.max_variants,
-                    }
-            except Subscription.DoesNotExist:
-                data['subscription_status'] = 'inactive'
-                data['trial_ends_at'] = None
-                data['subscription'] = None
+        data.update(refresh.payload)
 
         return data
 

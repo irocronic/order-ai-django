@@ -12,7 +12,6 @@ import logging
 import asyncio
 import time
 
-# === HATA DÜZELTMESİ BURADA: İki nokta (..) tek noktaya (.) çevrildi ===
 from .models import Order, Table, KDSScreen, Business, CustomUser
 from .utils.order_helpers import get_user_business, PermissionKeys
 
@@ -97,6 +96,26 @@ def register_events(sio_server):
         if token:
             user = await get_user_from_token(token)
             if user and user.is_authenticated:
+                
+                # === GÜNCELLEME BAŞLANGICI: Admin kullanıcısı için özel bağlantı mantığı ===
+                if user.user_type == 'admin' or user.is_superuser:
+                    user_room_name = f'user_{user.id}'
+                    admin_room_name = 'admin_room' # Tüm adminler için ortak bir oda
+                    await sio_server.enter_room(sid, user_room_name)
+                    await sio_server.enter_room(sid, admin_room_name)
+                    
+                    await sio_server.save_session(sid, {
+                        'user_id': user.id,
+                        'user_type': user.user_type,
+                        'type': 'authenticated_user'
+                    })
+                    
+                    await sio_server.emit('connected_and_ready', {'sid': sid}, room=sid)
+                    logger.info(f"Socket.IO: Admin kullanıcısı {user.username} (ID: {user.id}) bağlandı.")
+                    return True # Bağlantıyı kabul et ve fonksiyondan çık
+                # === GÜNCELLEME SONU ===
+
+                # Diğer kullanıcılar (business_owner, staff, etc.) için mevcut mantık devam ediyor
                 user_business = await database_sync_to_async(get_user_business)(user)
                 if user_business:
                     business_id = user_business.id
