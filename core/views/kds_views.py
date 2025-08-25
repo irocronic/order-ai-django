@@ -225,7 +225,7 @@ class KDSOrderViewSet(viewsets.ReadOnlyModelViewSet):
         
         transaction.on_commit(
             lambda: send_order_update_notification(
-                order_id=order.id, created=False, update_fields=update_fields_for_notification
+                order=order, created=False, update_fields=update_fields_for_notification
             )
         )
         
@@ -243,93 +243,68 @@ class KDSOrderViewSet(viewsets.ReadOnlyModelViewSet):
         
         logger.info(
             f"[KDS VIEW] Action 'mark_ready_for_pickup' BAŞLANGIÇ: Order ID: {order.id}, "
-            f"Hedef KDS: '{target_kds_screen.name}' (ID: {target_kds_screen.id}), "
-            f"Kullanıcı: {request.user.username}"
+            f"Hedef KDS: '{target_kds_screen.name}', Kullanıcı: {request.user.username}"
         )
         
         category_ids_for_this_kds = Category.objects.filter(assigned_kds_id=target_kds_screen.id).values_list('id', flat=True)
 
         if not category_ids_for_this_kds:
-            logger.warning(f"KDS Action (mark_ready_for_pickup): KDS '{target_kds_screen.name}' (ID: {target_kds_screen.id}) için atanmış kategori bulunamadı.")
-            return Response({'detail': f"Bu KDS ({target_kds_screen.name}) ekranı için atanmış kategori olmadığından ürün işlenemez."}, status=status.HTTP_400_BAD_REQUEST)
-        
-        logger.info(f"  [KDS VIEW] KDS '{target_kds_screen.name}' için Kategori ID'leri (mark_ready): {list(category_ids_for_this_kds)}")
+            return Response({'detail': f"Bu KDS ({target_kds_screen.name}) için atanmış kategori yok."}, status=status.HTTP_400_BAD_REQUEST)
 
         items_to_mark_ready = OrderItem.objects.filter(
             order_id=order.id,
             menu_item__category_id__in=list(category_ids_for_this_kds),
             is_awaiting_staff_approval=False,
             delivered=False,
-            kds_status__in=[OrderItem.KDS_ITEM_STATUS_CHOICES[0][0], OrderItem.KDS_ITEM_STATUS_CHOICES[1][0]]
+            kds_status__in=[OrderItem.KDS_ITEM_STATUS_PENDING, OrderItem.KDS_ITEM_STATUS_PREPARING]
         )
-        
-        logger.info(f"  [KDS VIEW] KDS '{target_kds_screen.name}' için 'pending_kds' veya 'preparing_kds' durumunda bulunan ve filtrelenen ürün sayısı: {items_to_mark_ready.count()}")
 
         if not items_to_mark_ready.exists():
-            all_active_items_for_this_kds_again = OrderItem.objects.filter(
-                order_id=order.id,
-                menu_item__category_id__in=list(category_ids_for_this_kds),
-                is_awaiting_staff_approval=False,
-                delivered=False
-            )
-            current_statuses_for_error_debug = {item.id: f"{item.menu_item.name} ({item.kds_status})" for item in all_active_items_for_this_kds_again}
-            logger.warning(
-                f"KDS Action (mark_ready_for_pickup) - 400 Nedeni (İç Kontrol): Order #{order.id}, KDS '{target_kds_screen.name}' (ID: {target_kds_screen.id}) için 'pending_kds' veya 'preparing_kds' "
-                f"durumunda ürün bulunamadı. Bu KDS için mevcut aktif kalem durumları (tekrar kontrol): {current_statuses_for_error_debug}"
-            )
-            all_are_already_ready = all_active_items_for_this_kds_again.exists() and \
-                                      not all_active_items_for_this_kds_again.exclude(kds_status=OrderItem.KDS_ITEM_STATUS_CHOICES[2][0]).exists()
+            return Response({'detail': 'Bu KDS için hazır olarak işaretlenecek aktif ürün bulunmuyor.'}, status=status.HTTP_400_BAD_REQUEST)
 
-            if all_are_already_ready:
-                return Response({'detail': 'Bu KDS ekranındaki tüm ürünler zaten hazır olarak işaretlenmiş.'},status=status.HTTP_400_BAD_REQUEST)
-            return Response({'detail': 'Bu KDS ekranı için hazır olarak işaretlenecek aktif ürün bulunmuyor.'}, status=status.HTTP_400_BAD_REQUEST)
+        updated_item_count = items_to_mark_ready.update(
+            kds_status=OrderItem.KDS_ITEM_STATUS_READY,
+            item_prepared_by_staff=request.user
+        )
+        logger.info(f"KDS '{target_kds_screen.name}': Order #{order.id} için {updated_item_count} kalem 'KDS Hazır' olarak işaretlendi.")
 
-        updated_item_ids = []
-        for item in items_to_mark_ready:
-            if not (item.menu_item and item.menu_item.category_id in category_ids_for_this_kds):
-                logger.error(
-                    f"  [KDS VIEW] KRİTİK FİLTRE HATASI (mark_ready): Item ID {item.id} ('{item.menu_item.name}') "
-                    f"yanlışlıkla KDS '{target_kds_screen.name}' için seçildi! "
-                    f"Item'ın Kategori ID: {item.menu_item.category_id}. Hedef KDS Kategori ID'leri: {list(category_ids_for_this_kds)}. "
-                    f"Bu ürün güncellenmeyecek."
-                )
-                continue
-            logger.info(f"KDS Action (mark_ready_for_pickup): GÜNCELLENİYOR -> Item ID {item.id} ('{item.menu_item.name}', CatKDS ID: {item.menu_item.category.assigned_kds_id if item.menu_item.category and item.menu_item.category.assigned_kds else 'N/A'}) için KDS '{target_kds_screen.name}' (ID: {target_kds_screen.id}). Eski KDS Durumu: '{item.kds_status}', Yeni: 'ready_kds'.")
-            item.kds_status = OrderItem.KDS_ITEM_STATUS_CHOICES[2][0]
-            if not item.item_prepared_by_staff:
-                item.item_prepared_by_staff = request.user
-            item.save(update_fields=['kds_status', 'item_prepared_by_staff'])
-            updated_item_ids.append(item.id)
-
-        logger.info(f"KDS '{target_kds_screen.name}': Order #{order.id} için {len(updated_item_ids)} kalem ({updated_item_ids}) 'KDS Hazır' olarak işaretlendi by {request.user.username}")
-
-        all_kds_relevant_and_undelivered_items_for_order = OrderItem.objects.filter(
+        # Siparişteki KDS ile ilgili TÜM ürünleri tekrar sorgula
+        all_kds_relevant_items = OrderItem.objects.filter(
             order=order,
             is_awaiting_staff_approval=False,
             delivered=False,
             menu_item__category__assigned_kds__isnull=False
         )
         
-        all_items_globally_ready_for_pickup = True
-        if all_kds_relevant_and_undelivered_items_for_order.exists():
-            for item_in_order_check in all_kds_relevant_and_undelivered_items_for_order:
-                if item_in_order_check.kds_status != OrderItem.KDS_ITEM_STATUS_CHOICES[2][0]:
-                    all_items_globally_ready_for_pickup = False
-                    break
+        # Eğer KDS'e ait başka ürün kalmadıysa veya hepsi hazırsa, siparişin genel durumunu güncelle
+        all_items_globally_ready = not all_kds_relevant_items.exclude(kds_status=OrderItem.KDS_ITEM_STATUS_READY).exists()
         
-        if all_items_globally_ready_for_pickup:
+        if all_items_globally_ready:
+            # Tüm ürünler hazır, siparişin genel durumunu güncelle
             if order.status != Order.STATUS_READY_FOR_PICKUP:
                 order.status = Order.STATUS_READY_FOR_PICKUP
                 order.kitchen_completed_at = timezone.now()
                 order.save(update_fields=['status', 'kitchen_completed_at'])
                 logger.info(f"Order ID {order.id} tüm KDS kalemleri hazır olduğu için durumu '{Order.STATUS_READY_FOR_PICKUP}' olarak güncellendi.")
                 
+                # Belirgin ve DOĞRU bildirimi gönder
                 transaction.on_commit(
                     lambda: send_order_update_notification(
-                        order_id=order.id, created=False, update_fields=['status', 'kitchen_completed_at']
+                        order=order, created=False, update_fields=['status', 'kitchen_completed_at']
                     )
                 )
-
+        else:
+            # Siparişin sadece bir kısmı hazır, genel durumu değiştirme.
+            # Sadece NÖTR bir güncelleme bildirimi gönder ki ekranlar veriyi yenilesin.
+            logger.info(f"Order ID {order.id} için bazı kalemler hazır, ancak diğer KDS'lerde bekleyenler var. Sadece genel güncelleme bildirimi gönderilecek.")
+            transaction.on_commit(
+                lambda: send_order_update_notification(
+                    order=order, 
+                    created=False, 
+                    specific_event_type='order_updated' # <-- ANAHTAR DEĞİŞİKLİK
+                )
+            )
+            
         order.refresh_from_db()
         serializer = self.get_serializer(order)
         return Response(serializer.data, status=status.HTTP_200_OK)

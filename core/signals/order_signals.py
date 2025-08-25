@@ -40,19 +40,27 @@ def get_event_type_from_status(order: Order, created: bool, update_fields=None, 
     return NOTIFICATION_EVENT_TYPES[14][0]
 
 
-def send_order_update_notification(order, created: bool = False, update_fields=None, item_added_info=None):
+# === GÜNCELLENMİŞ FONKSİYON ===
+def send_order_update_notification(order, created: bool = False, update_fields=None, item_added_info=None, specific_event_type=None):
     if not isinstance(order, Order):
         logger.error(f"BİLDİRİM GÖNDERME HATASI: Geçersiz 'order' nesnesi tipi. Beklenen: Order, Gelen: {type(order)}")
         return
-        
-    event_type = get_event_type_from_status(order, created, update_fields, item_added_info)
+    
+    # Eğer özel bir olay türü belirtilmişse onu kullan, yoksa durumdan türet.
+    if specific_event_type:
+        event_type = specific_event_type
+    else:
+        event_type = get_event_type_from_status(order, created, update_fields, item_added_info)
+    
     message = f"Sipariş #{order.id} durumu güncellendi: {order.get_status_display()}"
 
     if item_added_info:
         message = f"{item_added_info['item_name']} ürünü Sipariş #{order.id}'e eklendi."
     
+    # Celery task'i order nesnesinin kendisini değil, ID'sini alır.
     send_order_update_task.delay(order_id=order.id, event_type=event_type, message=message)
     logger.info(f"Celery task for order #{order.id} (Event: {event_type}) has been queued.")
+# === GÜNCELLEME SONU ===
 
 
 @receiver(pre_delete, sender=Order)
