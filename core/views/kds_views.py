@@ -1,4 +1,4 @@
-# makarna_project/core/views/kds_views.py
+# core/views/kds_views.py
 
 from rest_framework import viewsets, status
 from rest_framework.permissions import IsAuthenticated, BasePermission
@@ -277,13 +277,10 @@ class KDSOrderViewSet(viewsets.ReadOnlyModelViewSet):
         
         all_items_globally_ready = not all_kds_relevant_items.exclude(kds_status=OrderItem.KDS_ITEM_STATUS_READY).exists()
         
-        # +++ EKSTRA LOGLAMA BAŞLANGICI +++
-        logger.info(f"[KDS VIEW] all_items_globally_ready_for_pickup set to {all_items_globally_ready}")
-        if not all_items_globally_ready:
-            still_pending_items = all_kds_relevant_items.exclude(kds_status=OrderItem.KDS_ITEM_STATUS_READY)
-            logger.warning(f"[KDS VIEW] Henüz hazır olmayan kalemler var: {[f'{item.menu_item.name} ({item.kds_status})' for item in still_pending_items]}")
-        # +++ EKSTRA LOGLAMA SONU +++
+        # +++ ÇÖZÜM KODU BAŞLANGICI +++
         
+        notification_event_to_send = None
+
         if all_items_globally_ready:
             if order.status != Order.STATUS_READY_FOR_PICKUP:
                 order.status = Order.STATUS_READY_FOR_PICKUP
@@ -291,23 +288,28 @@ class KDSOrderViewSet(viewsets.ReadOnlyModelViewSet):
                 order.save(update_fields=['status', 'kitchen_completed_at'])
                 logger.info(f"[KDS VIEW] Order ID {order.id} tüm KDS kalemleri hazır olduğu için durumu '{Order.STATUS_READY_FOR_PICKUP}' olarak güncellendi.")
                 
-                logger.info(f"[KDS VIEW] Bildirim gönderiliyor. Order ID: {order.id}, update_fields: ['status', 'kitchen_completed_at']")
+                notification_event_to_send = 'order_ready_for_pickup_update'
+                
                 transaction.on_commit(
                     lambda: send_order_update_notification(
                         order=order,
                         created=False,
-                        update_fields=['status', 'kitchen_completed_at']
+                        specific_event_type=notification_event_to_send
                     )
                 )
         else:
             logger.info(f"Order ID {order.id} için bazı kalemler hazır, ancak diğerleri bekliyor. Sadece genel güncelleme bildirimi gönderilecek.")
+            notification_event_to_send = 'order_item_updated' 
+
             transaction.on_commit(
                 lambda: send_order_update_notification(
                     order=order, 
                     created=False, 
-                    update_fields=['order_items'] # Sadece kalemlerin güncellendiğini belirtmek yeterli olabilir.
+                    specific_event_type=notification_event_to_send
                 )
             )
+            
+        # +++ ÇÖZÜM KODU SONU +++
             
         order.refresh_from_db()
         serializer = self.get_serializer(order)
