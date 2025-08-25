@@ -12,6 +12,8 @@ from .serializers import OrderSerializer
 import uuid
 from datetime import datetime
 from .utils.json_helpers import convert_decimals_to_strings
+# YENİ IMPORT
+from .utils.notification_gate import is_notification_active
 
 logger = logging.getLogger(__name__)
 
@@ -38,8 +40,19 @@ except Exception as e:
 
 def send_socket_io_notification(room, event, data):
     """
-    Socket.IO bildirimi gönderen yardımcı fonksiyon - DÜZELTİLMİŞ VERSİYON
+    Socket.IO bildirimi gönderen yardımcı fonksiyon - GÜNCELLENMİŞ VERSİYON
     """
+    # === YENİ KONTROL BLOĞU ===
+    # 'event_type' genellikle data sözlüğünün içinde bulunur.
+    event_type_to_check = data.get('event_type')
+    
+    # Test bildirimleri gibi bazı özel durumları kontrol dışı bırakabiliriz.
+    if event_type_to_check and event_type_to_check != 'test_notification':
+        if not is_notification_active(event_type_to_check):
+            logger.info(f"[Notification Gate] Bildirim engellendi (pasif): {event_type_to_check}")
+            return False # Bildirimi göndermeden çık
+    # === KONTROL BLOĞU SONU ===
+    
     success = False
     
     # Method 1: ASGI app üzerinden direkt emit (en güvenilir)
@@ -47,21 +60,16 @@ def send_socket_io_notification(room, event, data):
         from makarna_project.asgi import sio
         import asyncio
         
-        # Async fonksiyonu sync context'te çalıştır
         async def emit_notification():
             await sio.emit(event, data, room=room)
             
-        # Event loop kontrolü
         try:
             loop = asyncio.get_event_loop()
             if loop.is_running():
-                # Async context içindeyiz, task olarak schedule et
                 asyncio.create_task(emit_notification())
             else:
-                # Sync context, event loop çalıştır
                 loop.run_until_complete(emit_notification())
         except RuntimeError:
-            # Event loop yok, yeni bir tane oluştur
             asyncio.run(emit_notification())
             
         logger.info(f"[Notification] Sent via Socket.IO server to room: {room}")
@@ -73,18 +81,13 @@ def send_socket_io_notification(room, event, data):
     # Method 2: Redis pub/sub - DOĞRU FORMAT
     if not success and redis_client:
         try:
-            # Socket.IO'nun beklediği Redis message formatı
             message = {
                 "uid": "emitter",
-                "type": 2,  # EVENT type
+                "type": 2,
                 "data": [event, data],
                 "nsp": "/"
             }
-            
-            # Socket.IO room key formatı
             room_key = f"socket.io#{room}"
-            
-            # JSON encode et ve gönder
             redis_client.publish(room_key, json.dumps(message))
             logger.info(f"[Notification] Sent via Redis pub/sub to room: {room}")
             success = True
@@ -96,15 +99,12 @@ def send_socket_io_notification(room, event, data):
     if not success:
         try:
             import requests
-            
-            # Webhook endpoint (eğer varsa)
             webhook_url = "https://order-ai-7bd2c97ec9ef.herokuapp.com/api/webhook/socket-emit/"
             payload = {
                 'room': room,
                 'event': event,
                 'data': data
             }
-            
             response = requests.post(webhook_url, json=payload, timeout=5)
             if response.status_code == 200:
                 logger.info(f"[Notification] Sent via HTTP webhook to room: {room}")
@@ -148,11 +148,9 @@ def send_order_update_task(order_id, event_type, message, extra_data=None):
         if extra_data:
             update_data.update(extra_data)
 
-        # Business room'a bildirim gönder
         business_room = f"business_{order.business_id}"
         business_success = send_socket_io_notification(business_room, 'order_status_update', update_data)
 
-        # KDS room'larına bildirim gönder
         kds_screens_with_items = {
             item.menu_item.category.assigned_kds
             for item in order.order_items.all()
@@ -168,11 +166,6 @@ def send_order_update_task(order_id, event_type, message, extra_data=None):
             if send_socket_io_notification(kds_room, 'order_status_update', kds_data):
                 kds_success_count += 1
         
-        # === KALDIRILAN BÖLÜM ===
-        # Gereksiz test bildirimi gönderen kod bloğu buradan kaldırıldı.
-        # ==========================
-
-        # Sonuç raporu
         if business_success:
             logger.info(f"[Celery Task] ✅ Business notification sent successfully for order {order_id}")
         else:
@@ -219,7 +212,6 @@ def test_socket_connection():
             'notification_id': f"test_{uuid.uuid4()}"
         }
         
-        # Test room'una test mesajı gönder
         success = send_socket_io_notification('business_67', 'order_status_update', test_data)
         
         if success:
@@ -243,7 +235,6 @@ def cleanup_old_notifications():
         from datetime import timedelta
         from django.utils import timezone
         
-        # 7 gün önceki bildirimleri temizle
         cutoff_date = timezone.now() - timedelta(days=7)
         
         logger.info(f"[Celery Task] Notification cleanup completed for dates before {cutoff_date}")
@@ -252,7 +243,6 @@ def cleanup_old_notifications():
         logger.error(f"[Celery Task] Notification cleanup failed: {e}")
 
 
-# 🔥 YENİ: Manuel test task'ı
 @shared_task(name="send_test_notification")
 def send_test_notification(business_id=67):
     """

@@ -15,7 +15,7 @@ from .models import (
     Pager, CampaignMenu, CampaignMenuItem,
     KDSScreen,
     Shift, ScheduledShift,
-    STAFF_PERMISSION_CHOICES, NOTIFICATION_EVENT_TYPES
+    STAFF_PERMISSION_CHOICES, NOTIFICATION_EVENT_TYPES, NotificationSetting
 )
 
 # CustomUserAdmin sınıfında değişiklik yok, aynı kalıyor

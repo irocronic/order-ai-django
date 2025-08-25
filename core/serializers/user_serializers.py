@@ -11,7 +11,7 @@ from django.core.exceptions import ValidationError as DjangoValidationError
 from django.core.mail import send_mail
 from django.conf import settings
 
-from ..models import CustomUser as User, Business, STAFF_PERMISSION_CHOICES, NOTIFICATION_EVENT_TYPES, KDSScreen
+from ..models import CustomUser as User, Business, STAFF_PERMISSION_CHOICES, NOTIFICATION_EVENT_TYPES, KDSScreen, NotificationSetting
 from .kds_serializers import KDSScreenSerializer
 
 class RegisterSerializer(serializers.ModelSerializer):
@@ -442,3 +442,9 @@ class PasswordResetCodeConfirmSerializer(serializers.Serializer):
         if attrs['new_password1'] != attrs['new_password2']:
             raise serializers.ValidationError({"new_password2": "Yeni şifreler eşleşmiyor."})
         return attrs
+
+# === YENİ SERIALIZER ===
+class NotificationSettingSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = NotificationSetting
+        fields = ['event_type', 'is_active', 'description']

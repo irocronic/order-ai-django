@@ -5,11 +5,12 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from django.contrib.auth import get_user_model
 from django.shortcuts import get_object_or_404
-from ..models import Business
+from ..models import Business, NotificationSetting
 from ..serializers import (
     AdminBusinessOwnerSerializer,
     AdminStaffUserSerializer,
     UserActivationSerializer,
+    NotificationSettingSerializer,
 )
 
 User = get_user_model()
@@ -110,7 +111,6 @@ class AdminUserManagementViewSet(viewsets.ReadOnlyModelViewSet):
         serializer = AdminBusinessOwnerSerializer(users, many=True, context={'request': request})
         return Response(serializer.data)
 
-    # --- ÖNEMLİ: GÜNCELLENEN FONKSİYON BURASI ---
     @action(detail=True, methods=['post'], url_path='approve')
     def approve_user(self, request, pk=None):
         """
@@ -120,20 +120,16 @@ class AdminUserManagementViewSet(viewsets.ReadOnlyModelViewSet):
         user_to_approve = get_object_or_404(User, id=pk)
 
         if user_to_approve.is_approved_by_admin:
-            # Kullanıcı zaten onaylıysa sadece aktiflik durumunu kontrol et
             if user_to_approve.is_active:
                 return Response({"detail": "Kullanıcı zaten onaylanmış ve aktif."}, status=status.HTTP_400_BAD_REQUEST)
             else:
-                # Onaylı ama pasif ise sadece aktif et
                 user_to_approve.is_active = True
                 user_to_approve.save(update_fields=['is_active'])
         else:
-            # Hem onayı ver hem de aktifleştir
             user_to_approve.is_active = True
             user_to_approve.is_approved_by_admin = True
             user_to_approve.save(update_fields=['is_active', 'is_approved_by_admin'])
         
-        # Onay sonrası güncellenmiş kullanıcı bilgisini döndür
         if user_to_approve.user_type == 'business_owner':
             response_serializer = AdminBusinessOwnerSerializer(user_to_approve, context={'request': request})
         elif user_to_approve.user_type == 'customer':
@@ -142,3 +138,31 @@ class AdminUserManagementViewSet(viewsets.ReadOnlyModelViewSet):
             response_serializer = AdminStaffUserSerializer(user_to_approve, context={'request': request})
             
         return Response(response_serializer.data, status=status.HTTP_200_OK)
+
+
+# === YENİ VIEWSET ===
+class NotificationSettingViewSet(viewsets.ModelViewSet):
+    """
+    Admin kullanıcısının bildirim ayarlarını yönetmesini sağlar.
+    """
+    permission_classes = [IsAdminUser]
+    serializer_class = NotificationSettingSerializer
+    queryset = NotificationSetting.objects.all()
+    lookup_field = 'event_type' 
+
+    http_method_names = ['get', 'patch', 'head', 'options']
+
+    def get_object(self):
+        queryset = self.get_queryset()
+        lookup_url_kwarg = self.lookup_url_kwarg or self.lookup_field
+        filter_kwargs = {self.lookup_field: self.kwargs[lookup_url_kwarg]}
+        obj = get_object_or_404(queryset, **filter_kwargs)
+        self.check_object_permissions(self.request, obj)
+        return obj
+
+    def partial_update(self, request, *args, **kwargs):
+        instance = self.get_object()
+        serializer = self.get_serializer(instance, data={'is_active': request.data.get('is_active')}, partial=True)
+        serializer.is_valid(raise_exception=True)
+        self.perform_update(serializer)
+        return Response(serializer.data)

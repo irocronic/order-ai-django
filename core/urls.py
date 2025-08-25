@@ -36,6 +36,8 @@ from core.views import (
     KDSScreenViewSet,
     ShiftViewSet,
     ScheduledShiftViewSet,
+    # YENİ IMPORT
+    NotificationSettingViewSet,
 )
 
 from subscriptions.views import VerifyPurchaseView
@@ -62,6 +64,9 @@ router.register(r'schedule', ScheduledShiftViewSet, basename='scheduledshift')
 # YÖNETİCİ API'leri için ayrı bir DefaultRouter
 admin_router = DefaultRouter()
 admin_router.register(r'manage-users', AdminUserManagementViewSet, basename='admin-manage-user')
+# YENİ KAYIT
+admin_router.register(r'notification-settings', NotificationSettingViewSet, basename='admin-notification-setting')
+
 
 # URL'leri tanımla
 urlpatterns = [

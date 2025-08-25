@@ -787,3 +787,37 @@ class ScheduledShift(models.Model):
 
     def __str__(self):
         return f"{self.staff.username} - {self.date.strftime('%d/%m/%Y')} - {self.shift.name}"
+
+
+
+
+class NotificationSetting(models.Model):
+    """
+    WebSocket üzerinden gönderilecek bildirim türlerinin aktif olup olmadığını yönetir.
+    """
+    # Django'daki NOTIFICATION_EVENT_TYPES listesindeki ilk değer (anahtar)
+    event_type = models.CharField(
+        max_length=100, 
+        primary_key=True, 
+        verbose_name="Bildirim Olay Tipi (Anahtar)"
+    )
+    is_active = models.BooleanField(
+        default=True, 
+        verbose_name="Aktif Mi?",
+        help_text="Bu bildirim türü aktifse Redis üzerinden gönderilir. Pasif ise gönderilmez."
+    )
+    description = models.CharField(
+        max_length=255, 
+        blank=True, 
+        null=True, 
+        verbose_name="Açıklama"
+    )
+
+    class Meta:
+        verbose_name = "Bildirim Ayarı"
+        verbose_name_plural = "Bildirim Ayarları"
+        ordering = ['event_type']
+
+    def __str__(self):
+        status = "Aktif" if self.is_active else "Pasif"
+        return f"{self.event_type} - {status}"
