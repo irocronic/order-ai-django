@@ -138,28 +138,6 @@ def register_events(sio_server):
         else:
             logger.info(f"Socket.IO: İstemci {sid} bağlantısı kesildi (session bilgisi yok).")
 
-    # 🔥 HEARTBEAT EVENTİ - HEROKU BAĞLANTI KONTROLÜ
-    @sio_server.event
-    async def heartbeat(sid, data):
-        """
-        Flutter istemcisinden gelen heartbeat paketlerini işler ve response gönderir.
-        Bu, Heroku'nun bağlantı kesme davranışını engellemek için kullanılır.
-        """
-        session = await sio_server.get_session(sid)
-        
-        # Heartbeat response'u hemen geri gönder
-        await sio_server.emit('heartbeat_response', {
-            'timestamp': int(time.time() * 1000),
-            'sid': sid
-        }, room=sid)
-        
-        # Debug için log - sadece authenticated user'lar için detaylı log
-        if session and session.get('type') == 'authenticated_user':
-            user_id = session.get('user_id', 'Unknown')
-            logger.debug(f"💓 Heartbeat alındı ve response gönderildi - SID: {sid}, User: {user_id}")
-        else:
-            logger.debug(f"💓 Heartbeat alındı (guest) - SID: {sid}")
-
     @sio_server.event
     async def join_kds_room(sid, data):
         session = await sio_server.get_session(sid)
