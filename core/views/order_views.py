@@ -28,7 +28,7 @@ from ..permissions import IsOnActiveShift
 from channels.layers import get_channel_layer
 from asgiref.sync import async_to_sync
 
-from ..signals.order_signals import send_order_update_notification
+from ..tasks import send_order_update_task
 
 from .order_actions import item_actions, status_actions, financial_actions, operational_actions
 
@@ -135,9 +135,10 @@ class OrderViewSet(viewsets.ModelViewSet):
         try:
             order = serializer.save(taken_by_staff=self.request.user)
             transaction.on_commit(
-                lambda: send_order_update_notification(
-                    order=order, 
-                    created=True
+                lambda: send_order_update_task.delay(
+                    order_id=order.id, 
+                    event_type='order_approved_for_kitchen',
+                    message=f"Yeni sipariş #{order.id} mutfağa iletildi."
                 )
             )
         except Exception as e:
@@ -473,35 +474,23 @@ class OrderItemViewSet(mixins.DestroyModelMixin, mixins.UpdateModelMixin, viewse
                 event_type = 'order_cancelled'
                 message = f"Sipariş #{order_id_for_log} (tüm kalemleri silindiği için) iptal edildi."
             
-            try:
-                from makarna_project.asgi import sio
-                if sio:
-                    room_name = f'business_{business_id_for_log}'
-                    payload = {
-                        'event_type': event_type,
-                        'message': message,
-                        'updated_order_data': convert_decimals_to_strings(order_serializer_data),
-                    }
-                    async_to_sync(sio.emit)('order_status_update', payload, room=room_name)
-                    logger.info(f"Socket.IO olayı ({event_type}) Order ID {order_id_for_log} için {room_name} odasına gönderildi.")
-            except Exception as e_socket:
-                logger.error(f"Socket.IO olayı gönderilirken hata (OrderItem delete - sipariş {order_id_for_log}): {e_socket}", exc_info=True)
+            transaction.on_commit(
+                lambda: send_order_update_task.delay(
+                    order_id=order.id,
+                    event_type=event_type,
+                    message=message
+                )
+            )
 
         except Order.DoesNotExist:
             logger.warning(f"Order ID {order_id_for_log} bulunamadı (OrderItem silindikten sonra).")
-            try:
-                from makarna_project.asgi import sio
-                if sio:
-                    room_name = f'business_{business_id_for_log}'
-                    payload = {
-                        'event_type': 'order_deleted', 
-                        'order_id': order_id_for_log, 
-                        'table_id': table_id_for_log, 
-                        'business_id': business_id_for_log 
-                    }
-                    async_to_sync(sio.emit)('order_status_update', payload, room=room_name)
-            except Exception as e_socket:
-                logger.error(f"Socket.IO olayı gönderilirken hata (Order not found - sipariş {order_id_for_log}): {e_socket}", exc_info=True)
+            transaction.on_commit(
+                lambda: send_order_update_task.delay(
+                    order_id=order_id_for_log,
+                    event_type='order_cancelled_update',
+                    message=f"Sipariş #{order_id_for_log} iptal edildi."
+                )
+            )
 
     @action(detail=True, methods=['post'], url_path='start-preparing')
     @transaction.atomic
@@ -510,30 +499,29 @@ class OrderItemViewSet(mixins.DestroyModelMixin, mixins.UpdateModelMixin, viewse
         order = order_item.order
         self._check_order_item_modifiable(order_item, "hazırlamaya başlama")
 
-        if order_item.kds_status != OrderItem.KDS_ITEM_STATUS_CHOICES[0][0]: # 'pending_kds'
+        if order_item.kds_status != OrderItem.KDS_ITEM_STATUS_PENDING:
             return Response({'detail': 'Bu ürün zaten hazırlanıyor veya hazır durumda.'}, status=status.HTTP_400_BAD_REQUEST)
 
-        # === DEĞİŞİKLİK BAŞLANGICI ===
-        update_fields_for_notification = ['order_items'] # Başlangıçta sadece kalemin güncellendiğini belirtiyoruz
-        # === DEĞİŞİKLİK SONU ===
-
-        order_item.kds_status = OrderItem.KDS_ITEM_STATUS_CHOICES[1][0] # 'preparing_kds'
+        order_item.kds_status = OrderItem.KDS_ITEM_STATUS_PREPARING
         order_item.item_prepared_by_staff = request.user
         order_item.save(update_fields=['kds_status', 'item_prepared_by_staff'])
 
+        event_type = 'order_preparing_update'
+        message = f"Sipariş #{order.id} hazırlanıyor."
+        
         if order.status == Order.STATUS_APPROVED:
             order.status = Order.STATUS_PREPARING
             order.save(update_fields=['status'])
-            # === DEĞİŞİKLİK BAŞLANGICI ===
-            update_fields_for_notification.append('status') # Sadece durum değişirse listeye ekliyoruz
-            # === DEĞİŞİKLİK SONU ===
 
         logger.info(f"OrderItem ID {order_item.id} (Order #{order.id}) 'preparing_kds' olarak işaretlendi.")
         
-        # === DEĞİŞİKLİK BAŞLANGICI ===
-        # Bildirim fonksiyonuna artık dinamik listeyi gönderiyoruz
-        transaction.on_commit(lambda: send_order_update_notification(order=order, created=False, update_fields=update_fields_for_notification))
-        # === DEĞİŞİKLİK SONU ===
+        transaction.on_commit(
+            lambda: send_order_update_task.delay(
+                order_id=order.id, 
+                event_type=event_type,
+                message=message
+            )
+        )
         
         serializer = OrderSerializer(order_item.order, context={'request': request})
         return Response(serializer.data, status=status.HTTP_200_OK)
@@ -546,35 +534,47 @@ class OrderItemViewSet(mixins.DestroyModelMixin, mixins.UpdateModelMixin, viewse
         order = order_item.order
         self._check_order_item_modifiable(order_item, "hazır olarak işaretleme")
 
-        if order_item.kds_status == OrderItem.KDS_ITEM_STATUS_CHOICES[2][0]: # 'ready_kds'
+        if order_item.kds_status == OrderItem.KDS_ITEM_STATUS_READY:
             return Response({'detail': 'Bu ürün zaten hazır olarak işaretlenmiş.'}, status=status.HTTP_400_BAD_REQUEST)
 
-        # === DEĞİŞİKLİK BAŞLANGICI ===
-        update_fields_for_notification = ['order_items']
-        # === DEĞİŞİKLİK SONU ===
-
-        order_item.kds_status = OrderItem.KDS_ITEM_STATUS_CHOICES[2][0] # 'ready_kds'
+        order_item.kds_status = OrderItem.KDS_ITEM_STATUS_READY
         if not order_item.item_prepared_by_staff:
             order_item.item_prepared_by_staff = request.user
         order_item.save(update_fields=['kds_status', 'item_prepared_by_staff'])
         logger.info(f"OrderItem ID {order_item.id} (Order #{order.id}) 'ready_kds' olarak işaretlendi.")
+        
+        # === YENİ BİLDİRİM MANTIĞI BAŞLANGICI ===
+        event_type = ''
+        message = ''
 
+        # Siparişteki tüm KDS ürünlerinin hazır olup olmadığını kontrol et
         all_kds_items_in_order = order.order_items.filter(menu_item__category__assigned_kds__isnull=False)
-        all_ready = not all_kds_items_in_order.exclude(kds_status=OrderItem.KDS_ITEM_STATUS_CHOICES[2][0]).exists()
+        all_ready = not all_kds_items_in_order.exclude(kds_status=OrderItem.KDS_ITEM_STATUS_READY).exists()
 
         if all_ready:
             logger.info(f"Sipariş #{order.id} için tüm KDS ürünleri hazır. Genel durum güncelleniyor.")
             order.status = Order.STATUS_READY_FOR_PICKUP
             order.kitchen_completed_at = timezone.now()
             order.save(update_fields=['status', 'kitchen_completed_at'])
-            # === DEĞİŞİKLİK BAŞLANGICI ===
-            update_fields_for_notification.append('status')
-            update_fields_for_notification.append('kitchen_completed_at')
-            # === DEĞİŞİKLİK SONU ===
+            
+            event_type = 'order_ready_for_pickup_update'
+            message = f"Sipariş #{order.id} mutfakta hazır, garson bekleniyor."
+        else:
+            # Eğer siparişin tamamı hazır değilse, sadece bu kalemin hazırlandığını belirten bir bildirim gönder
+            event_type = 'order_preparing_update' # Mevcut "Hazırlanıyor" tipini kullanabiliriz
+            item_name = order_item.menu_item.name
+            variant_name = f" ({order_item.variant.name})" if order_item.variant else ""
+            message = f"Sipariş #{order.id}: '{item_name}{variant_name}' hazırlandı. Diğer ürünler bekleniyor."
         
-        # === DEĞİŞİKLİK BAŞLANGICI ===
-        transaction.on_commit(lambda: send_order_update_notification(order=order, created=False, update_fields=update_fields_for_notification))
-        # === DEĞİŞİKLİK SONU ===
+        if event_type and message:
+            transaction.on_commit(
+                lambda: send_order_update_task.delay(
+                    order_id=order.id,
+                    event_type=event_type,
+                    message=message
+                )
+            )
+        # === YENİ BİLDİRİM MANTIĞI SONU ===
         
         serializer = OrderSerializer(order_item.order, context={'request': request})
         return Response(serializer.data, status=status.HTTP_200_OK)
@@ -587,13 +587,13 @@ class OrderItemViewSet(mixins.DestroyModelMixin, mixins.UpdateModelMixin, viewse
         order = order_item.order
         self._check_order_item_modifiable(order_item, "garson tarafından alınma")
 
-        if order_item.kds_status != OrderItem.KDS_ITEM_STATUS_CHOICES[2][0]: # 'ready_kds'
+        if order_item.kds_status != OrderItem.KDS_ITEM_STATUS_READY:
             return Response(
                 {'detail': f"Bu ürün henüz mutfakta hazır değil. Durum: {order_item.get_kds_status_display()}"},
                 status=status.HTTP_400_BAD_REQUEST
             )
         
-        order_item.kds_status = OrderItem.KDS_ITEM_STATUS_CHOICES[3][0] # 'picked_up_kds'
+        order_item.kds_status = OrderItem.KDS_ITEM_STATUS_PICKED_UP
         order_item.waiter_picked_up_at = timezone.now()
         order_item.save(update_fields=['kds_status', 'waiter_picked_up_at'])
         logger.info(f"OrderItem ID {order_item.id} (Order #{order.id}) 'picked_up_kds' olarak işaretlendi.")
@@ -603,9 +603,22 @@ class OrderItemViewSet(mixins.DestroyModelMixin, mixins.UpdateModelMixin, viewse
             if not order.picked_up_by_waiter_at:
                 order.picked_up_by_waiter_at = timezone.now()
             order.save(update_fields=['status', 'picked_up_by_waiter_at'])
-            transaction.on_commit(lambda: send_order_update_notification(order=order, created=False, update_fields=['status', 'order_items']))
+            
+            transaction.on_commit(
+                lambda: send_order_update_task.delay(
+                    order_id=order.id,
+                    event_type='order_picked_up_by_waiter',
+                    message=f"Sipariş #{order.id} garson tarafından mutfaktan alındı."
+                )
+            )
         else:
-            transaction.on_commit(lambda: send_order_update_notification(order=order, created=False, update_fields=['order_items']))
+            transaction.on_commit(
+                lambda: send_order_update_task.delay(
+                    order_id=order.id,
+                    event_type='order_item_updated',
+                    message=f"Sipariş #{order.id} güncellendi."
+                )
+            )
 
         order.refresh_from_db()
         return Response(OrderSerializer(order, context=self.get_serializer_context()).data, status=status.HTTP_200_OK)
