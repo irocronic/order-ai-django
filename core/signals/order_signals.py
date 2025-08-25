@@ -40,6 +40,7 @@ def get_event_type_from_status(order: Order, created: bool, update_fields=None, 
     return NOTIFICATION_EVENT_TYPES[14][0]
 
 
+# === LOGLAMA İÇİN GÜNCELLENMİŞ FONKSİYON ===
 def send_order_update_notification(order, created: bool = False, update_fields=None, item_added_info=None, specific_event_type=None):
     if not isinstance(order, Order):
         logger.error(f"BİLDİRİM GÖNDERME HATASI: Geçersiz 'order' nesnesi tipi. Beklenen: Order, Gelen: {type(order)}")
@@ -73,6 +74,7 @@ def send_order_update_notification(order, created: bool = False, update_fields=N
     
     send_order_update_task.delay(order_id=order.id, event_type=event_type, message=message)
     logger.info(f"Celery task for order #{order.id} (Event: {event_type}) has been queued.")
+# === GÜNCELLEME SONU ===
 
 
 @receiver(pre_delete, sender=Order)

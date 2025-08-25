@@ -233,7 +233,6 @@ class KDSOrderViewSet(viewsets.ReadOnlyModelViewSet):
         serializer = self.get_serializer(order)
         return Response(serializer.data)
 
-
     @action(detail=True, methods=['post'], url_path='mark-ready-for-pickup')
     @transaction.atomic
     def mark_ready_for_pickup(self, request, kds_slug=None, pk=None):
@@ -278,7 +277,7 @@ class KDSOrderViewSet(viewsets.ReadOnlyModelViewSet):
         
         all_items_globally_ready = not all_kds_relevant_items.exclude(kds_status=OrderItem.KDS_ITEM_STATUS_READY).exists()
         
-        # +++ EKSTRA LOGLAMA +++
+        # +++ EKSTRA LOGLAMA BAŞLANGICI +++
         logger.info(f"[KDS VIEW] all_items_globally_ready_for_pickup set to {all_items_globally_ready}")
         if not all_items_globally_ready:
             still_pending_items = all_kds_relevant_items.exclude(kds_status=OrderItem.KDS_ITEM_STATUS_READY)
@@ -292,7 +291,7 @@ class KDSOrderViewSet(viewsets.ReadOnlyModelViewSet):
                 order.save(update_fields=['status', 'kitchen_completed_at'])
                 logger.info(f"[KDS VIEW] Order ID {order.id} tüm KDS kalemleri hazır olduğu için durumu '{Order.STATUS_READY_FOR_PICKUP}' olarak güncellendi.")
                 
-                logger.info(f"[KDS VIEW] Bildirim gönderiliyor. Order ID: {order.id}, update_fields: ['status', 'kitchen_completed_at']") # Ekstra log
+                logger.info(f"[KDS VIEW] Bildirim gönderiliyor. Order ID: {order.id}, update_fields: ['status', 'kitchen_completed_at']")
                 transaction.on_commit(
                     lambda: send_order_update_notification(
                         order=order,
@@ -306,7 +305,7 @@ class KDSOrderViewSet(viewsets.ReadOnlyModelViewSet):
                 lambda: send_order_update_notification(
                     order=order, 
                     created=False, 
-                    specific_event_type='order_updated'
+                    update_fields=['order_items'] # Sadece kalemlerin güncellendiğini belirtmek yeterli olabilir.
                 )
             )
             
