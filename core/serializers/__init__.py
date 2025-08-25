@@ -1,16 +1,13 @@
 # core/serializers/__init__.py
 
+# Bu dosya, artık admin_serializers'ı doğrudan import ETMİYOR.
+# İhtiyaç duyulan yerlerde doğrudan import edilecek.
 from .user_serializers import (
     RegisterSerializer,
     AccountSettingsSerializer,
     StaffUserSerializer,
     StaffPermissionUpdateSerializer,
     StaffNotificationPermissionUpdateSerializer,
-    BusinessForAdminSerializer,
-    AdminBusinessOwnerSerializer,
-    AdminStaffUserSerializer,
-    UserActivationSerializer,
-    AdminUserNotificationPermissionUpdateSerializer,
     PasswordResetRequestSerializer,
     PasswordResetCodeConfirmSerializer,
 )
@@ -45,12 +42,10 @@ from .stock_serializers import (
     StockSerializer,
     StockMovementSerializer,
 )
-# ==================== YENİ EKLENEN BÖLÜM (IMPORT) ====================
 from .report_serializers import (
     StaffPerformanceSerializer,
-    DetailedSaleItemSerializer, # YENİ: Bu satır eklendi
+    DetailedSaleItemSerializer,
 )
-# =====================================================================
 from .pager_serializers import (
     PagerSerializer,
     PagerOrderSerializer,
@@ -74,11 +69,6 @@ __all__ = [
     'StaffUserSerializer',
     'StaffPermissionUpdateSerializer',
     'StaffNotificationPermissionUpdateSerializer',
-    'BusinessForAdminSerializer',
-    'AdminBusinessOwnerSerializer',
-    'AdminStaffUserSerializer',
-    'UserActivationSerializer',
-    'AdminUserNotificationPermissionUpdateSerializer',
     'PasswordResetRequestSerializer',
     'PasswordResetCodeConfirmSerializer',
     'BusinessSerializer',

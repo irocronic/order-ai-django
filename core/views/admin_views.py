@@ -6,7 +6,8 @@ from rest_framework.response import Response
 from django.contrib.auth import get_user_model
 from django.shortcuts import get_object_or_404
 from ..models import Business, NotificationSetting
-from ..serializers import (
+# GÜNCELLENMİŞ IMPORT YOLU
+from ..serializers.admin_serializers import (
     AdminBusinessOwnerSerializer,
     AdminStaffUserSerializer,
     UserActivationSerializer,
@@ -23,7 +24,6 @@ class AdminUserManagementViewSet(viewsets.ReadOnlyModelViewSet):
     permission_classes = [IsAdminUser]
 
     def get_serializer_class(self):
-        # Bu metodun içeriği aynı kalabilir, bir değişiklik gerekmiyor.
         if self.action == 'list_business_owners':
             return AdminBusinessOwnerSerializer
         elif self.action == 'list_staff_for_owner':
@@ -113,10 +113,6 @@ class AdminUserManagementViewSet(viewsets.ReadOnlyModelViewSet):
 
     @action(detail=True, methods=['post'], url_path='approve')
     def approve_user(self, request, pk=None):
-        """
-        Belirli bir kullanıcıyı onaylar.
-        Hem is_active hem de is_approved_by_admin alanlarını True yapar.
-        """
         user_to_approve = get_object_or_404(User, id=pk)
 
         if user_to_approve.is_approved_by_admin:
@@ -140,7 +136,6 @@ class AdminUserManagementViewSet(viewsets.ReadOnlyModelViewSet):
         return Response(response_serializer.data, status=status.HTTP_200_OK)
 
 
-# === YENİ VIEWSET ===
 class NotificationSettingViewSet(viewsets.ModelViewSet):
     """
     Admin kullanıcısının bildirim ayarlarını yönetmesini sağlar.

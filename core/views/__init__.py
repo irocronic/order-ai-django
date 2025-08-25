@@ -22,7 +22,8 @@ from .guest_api_views import (
     GuestTakeawayOrderUpdateView
 )
 from .staff_report_views import StaffPerformanceReportView
-from .admin_views import AdminUserManagementViewSet
+# GÜNCELLENMİŞ IMPORT
+from .admin_views import AdminUserManagementViewSet, NotificationSettingViewSet
 from .kds_views import KDSOrderViewSet
 from .pager_views import PagerViewSet
 from .campaign_views import CampaignMenuViewSet
@@ -57,6 +58,8 @@ __all__ = [
     'GuestTakeawayMenuView',
     'GuestTakeawayOrderUpdateView',
     'AdminUserManagementViewSet',
+    # YENİ
+    'NotificationSettingViewSet',
     'KDSOrderViewSet',
     'PagerViewSet',
     'CampaignMenuViewSet',

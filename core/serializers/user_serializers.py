@@ -4,14 +4,13 @@ from django.contrib.auth.hashers import make_password
 from rest_framework.exceptions import ValidationError, PermissionDenied
 
 from django.contrib.auth import get_user_model
-# from django.contrib.auth.tokens import PasswordResetTokenGenerator # Kullanılmıyorsa kaldırılabilir
 from django.utils.http import urlsafe_base64_decode
 from django.utils.encoding import smart_str, DjangoUnicodeDecodeError
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.core.mail import send_mail
 from django.conf import settings
 
-from ..models import CustomUser as User, Business, STAFF_PERMISSION_CHOICES, NOTIFICATION_EVENT_TYPES, KDSScreen, NotificationSetting
+from ..models import CustomUser as User, Business, STAFF_PERMISSION_CHOICES, NOTIFICATION_EVENT_TYPES, KDSScreen
 from .kds_serializers import KDSScreenSerializer
 
 class RegisterSerializer(serializers.ModelSerializer):
@@ -103,8 +102,6 @@ class AccountSettingsSerializer(serializers.ModelSerializer):
         allow_empty=True
     )
     accessible_kds_screens_details = KDSScreenSerializer(source='accessible_kds_screens', many=True, read_only=True)
-    
-    # GÜNCELLEME: Profil fotoğrafı alanı eklendi
     profile_image_url = serializers.URLField(max_length=1024, required=False, allow_blank=True, allow_null=True)
 
     class Meta:
@@ -113,7 +110,7 @@ class AccountSettingsSerializer(serializers.ModelSerializer):
             'id', 'username', 'email', 'user_type_display', 'first_name', 'last_name',
             'old_password', 'new_password', 'confirm_new_password',
             'notification_permissions', 'accessible_kds_screens_details',
-            'profile_image_url' # GÜNCELLEME: Alan listesine eklendi
+            'profile_image_url'
         ]
         read_only_fields = ['id', 'username', 'user_type_display', 'accessible_kds_screens_details']
 
@@ -139,7 +136,6 @@ class AccountSettingsSerializer(serializers.ModelSerializer):
         return attrs
 
     def update(self, instance, validated_data):
-        # GÜNCELLEME: Profil fotoğrafı URL'ini de güncelle
         instance.profile_image_url = validated_data.get('profile_image_url', instance.profile_image_url)
         instance.email = validated_data.get('email', instance.email)
         instance.first_name = validated_data.get('first_name', instance.first_name)
@@ -179,7 +175,6 @@ class StaffUserSerializer(serializers.ModelSerializer):
         allow_empty=True,
         help_text="Personelin erişebileceği KDS ekranlarının ID listesi."
     )
-    # GÜNCELLEME: Profil fotoğrafı alanı eklendi
     profile_image_url = serializers.URLField(max_length=1024, required=False, allow_blank=True, allow_null=True)
 
 
@@ -190,7 +185,7 @@ class StaffUserSerializer(serializers.ModelSerializer):
             'is_active', 'staff_permissions', 'notification_permissions',
             'user_type', 'associated_business',
             'accessible_kds_screens_details', 'accessible_kds_screen_ids',
-            'profile_image_url' # GÜNCELLEME: Alan listesine eklendi
+            'profile_image_url'
         ]
         read_only_fields = ['id', 'user_type', 'associated_business', 'accessible_kds_screens_details']
         extra_kwargs = {
@@ -215,15 +210,12 @@ class StaffUserSerializer(serializers.ModelSerializer):
         return value
 
     def validate_accessible_kds_screen_ids(self, kds_screens_list):
-        # Bu validasyon ViewSet katmanında daha detaylı yapılmalı (işletme kontrolü).
         return kds_screens_list
-
 
     def create(self, validated_data):
         accessible_kds_data = validated_data.pop('accessible_kds_screens', [])
         password = validated_data.pop('password')
         
-        # GÜNCELLEME: profile_image_url **validated_data içinde otomatik olarak gelir
         user = User(**validated_data)
         user.set_password(password)
         user.is_staff = False 
@@ -241,7 +233,6 @@ class StaffUserSerializer(serializers.ModelSerializer):
         if password:
             instance.set_password(password)
 
-        # GÜNCELLEME: Profil fotoğrafı URL'ini de güncelle
         instance.profile_image_url = validated_data.get('profile_image_url', instance.profile_image_url)
         instance.email = validated_data.get('email', instance.email)
         instance.first_name = validated_data.get('first_name', instance.first_name)
@@ -280,7 +271,7 @@ class StaffPermissionUpdateSerializer(serializers.ModelSerializer):
 class StaffNotificationPermissionUpdateSerializer(serializers.ModelSerializer):
     notification_permissions = serializers.ListField(
         child=serializers.ChoiceField(choices=[choice[0] for choice in NOTIFICATION_EVENT_TYPES]),
-        required=False, # Hem bildirim hem KDS ayrı ayrı güncellenebilsin diye false yaptık
+        required=False,
         allow_empty=True
     )
     accessible_kds_screen_ids = serializers.PrimaryKeyRelatedField(
@@ -316,105 +307,6 @@ class StaffNotificationPermissionUpdateSerializer(serializers.ModelSerializer):
             
         return instance
 
-
-class BusinessForAdminSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = Business
-        fields = ['id', 'name', 'address']
-
-class AdminBusinessOwnerSerializer(serializers.ModelSerializer):
-    owned_business_details = BusinessForAdminSerializer(source='owned_business', read_only=True)
-    staff_count = serializers.SerializerMethodField()
-    is_approved_by_admin = serializers.BooleanField(read_only=True)
-    notification_permissions = serializers.ListField(child=serializers.CharField(), read_only=True)
-    accessible_kds_screens_details = KDSScreenSerializer(source='accessible_kds_screens', many=True, read_only=True)
-    # GÜNCELLEME: Profil fotoğrafı alanı eklendi
-    profile_image_url = serializers.URLField(read_only=True)
-
-    class Meta:
-        model = User
-        fields = [
-            'id', 'username', 'email', 'first_name', 'last_name', 
-            'is_active', 'is_approved_by_admin', 'date_joined',
-            'user_type', 'owned_business_details', 'staff_count',
-            'staff_permissions', 'notification_permissions',
-            'accessible_kds_screens_details',
-            'profile_image_url' # GÜNCELLEME: Alan listesine eklendi
-        ]
-        read_only_fields = fields
-
-    def get_staff_count(self, obj):
-        try:
-            if hasattr(obj, 'owned_business') and obj.owned_business:
-                return obj.owned_business.staff_members.filter(user_type__in=['staff', 'kitchen_staff']).count()
-            return 0
-        except Business.DoesNotExist:
-            return 0
-        except AttributeError:
-            return 0
-
-class AdminStaffUserSerializer(serializers.ModelSerializer):
-    is_approved_by_admin = serializers.BooleanField(read_only=True)
-    notification_permissions = serializers.ListField(child=serializers.CharField(), read_only=True)
-    associated_business_name = serializers.CharField(source='associated_business.name', read_only=True, allow_null=True)
-    accessible_kds_screens_details = KDSScreenSerializer(source='accessible_kds_screens', many=True, read_only=True)
-    # GÜNCELLEME: Profil fotoğrafı alanı eklendi
-    profile_image_url = serializers.URLField(read_only=True)
-
-    class Meta:
-        model = User
-        fields = [
-            'id', 'username', 'email', 'first_name', 'last_name', 
-            'is_active', 'is_approved_by_admin', 'date_joined',
-            'user_type', 'associated_business_name',
-            'staff_permissions', 'notification_permissions',
-            'accessible_kds_screens_details',
-            'profile_image_url' # GÜNCELLEME: Alan listesine eklendi
-        ]
-        read_only_fields = fields
-
-class UserActivationSerializer(serializers.Serializer):
-    is_active = serializers.BooleanField(required=True)
-
-class AdminUserNotificationPermissionUpdateSerializer(serializers.ModelSerializer):
-    notification_permissions = serializers.ListField(
-        child=serializers.ChoiceField(choices=[choice[0] for choice in NOTIFICATION_EVENT_TYPES]),
-        required=False, 
-        allow_empty=True
-    )
-    accessible_kds_screen_ids = serializers.PrimaryKeyRelatedField(
-        queryset=KDSScreen.objects.all(),
-        source='accessible_kds_screens',
-        many=True,
-        required=False, 
-        allow_empty=True,
-        help_text="Kullanıcının erişebileceği KDS ekranlarının ID listesi (Admin için)."
-    )
-
-    class Meta:
-        model = User
-        fields = ['notification_permissions', 'accessible_kds_screen_ids']
-
-    def update(self, instance, validated_data):
-        if 'notification_permissions' in validated_data:
-            instance.notification_permissions = validated_data.get('notification_permissions', instance.notification_permissions)
-        
-        if 'accessible_kds_screens' in validated_data:
-            accessible_kds_data = validated_data.get('accessible_kds_screens')
-            instance.accessible_kds_screens.set(accessible_kds_data)
-        
-        fields_to_update = []
-        if 'notification_permissions' in validated_data:
-            fields_to_update.append('notification_permissions')
-        
-        if fields_to_update:
-            instance.save(update_fields=fields_to_update)
-        elif 'accessible_kds_screens' in validated_data:
-            instance.save() 
-            
-        return instance
-
-# --- ŞİFRE SIFIRLAMA İÇİN SERIALIZER'LAR ---
 class PasswordResetRequestSerializer(serializers.Serializer):
     email = serializers.EmailField()
 
@@ -442,9 +334,3 @@ class PasswordResetCodeConfirmSerializer(serializers.Serializer):
         if attrs['new_password1'] != attrs['new_password2']:
             raise serializers.ValidationError({"new_password2": "Yeni şifreler eşleşmiyor."})
         return attrs
-
-# === YENİ SERIALIZER ===
-class NotificationSettingSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = NotificationSetting
-        fields = ['event_type', 'is_active', 'description']
