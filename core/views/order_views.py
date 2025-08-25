@@ -513,6 +513,10 @@ class OrderItemViewSet(mixins.DestroyModelMixin, mixins.UpdateModelMixin, viewse
         if order_item.kds_status != OrderItem.KDS_ITEM_STATUS_CHOICES[0][0]: # 'pending_kds'
             return Response({'detail': 'Bu ürün zaten hazırlanıyor veya hazır durumda.'}, status=status.HTTP_400_BAD_REQUEST)
 
+        # === DEĞİŞİKLİK BAŞLANGICI ===
+        update_fields_for_notification = ['order_items'] # Başlangıçta sadece kalemin güncellendiğini belirtiyoruz
+        # === DEĞİŞİKLİK SONU ===
+
         order_item.kds_status = OrderItem.KDS_ITEM_STATUS_CHOICES[1][0] # 'preparing_kds'
         order_item.item_prepared_by_staff = request.user
         order_item.save(update_fields=['kds_status', 'item_prepared_by_staff'])
@@ -520,9 +524,16 @@ class OrderItemViewSet(mixins.DestroyModelMixin, mixins.UpdateModelMixin, viewse
         if order.status == Order.STATUS_APPROVED:
             order.status = Order.STATUS_PREPARING
             order.save(update_fields=['status'])
+            # === DEĞİŞİKLİK BAŞLANGICI ===
+            update_fields_for_notification.append('status') # Sadece durum değişirse listeye ekliyoruz
+            # === DEĞİŞİKLİK SONU ===
 
         logger.info(f"OrderItem ID {order_item.id} (Order #{order.id}) 'preparing_kds' olarak işaretlendi.")
-        transaction.on_commit(lambda: send_order_update_notification(order=order, created=False, update_fields=['status', 'order_items']))
+        
+        # === DEĞİŞİKLİK BAŞLANGICI ===
+        # Bildirim fonksiyonuna artık dinamik listeyi gönderiyoruz
+        transaction.on_commit(lambda: send_order_update_notification(order=order, created=False, update_fields=update_fields_for_notification))
+        # === DEĞİŞİKLİK SONU ===
         
         serializer = OrderSerializer(order_item.order, context={'request': request})
         return Response(serializer.data, status=status.HTTP_200_OK)
@@ -538,6 +549,10 @@ class OrderItemViewSet(mixins.DestroyModelMixin, mixins.UpdateModelMixin, viewse
         if order_item.kds_status == OrderItem.KDS_ITEM_STATUS_CHOICES[2][0]: # 'ready_kds'
             return Response({'detail': 'Bu ürün zaten hazır olarak işaretlenmiş.'}, status=status.HTTP_400_BAD_REQUEST)
 
+        # === DEĞİŞİKLİK BAŞLANGICI ===
+        update_fields_for_notification = ['order_items']
+        # === DEĞİŞİKLİK SONU ===
+
         order_item.kds_status = OrderItem.KDS_ITEM_STATUS_CHOICES[2][0] # 'ready_kds'
         if not order_item.item_prepared_by_staff:
             order_item.item_prepared_by_staff = request.user
@@ -552,8 +567,14 @@ class OrderItemViewSet(mixins.DestroyModelMixin, mixins.UpdateModelMixin, viewse
             order.status = Order.STATUS_READY_FOR_PICKUP
             order.kitchen_completed_at = timezone.now()
             order.save(update_fields=['status', 'kitchen_completed_at'])
+            # === DEĞİŞİKLİK BAŞLANGICI ===
+            update_fields_for_notification.append('status')
+            update_fields_for_notification.append('kitchen_completed_at')
+            # === DEĞİŞİKLİK SONU ===
         
-        transaction.on_commit(lambda: send_order_update_notification(order=order, created=False, update_fields=['status', 'order_items']))
+        # === DEĞİŞİKLİK BAŞLANGICI ===
+        transaction.on_commit(lambda: send_order_update_notification(order=order, created=False, update_fields=update_fields_for_notification))
+        # === DEĞİŞİKLİK SONU ===
         
         serializer = OrderSerializer(order_item.order, context={'request': request})
         return Response(serializer.data, status=status.HTTP_200_OK)
