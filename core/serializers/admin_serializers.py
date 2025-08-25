@@ -1,7 +1,8 @@
 # core/serializers/admin_serializers.py
 
 from rest_framework import serializers
-from ..models import Business, CustomUser as User, NotificationSetting, KDSScreen
+# GÜNCELLEME: İlgili listeleri doğrudan models modülünden import ediyoruz.
+from ..models import Business, CustomUser as User, NotificationSetting, KDSScreen, NOTIFICATION_EVENT_TYPES, STAFF_PERMISSION_CHOICES
 from .kds_serializers import KDSScreenSerializer
 
 class BusinessForAdminSerializer(serializers.ModelSerializer):
@@ -63,7 +64,8 @@ class UserActivationSerializer(serializers.Serializer):
 
 class AdminUserNotificationPermissionUpdateSerializer(serializers.ModelSerializer):
     notification_permissions = serializers.ListField(
-        child=serializers.ChoiceField(choices=[choice[0] for choice in User.NOTIFICATION_EVENT_TYPES]),
+        # GÜNCELLEME: User.NOTIFICATION_EVENT_TYPES yerine doğrudan NOTIFICATION_EVENT_TYPES kullanılıyor.
+        child=serializers.ChoiceField(choices=[choice[0] for choice in NOTIFICATION_EVENT_TYPES]),
         required=False, 
         allow_empty=True
     )
