@@ -4,9 +4,8 @@ services:
     name: orderai-web
     env: python
     region: frankfurt
-    plan: starter      # <<< GÜNCELLENDİ: Standard'dan Starter'a dönüldü.
+    plan: starter
     buildCommand: "./build.sh"
-    # <<< GÜNCELLENDİ: Düşük kaynaklar için worker sayısı 1'e indirildi.
     startCommand: "gunicorn makarna_project.asgi:application --workers 1 --worker-class uvicorn.workers.UvicornWorker --bind 0.0.0.0:$PORT"
     healthCheckPath: /
     envVars:
@@ -17,11 +16,14 @@ services:
       - key: DJANGO_DEBUG
         value: false
       - key: DATABASE_URL
-        fromSecretFile: /etc/secrets/supabase_db_url
+        fromSecretFile:
+          path: /etc/secrets/supabase_db_url # <<< DÜZELTİLDİ
       - key: REDIS_URL
-        fromSecretFile: /etc/secrets/upstash_redis_url
+        fromSecretFile:
+          path: /etc/secrets/upstash_redis_url # <<< DÜZELTİLDİ
       - key: DJANGO_EMAIL_HOST_PASSWORD
-        fromSecretFile: /etc/secrets/django_email_password
+        fromSecretFile:
+          path: /etc/secrets/django_email_password # <<< DÜZELTİLDİ
         
       # --- Uygulama Ayarları ---
       - key: ANDROID_PACKAGE_NAME
@@ -46,9 +48,8 @@ services:
     name: orderai-worker
     env: python
     region: frankfurt
-    plan: starter      # <<< GÜNCELLENDİ: Standard'dan Starter'a dönüldü.
+    plan: starter
     buildCommand: "./build.sh"
-    # <<< GÜNCELLENDİ: Düşük RAM için concurrency 2'ye düşürüldü.
     startCommand: "celery -A makarna_project worker -l info --concurrency=2 --max-tasks-per-child=100 --prefetch-multiplier=1"
     envVars:
       - key: PYTHON_VERSION
