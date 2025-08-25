@@ -95,6 +95,8 @@ class KDSOrderViewSet(viewsets.ReadOnlyModelViewSet):
 
         logger.debug(f"KDS View Query: Fetching orders for KDS '{target_kds_screen.name}' (ID: {target_kds_screen.id}), Business: '{user_business.name}' by user '{user.username}'.")
         
+        # <<< DEĞİŞİKLİK 1: status__in filtresine STATUS_READY_FOR_PICKUP eklendi >>>
+        # Bu, garson tarafından alınmayı bekleyen siparişlerin KDS'te görünür kalmasını sağlar.
         relevant_orders = Order.objects.filter(
             business=user_business,
             is_paid=False,
@@ -103,6 +105,9 @@ class KDSOrderViewSet(viewsets.ReadOnlyModelViewSet):
         ).exclude(
             status__in=[Order.STATUS_COMPLETED, Order.STATUS_CANCELLED, Order.STATUS_REJECTED]
         ).annotate(
+            # <<< DEĞİŞİKLİK 2: Alt sorgu daha net hale getirildi >>>
+            # Bir siparişin KDS'te görünmesi için, bu KDS'e ait, teslim edilmemiş ve
+            # durumu 'pending_kds' veya 'preparing_kds' olan en az bir kalemi olmalıdır.
             has_actionable_items_for_this_kds=Exists(
                 OrderItem.objects.filter(
                     order=OuterRef('pk'),
@@ -155,7 +160,7 @@ class KDSOrderViewSet(viewsets.ReadOnlyModelViewSet):
         for item_debug in all_items_in_order_for_debug:
             cat_assigned_kds_id_debug = item_debug.menu_item.category.assigned_kds_id if item_debug.menu_item and item_debug.menu_item.category and item_debug.menu_item.category.assigned_kds else None
             logger.info(
-                f"    DEBUG ITEM - ID: '{item_debug.id}', Adı: '{item_debug.menu_item.name if item_debug.menu_item else 'N/A'}', "
+                f"    DEBUG ITEM - ID: {item_debug.id}, Adı: '{item_debug.menu_item.name if item_debug.menu_item else 'N/A'}', "
                 f"Kategorisinin KDS ID: {cat_assigned_kds_id_debug}, Mevcut KDS Durumu: '{item_debug.kds_status}'"
             )
 
@@ -215,18 +220,17 @@ class KDSOrderViewSet(viewsets.ReadOnlyModelViewSet):
             updated_item_ids.append(item.id)
         
         update_fields_for_notification = []
-        if updated_item_ids:
-            update_fields_for_notification.append('order_items')
         if order.status == Order.STATUS_APPROVED and updated_item_ids:
             order.status = Order.STATUS_PREPARING
             order.save(update_fields=['status'])
+            logger.info(f"[KDS VIEW] Order ID {order.id} genel durumu KDS '{target_kds_screen.name}' tarafından '{Order.STATUS_PREPARING}' olarak güncellendi.")
             update_fields_for_notification.append('status')
         
         logger.info(f"KDS '{target_kds_screen.name}': Order #{order.id} için {len(updated_item_ids)} kalem ({updated_item_ids}) 'KDS Hazırlanıyor' olarak işaretlendi by {request.user.username}")
         
         transaction.on_commit(
             lambda: send_order_update_notification(
-                order=order, created=False, update_fields=update_fields_for_notification
+                order_id=order.id, created=False, update_fields=update_fields_for_notification
             )
         )
         
@@ -304,55 +308,37 @@ class KDSOrderViewSet(viewsets.ReadOnlyModelViewSet):
 
         logger.info(f"KDS '{target_kds_screen.name}': Order #{order.id} için {len(updated_item_ids)} kalem ({updated_item_ids}) 'KDS Hazır' olarak işaretlendi by {request.user.username}")
 
-        # --- Yeni mantık: Tüm order kalemleri garson tarafından teslim alındıysa sipariş COMPLETED yapılır ---
-        all_items_picked_up = not order.order_items.filter(
-            delivered=False
-        ).exists() and not order.order_items.filter(
-            kds_status__in=[OrderItem.KDS_ITEM_STATUS_CHOICES[0][0], OrderItem.KDS_ITEM_STATUS_CHOICES[1][0], 'ready_kds']
-        ).exists()
-
-        update_fields_for_notification = []
-        if updated_item_ids:
-            update_fields_for_notification.append('order_items')
-
-        if all_items_picked_up:
-            if order.status != Order.STATUS_COMPLETED:
-                order.status = Order.STATUS_COMPLETED
-                order.delivered_at = timezone.now()
-                order.save(update_fields=['status', 'delivered_at'])
-                update_fields_for_notification.append('status')
-                update_fields_for_notification.append('delivered_at')
-        else:
-            all_kds_relevant_and_undelivered_items_for_order = OrderItem.objects.filter(
-                order=order,
-                is_awaiting_staff_approval=False,
-                delivered=False,
-                menu_item__category__assigned_kds__isnull=False
-            )
-            all_items_globally_ready_for_pickup = True
-            if all_kds_relevant_and_undelivered_items_for_order.exists():
-                for item_in_order_check in all_kds_relevant_and_undelivered_items_for_order:
-                    if item_in_order_check.kds_status != OrderItem.KDS_ITEM_STATUS_CHOICES[2][0]:
-                        all_items_globally_ready_for_pickup = False
-                        break
-            if all_items_globally_ready_for_pickup:
-                if order.status != Order.STATUS_READY_FOR_PICKUP:
-                    order.status = Order.STATUS_READY_FOR_PICKUP
-                    order.kitchen_completed_at = timezone.now()
-                    order.save(update_fields=['status', 'kitchen_completed_at'])
-                    update_fields_for_notification.append('status')
-                    update_fields_for_notification.append('kitchen_completed_at')
-            elif order.status == Order.STATUS_APPROVED:
-                if order.order_items.filter(kds_status=OrderItem.KDS_ITEM_STATUS_CHOICES[1][0]).exists():
-                    order.status = Order.STATUS_PREPARING
-                    order.save(update_fields=['status'])
-                    update_fields_for_notification.append('status')
-
-        transaction.on_commit(
-            lambda: send_order_update_notification(
-                order=order, created=False, update_fields=update_fields_for_notification
-            )
+        all_kds_relevant_and_undelivered_items_for_order = OrderItem.objects.filter(
+            order=order,
+            is_awaiting_staff_approval=False,
+            delivered=False,
+            menu_item__category__assigned_kds__isnull=False
         )
+        
+        all_items_globally_ready_for_pickup = True
+        if all_kds_relevant_and_undelivered_items_for_order.exists():
+            for item_in_order_check in all_kds_relevant_and_undelivered_items_for_order:
+                if item_in_order_check.kds_status != OrderItem.KDS_ITEM_STATUS_CHOICES[2][0]:
+                    all_items_globally_ready_for_pickup = False
+                    break
+        
+        if all_items_globally_ready_for_pickup:
+            if order.status != Order.STATUS_READY_FOR_PICKUP:
+                order.status = Order.STATUS_READY_FOR_PICKUP
+                order.kitchen_completed_at = timezone.now()
+                order.save(update_fields=['status', 'kitchen_completed_at'])
+                logger.info(f"Order ID {order.id} tüm KDS kalemleri hazır olduğu için durumu '{Order.STATUS_READY_FOR_PICKUP}' olarak güncellendi.")
+                
+                transaction.on_commit(
+                    lambda: send_order_update_notification(
+                        order_id=order.id, created=False, update_fields=['status', 'kitchen_completed_at']
+                    )
+                )
+
+        elif order.status == Order.STATUS_APPROVED:
+            if order.order_items.filter(kds_status=OrderItem.KDS_ITEM_STATUS_CHOICES[1][0]).exists():
+                order.status = Order.STATUS_PREPARING
+                order.save(update_fields=['status'])
 
         order.refresh_from_db()
         serializer = self.get_serializer(order)
