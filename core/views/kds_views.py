@@ -95,8 +95,6 @@ class KDSOrderViewSet(viewsets.ReadOnlyModelViewSet):
 
         logger.debug(f"KDS View Query: Fetching orders for KDS '{target_kds_screen.name}' (ID: {target_kds_screen.id}), Business: '{user_business.name}' by user '{user.username}'.")
         
-        # <<< DEĞİŞİKLİK 1: status__in filtresine STATUS_READY_FOR_PICKUP eklendi >>>
-        # Bu, garson tarafından alınmayı bekleyen siparişlerin KDS'te görünür kalmasını sağlar.
         relevant_orders = Order.objects.filter(
             business=user_business,
             is_paid=False,
@@ -105,9 +103,6 @@ class KDSOrderViewSet(viewsets.ReadOnlyModelViewSet):
         ).exclude(
             status__in=[Order.STATUS_COMPLETED, Order.STATUS_CANCELLED, Order.STATUS_REJECTED]
         ).annotate(
-            # <<< DEĞİŞİKLİK 2: Alt sorgu daha net hale getirildi >>>
-            # Bir siparişin KDS'te görünmesi için, bu KDS'e ait, teslim edilmemiş ve
-            # durumu 'pending_kds' veya 'preparing_kds' olan en az bir kalemi olmalıdır.
             has_actionable_items_for_this_kds=Exists(
                 OrderItem.objects.filter(
                     order=OuterRef('pk'),
@@ -334,11 +329,6 @@ class KDSOrderViewSet(viewsets.ReadOnlyModelViewSet):
                         order_id=order.id, created=False, update_fields=['status', 'kitchen_completed_at']
                     )
                 )
-
-        elif order.status == Order.STATUS_APPROVED:
-            if order.order_items.filter(kds_status=OrderItem.KDS_ITEM_STATUS_CHOICES[1][0]).exists():
-                order.status = Order.STATUS_PREPARING
-                order.save(update_fields=['status'])
 
         order.refresh_from_db()
         serializer = self.get_serializer(order)
