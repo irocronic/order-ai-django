@@ -27,7 +27,7 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
         token['profile_image_url'] = user.profile_image_url
 
         business = None
-        # === GÜNCELLEME BAŞLANGICI: Admin ve Müşteri kullanıcıları için özel token verisi ===
+        # === GÜNCELLEME BAŞLANGICI: Admin kullanıcısı için özel token verisi ===
         if user.user_type == 'admin' or user.is_superuser:
             # Admin için işletme bilgisi yok, varsayılan/özel değerler atanır
             token['business_id'] = None
@@ -42,6 +42,7 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
             token['accessible_kds_screens_details'] = []
 
         elif user.user_type == 'business_owner':
+        # === GÜNCELLEME SONU ===
             business = getattr(user, 'owned_business', None)
         elif user.user_type in ['staff', 'kitchen_staff']:
             business = getattr(user, 'associated_business', None)
@@ -55,14 +56,6 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
         else: # customer
             token['notification_permissions'] = user.notification_permissions
             token['accessible_kds_screens_details'] = []
-            # Müşterinin işletme bilgileri olmaz
-            token['business_id'] = None
-            token['is_setup_complete'] = False
-            token['currency_code'] = None
-            token['subscription_status'] = None
-            token['trial_ends_at'] = None
-            token['subscription'] = None
-        # === GÜNCELLEME SONU ===
 
         if business:
             token['business_id'] = business.id
@@ -91,6 +84,12 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
                 token['subscription_status'] = 'inactive'
                 token['trial_ends_at'] = None
                 token['subscription'] = None
+        elif user.user_type not in ['admin', 'customer']: # Admin ve customer dışındakiler için boş değerler
+            token['business_id'] = None
+            token['is_setup_complete'] = False
+            token['currency_code'] = None
+            token['subscription_status'] = None
+            token['trial_ends_at'] = None
         
         return token
 
@@ -104,9 +103,9 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
                 "account_inactive"
             )
         
-        # === YENİ KONTROL: Admin veya Müşteri ise diğer kontrolleri atla ===
-        if user.user_type in ['admin', 'customer'] or user.is_superuser:
-            pass # Admin ve Müşteri, vardiya ve abonelik kontrollerinden muaftır.
+        # === YENİ KONTROL: Admin ise diğer kontrolleri atla ===
+        if user.user_type == 'admin' or user.is_superuser:
+            pass # Admin, vardiya ve abonelik kontrollerinden muaftır.
         # === KONTROL SONU ===
         elif user.user_type in ['staff', 'kitchen_staff']:
             if not user.is_superuser:
