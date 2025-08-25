@@ -1,4 +1,4 @@
-# core/signals/order_signals.py
+# makarna_project/core/signals/order_signals.py
 
 from django.db.models.signals import pre_delete
 from django.dispatch import receiver

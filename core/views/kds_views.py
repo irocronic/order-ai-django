@@ -1,5 +1,7 @@
 # core/views/kds_views.py
 
+# makarna_project/core/views/kds_views.py
+
 from rest_framework import viewsets, status
 from rest_framework.permissions import IsAuthenticated, BasePermission
 from rest_framework.decorators import action
@@ -15,6 +17,7 @@ from decimal import Decimal
 from ..models import Order, CustomUser, OrderItem, CreditPaymentDetails, KDSScreen, Business, Category
 from ..serializers import KDSOrderSerializer
 from ..utils.order_helpers import get_user_business, PermissionKeys
+# GÜNCELLENDİ: Artık order nesnesi ile çağrılacak
 from ..signals.order_signals import send_order_update_notification
 
 logger = logging.getLogger(__name__)
