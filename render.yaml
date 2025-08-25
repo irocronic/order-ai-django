@@ -16,15 +16,12 @@ services:
       - key: DJANGO_DEBUG
         value: false
       - key: DATABASE_URL
-        fromSecretFile:
-          path: /etc/secrets/supabase_db_url # <<< DÜZELTİLDİ
+        value: ${DATABASE_URL}
       - key: REDIS_URL
-        fromSecretFile:
-          path: /etc/secrets/upstash_redis_url # <<< DÜZELTİLDİ
+        value: ${REDIS_URL}
       - key: DJANGO_EMAIL_HOST_PASSWORD
-        fromSecretFile:
-          path: /etc/secrets/django_email_password # <<< DÜZELTİLDİ
-        
+        value: ${DJANGO_EMAIL_HOST_PASSWORD}
+
       # --- Uygulama Ayarları ---
       - key: ANDROID_PACKAGE_NAME
         value: "com.orderai.app"
