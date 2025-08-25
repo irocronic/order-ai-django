@@ -1,7 +1,8 @@
 # core/serializers/admin_serializers.py
 
 from rest_framework import serializers
-# GÜNCELLEME: İlgili listeleri doğrudan models modülünden import ediyoruz.
+# GÜNCELLENMİŞ: timezone import edildi
+from django.utils import timezone
 from ..models import Business, CustomUser as User, NotificationSetting, KDSScreen, NOTIFICATION_EVENT_TYPES, STAFF_PERMISSION_CHOICES
 from .kds_serializers import KDSScreenSerializer
 
@@ -17,6 +18,12 @@ class AdminBusinessOwnerSerializer(serializers.ModelSerializer):
     notification_permissions = serializers.ListField(child=serializers.CharField(), read_only=True)
     accessible_kds_screens_details = KDSScreenSerializer(source='accessible_kds_screens', many=True, read_only=True)
     profile_image_url = serializers.URLField(read_only=True)
+    
+    # === YENİ ALANLAR BURAYA EKLENİYOR ===
+    subscription_plan_name = serializers.SerializerMethodField()
+    subscription_status = serializers.SerializerMethodField()
+    trial_days_remaining = serializers.SerializerMethodField()
+    # === /YENİ ALANLAR ===
 
     class Meta:
         model = User
@@ -26,7 +33,11 @@ class AdminBusinessOwnerSerializer(serializers.ModelSerializer):
             'user_type', 'owned_business_details', 'staff_count',
             'staff_permissions', 'notification_permissions',
             'accessible_kds_screens_details',
-            'profile_image_url'
+            'profile_image_url',
+            # === YENİ ALANLAR fields listesine ekleniyor ===
+            'subscription_plan_name',
+            'subscription_status',
+            'trial_days_remaining',
         ]
         read_only_fields = fields
 
@@ -39,6 +50,37 @@ class AdminBusinessOwnerSerializer(serializers.ModelSerializer):
             return 0
         except AttributeError:
             return 0
+
+    # === YENİ METOTLAR BURAYA EKLENİYOR ===
+    def get_subscription_plan_name(self, obj):
+        try:
+            # Kullanıcının işletmesi, işletmenin aboneliği ve aboneliğin planı var mı diye kontrol et
+            if hasattr(obj, 'owned_business') and obj.owned_business and hasattr(obj.owned_business, 'subscription') and obj.owned_business.subscription.plan:
+                return obj.owned_business.subscription.plan.name
+            return "Plansız"
+        except Exception:
+            return "Bilinmiyor"
+
+    def get_subscription_status(self, obj):
+        try:
+            if hasattr(obj, 'owned_business') and obj.owned_business and hasattr(obj.owned_business, 'subscription'):
+                return obj.owned_business.subscription.get_status_display()
+            return "Abonelik Yok"
+        except Exception:
+            return "Bilinmiyor"
+
+    def get_trial_days_remaining(self, obj):
+        try:
+            if hasattr(obj, 'owned_business') and obj.owned_business and hasattr(obj.owned_business, 'subscription'):
+                sub = obj.owned_business.subscription
+                if sub.status == 'trial' and sub.expires_at:
+                    delta = sub.expires_at - timezone.now()
+                    # Eğer süre dolmuşsa 0, dolmamışsa gün sayısını döndür
+                    return max(0, delta.days)
+            return None # Deneme süresinde değilse veya süre bitmişse null döner
+        except Exception:
+            return None
+    # === /YENİ METOTLAR ===
 
 class AdminStaffUserSerializer(serializers.ModelSerializer):
     is_approved_by_admin = serializers.BooleanField(read_only=True)
@@ -64,7 +106,6 @@ class UserActivationSerializer(serializers.Serializer):
 
 class AdminUserNotificationPermissionUpdateSerializer(serializers.ModelSerializer):
     notification_permissions = serializers.ListField(
-        # GÜNCELLEME: User.NOTIFICATION_EVENT_TYPES yerine doğrudan NOTIFICATION_EVENT_TYPES kullanılıyor.
         child=serializers.ChoiceField(choices=[choice[0] for choice in NOTIFICATION_EVENT_TYPES]),
         required=False, 
         allow_empty=True

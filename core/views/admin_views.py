@@ -6,7 +6,6 @@ from rest_framework.response import Response
 from django.contrib.auth import get_user_model
 from django.shortcuts import get_object_or_404
 from ..models import Business, NotificationSetting
-# GÜNCELLENMİŞ IMPORT YOLU
 from ..serializers.admin_serializers import (
     AdminBusinessOwnerSerializer,
     AdminStaffUserSerializer,
@@ -36,7 +35,15 @@ class AdminUserManagementViewSet(viewsets.ReadOnlyModelViewSet):
 
     @action(detail=False, methods=['get'], url_path='business-owners')
     def list_business_owners(self, request):
-        users = User.objects.filter(user_type='business_owner').order_by('username')
+        # === GÜNCELLENEN SORGULAMA (OPTIMIZASYON) ===
+        # Abonelik ve Plan bilgilerini tek bir veritabanı sorgusuyla çekmek için.
+        users = User.objects.filter(user_type='business_owner').select_related(
+            'owned_business', 
+            'owned_business__subscription', 
+            'owned_business__subscription__plan'
+        ).order_by('username')
+        # === /GÜNCELLENEN SORGULAMA ===
+        
         page = self.paginate_queryset(users)
         if page is not None:
             serializer = self.get_serializer(page, many=True, context={'request': request})
@@ -134,7 +141,6 @@ class AdminUserManagementViewSet(viewsets.ReadOnlyModelViewSet):
             response_serializer = AdminStaffUserSerializer(user_to_approve, context={'request': request})
             
         return Response(response_serializer.data, status=status.HTTP_200_OK)
-
 
 class NotificationSettingViewSet(viewsets.ModelViewSet):
     """
