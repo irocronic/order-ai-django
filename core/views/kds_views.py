@@ -15,7 +15,7 @@ from decimal import Decimal
 from ..models import Order, CustomUser, OrderItem, CreditPaymentDetails, KDSScreen, Business, Category
 from ..serializers import KDSOrderSerializer
 from ..utils.order_helpers import get_user_business, PermissionKeys
-from ..tasks import send_order_update_task # GÜNCELLEME: Celery task'i doğrudan çağrılacak
+from ..tasks import send_order_update_task
 
 logger = logging.getLogger(__name__)
 
@@ -136,9 +136,8 @@ class KDSOrderViewSet(viewsets.ReadOnlyModelViewSet):
         target_kds_screen = getattr(self, 'target_kds_screen', None)
         
         if not target_kds_screen:
-            logger.error(f"KDS Action (start_preparation): Order #{order.id} için target_kds_screen alınamadı. User: {request.user.username}, KDS Slug: {kds_slug}")
             raise PermissionDenied("KDS bilgisi alınamadı, işlem yapılamıyor.")
-            
+
         if order.status not in [Order.STATUS_APPROVED, Order.STATUS_PREPARING]:
             return Response({'detail': f"Bu siparişin durumu ('{order.get_status_display()}') hazırlanmaya başlanamaz."}, status=status.HTTP_400_BAD_REQUEST)
         
