@@ -174,7 +174,7 @@ REDIS_URL = os.environ.get('REDIS_URL', 'redis://localhost:6379/0')
 
 # Upstash TLS/SSL bağlantıları için
 if REDIS_URL.startswith('rediss://'):
-    REDIS_URL += '?ssl_cert_reqs=none'
+    REDIS_URL += f'?ssl_cert_reqs=required&ssl_ca_certs={os.path.join(BASE_DIR, "upstash.crt")}'
 
 CHANNEL_LAYERS = {
     'default': {
