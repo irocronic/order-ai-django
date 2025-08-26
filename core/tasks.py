@@ -1,4 +1,4 @@
-# core/tasks.py
+# core/tasks.py (GÜNCELLENMİŞ VE TAM VERSİYON)
 
 from celery import shared_task
 from django.conf import settings
@@ -12,7 +12,6 @@ from .serializers import OrderSerializer
 import uuid
 from datetime import datetime
 from .utils.json_helpers import convert_decimals_to_strings
-# YENİ IMPORT
 from .utils.notification_gate import is_notification_active
 
 logger = logging.getLogger(__name__)
@@ -38,21 +37,19 @@ except Exception as e:
     redis_client = None
 
 
+# ==================== GÜNCELLENMİŞ FONKSİYON BAŞLANGICI ====================
 def send_socket_io_notification(room, event, data):
     """
-    Socket.IO bildirimi gönderen yardımcı fonksiyon - GÜNCELLENMİŞ VERSİYON
+    Socket.IO bildirimi gönderen yardımcı fonksiyon.
+    Dönüş değerleri: 'sent', 'blocked', 'failed'
     """
-    # === YENİ KONTROL BLOĞU ===
-    # 'event_type' genellikle data sözlüğünün içinde bulunur.
     event_type_to_check = data.get('event_type')
     
-    # Test bildirimleri gibi bazı özel durumları kontrol dışı bırakabiliriz.
     if event_type_to_check and event_type_to_check != 'test_notification':
         if not is_notification_active(event_type_to_check):
             logger.info(f"[Notification Gate] Bildirim engellendi (pasif): {event_type_to_check}")
-            return False # Bildirimi göndermeden çık
-    # === KONTROL BLOĞU SONU ===
-    
+            return 'blocked'  # DEĞİŞİKLİK 1: 'False' yerine 'blocked' döndürülüyor.
+
     success = False
     
     # Method 1: ASGI app üzerinden direkt emit (en güvenilir)
@@ -78,7 +75,7 @@ def send_socket_io_notification(room, event, data):
     except Exception as e:
         logger.error(f"[Notification] Direct Socket.IO emit failed: {e}")
     
-    # Method 2: Redis pub/sub - DOĞRU FORMAT
+    # Method 2: Redis pub/sub
     if not success and redis_client:
         try:
             message = {
@@ -115,13 +112,18 @@ def send_socket_io_notification(room, event, data):
         except Exception as e:
             logger.debug(f"[Notification] HTTP webhook not available: {e}")
     
-    return success
+    # DEĞİŞİKLİK 2: Başarı durumuna göre string olarak sonuç döndürülüyor.
+    return 'sent' if success else 'failed'
+
+# ==================== GÜNCELLENMİŞ FONKSİYON SONU ====================
 
 
+# ==================== GÜNCELLENMİŞ GÖREV BAŞLANGICI ====================
 @shared_task(name="send_order_update_notification")
 def send_order_update_task(order_id, event_type, message, extra_data=None):
     """
     WebSocket üzerinden sipariş güncelleme bildirimini gönderen Celery task'i.
+    Loglama mantığı, engellenen bildirimleri hata olarak göstermemesi için güncellendi.
     """
     logger.info(f"[Celery Task] Sending notification for Order ID: {order_id}, Event: {event_type}")
     
@@ -148,33 +150,46 @@ def send_order_update_task(order_id, event_type, message, extra_data=None):
         if extra_data:
             update_data.update(extra_data)
 
+        # --- GÜNCELLENMİŞ LOGLAMA MANTIĞI ---
         business_room = f"business_{order.business_id}"
-        business_success = send_socket_io_notification(business_room, 'order_status_update', update_data)
+        business_status = send_socket_io_notification(business_room, 'order_status_update', update_data)
 
+        kds_sent_count = 0
+        kds_blocked_count = 0
         kds_screens_with_items = {
             item.menu_item.category.assigned_kds
             for item in order.order_items.all()
             if item.menu_item and item.menu_item.category and item.menu_item.category.assigned_kds
         }
 
-        kds_success_count = 0
         for kds in kds_screens_with_items:
             kds_room = f"kds_{order.business_id}_{kds.slug}"
             kds_data = update_data.copy()
             kds_data['kds_slug'] = kds.slug
-            
-            if send_socket_io_notification(kds_room, 'order_status_update', kds_data):
-                kds_success_count += 1
+            kds_status = send_socket_io_notification(kds_room, 'order_status_update', kds_data)
+            if kds_status == 'sent':
+                kds_sent_count += 1
+            elif kds_status == 'blocked':
+                kds_blocked_count += 1
         
-        if business_success:
+        # İşletme odası için loglama
+        if business_status == 'sent':
             logger.info(f"[Celery Task] ✅ Business notification sent successfully for order {order_id}")
-        else:
+        elif business_status == 'blocked':
+            logger.info(f"[Celery Task] 🔵 Business notification for order {order_id} was blocked by admin settings.")
+        else: # 'failed'
             logger.error(f"[Celery Task] ❌ Business notification failed for order {order_id}")
             
-        if kds_success_count == len(kds_screens_with_items):
-            logger.info(f"[Celery Task] ✅ All KDS notifications sent successfully for order {order_id}")
+        # KDS odaları için loglama
+        total_kds_notifications = len(kds_screens_with_items)
+        if kds_sent_count == total_kds_notifications:
+            logger.info(f"[Celery Task] ✅ All {kds_sent_count} KDS notifications sent successfully for order {order_id}")
+        elif kds_sent_count + kds_blocked_count == total_kds_notifications:
+            logger.info(f"[Celery Task] 🔵 KDS notifications for order {order_id}: {kds_sent_count} sent, {kds_blocked_count} blocked.")
         else:
-            logger.warning(f"[Celery Task] ⚠️ KDS notifications: {kds_success_count}/{len(kds_screens_with_items)} successful for order {order_id}")
+            kds_failed_count = total_kds_notifications - kds_sent_count - kds_blocked_count
+            logger.warning(f"[Celery Task] ⚠️ KDS notifications for order {order_id}: {kds_sent_count} sent, {kds_blocked_count} blocked, {kds_failed_count} failed.")
+        # --- GÜNCELLEME SONU ---
 
     except Order.DoesNotExist:
         logger.error(f"[Celery Task] Order with ID {order_id} not found.")
@@ -182,6 +197,8 @@ def send_order_update_task(order_id, event_type, message, extra_data=None):
     except Exception as e:
         logger.error(f"[Celery Task] Failed to send notification for order {order_id}. Error: {e}", exc_info=True)
         raise
+
+# ==================== GÜNCELLENMİŞ GÖREV SONU ====================
 
 
 @shared_task(name="send_bulk_order_notifications")
@@ -212,10 +229,10 @@ def test_socket_connection():
             'notification_id': f"test_{uuid.uuid4()}"
         }
         
-        success = send_socket_io_notification('business_67', 'order_status_update', test_data)
+        status = send_socket_io_notification('business_67', 'order_status_update', test_data)
         
-        if success:
-            logger.info("[Celery Task] Socket connection test completed successfully")
+        if status != 'failed':
+            logger.info(f"[Celery Task] Socket connection test completed with status: {status}")
             return True
         else:
             logger.error("[Celery Task] Socket connection test failed")
@@ -258,10 +275,10 @@ def send_test_notification(business_id=67):
     }
     
     room = f"business_{business_id}"
-    success = send_socket_io_notification(room, 'order_status_update', test_data)
+    status = send_socket_io_notification(room, 'order_status_update', test_data)
     
-    if success:
-        logger.info(f"[Celery Task] 🧪 Manual test notification sent to {room}")
+    if status != 'failed':
+        logger.info(f"[Celery Task] 🧪 Manual test notification sent to {room} with status: {status}")
         return True
     else:
         logger.error(f"[Celery Task] 🧪 Manual test notification failed for {room}")
