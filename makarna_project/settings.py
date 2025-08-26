@@ -4,7 +4,7 @@ from datetime import timedelta
 import dj_database_url
 from dotenv import load_dotenv
 import json
-import ssl  # <- EKLEDİM: SSL ayarları için gerekli
+import ssl  # SSL ayarları için gerekli
 
 # --- TEMEL AYARLARI ---
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -15,17 +15,14 @@ if os.path.exists(dotenv_path):
 SECRET_KEY = os.environ.get('DJANGO_SECRET_KEY', 'django-insecure-yerel-icin-guvensiz-bir-anahtar')
 DEBUG = os.environ.get('DJANGO_DEBUG', 'True') == 'True'
 
-# --- HOST AYARLARI (RENDER İÇİN GÜNCELLENDİ) ---
+# --- HOST AYARLARI ---
 ALLOWED_HOSTS = []
-
 RENDER_EXTERNAL_HOSTNAME = os.environ.get('RENDER_EXTERNAL_HOSTNAME')
 if RENDER_EXTERNAL_HOSTNAME:
     ALLOWED_HOSTS.append(RENDER_EXTERNAL_HOSTNAME)
-
 allowed_hosts_env = os.environ.get('DJANGO_ALLOWED_HOSTS')
 if allowed_hosts_env:
     ALLOWED_HOSTS.extend([host.strip() for host in allowed_hosts_env.split(',') if host.strip()])
-
 if DEBUG:
     ALLOWED_HOSTS.extend(['localhost', '127.0.0.1'])
 
@@ -84,13 +81,11 @@ TEMPLATES = [
 WSGI_APPLICATION = 'makarna_project.wsgi.application'
 ASGI_APPLICATION = 'makarna_project.asgi.application'
 
-# --- VERİTABANI AYARLARI (SUPABASE İÇİN OPTİMİZE EDİLDİ) ---
+# --- VERİTABANI AYARLARI ---
 DATABASES = {
     'default': {}
 }
-
 DATABASE_URL_ENV = os.environ.get('DATABASE_URL')
-
 if DATABASE_URL_ENV:
     DATABASES['default'] = dj_database_url.config(
         default=DATABASE_URL_ENV,
@@ -128,10 +123,8 @@ USE_TZ = True
 STATIC_URL = '/static/'
 STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
 STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
-
 MEDIA_URL = '/media/'
 MEDIA_ROOT = os.path.join(BASE_DIR, 'mediafiles')
-
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 # --- REST FRAMEWORK AYARLARI ---
@@ -151,26 +144,39 @@ REST_FRAMEWORK = {
 
 # --- CORS AYARLARI ---
 CORS_ALLOW_ALL_ORIGINS = False
-
 CORS_ALLOWED_ORIGINS = [
     "https://order-ai-aaa115c18ca5.herokuapp.com",
     "http://127.0.0.1:60387",
     "http://localhost:60387",
 ]
-
 RENDER_EXTERNAL_URL = os.environ.get('RENDER_EXTERNAL_URL')
 if RENDER_EXTERNAL_URL:
     CORS_ALLOWED_ORIGINS.append(RENDER_EXTERNAL_URL)
 
-# === CHANNELS ve CELERY için REDIS Yapılandırması (YENİDEN DÜZENLENDİ) ===
+# === REDIS BAĞLANTI YAPILANDIRMASI ===
 REDIS_URL = os.environ.get('REDIS_URL', 'redis://localhost:6379/0')
 
-# 1. Channels için Ayarlar
-# channels_redis kütüphanesi, SSL ayarlarını URL sonundaki parametrelerden okuyabiliyor.
-channel_redis_url = REDIS_URL
-if REDIS_URL.startswith('rediss://'):
-    channel_redis_url += f'?ssl_cert_reqs=required&ssl_ca_certs={os.path.join(BASE_DIR, "upstash.crt")}'
+def patch_redis_url(url, extra_params: dict):
+    """rediss:// için eksik parametreleri ekle"""
+    if url.startswith('rediss://'):
+        from urllib.parse import urlsplit, urlunsplit, parse_qs, urlencode
+        split = urlsplit(url)
+        query = parse_qs(split.query)
+        for k, v in extra_params.items():
+            if k not in query:
+                query[k] = [v]
+        new_query = urlencode(query, doseq=True)
+        return urlunsplit((split.scheme, split.netloc, split.path, new_query, split.fragment))
+    return url
 
+# Channels için ayarlar (URL parametresiyle)
+channel_redis_url = patch_redis_url(
+    REDIS_URL,
+    {
+        "ssl_cert_reqs": "required",
+        "ssl_ca_certs": os.path.join(BASE_DIR, "upstash.crt"),
+    }
+)
 CHANNEL_LAYERS = {
     'default': {
         'BACKEND': 'channels_redis.core.RedisChannelLayer',
@@ -180,12 +186,15 @@ CHANNEL_LAYERS = {
     },
 }
 
-# 2. Celery için Ayarlar
-# Celery ise SSL ayarlarını URL'den okumakta zorlanabiliyor.
-# Bu yüzden URL'i sade bırakıp, SSL ayarlarını özel transport_options ile veriyoruz.
-CELERY_BROKER_URL = REDIS_URL
-CELERY_RESULT_BACKEND = REDIS_URL
-
+# Celery için ayarlar (transport_options ile)
+CELERY_BROKER_URL = patch_redis_url(
+    REDIS_URL,
+    {"ssl_cert_reqs": "CERT_REQUIRED"}
+)
+CELERY_RESULT_BACKEND = patch_redis_url(
+    REDIS_URL,
+    {"ssl_cert_reqs": "CERT_REQUIRED"}
+)
 if REDIS_URL.startswith('rediss://'):
     ssl_options = {
         'ssl_cert_reqs': ssl.CERT_REQUIRED,
@@ -194,13 +203,10 @@ if REDIS_URL.startswith('rediss://'):
     CELERY_BROKER_TRANSPORT_OPTIONS = ssl_options
     CELERY_RESULT_BACKEND_TRANSPORT_OPTIONS = ssl_options
 
-# Standart Celery Ayarları
 CELERY_ACCEPT_CONTENT = ['json']
 CELERY_TASK_SERIALIZER = 'json'
 CELERY_RESULT_SERIALIZER = 'json'
 CELERY_TIMEZONE = TIME_ZONE
-
-# === RENDER İÇİN MEMORY OPTİMİZE EDİLMİŞ CELERY AYARLARI ===
 CELERY_WORKER_CONCURRENCY = 2
 CELERY_WORKER_PREFETCH_MULTIPLIER = 1
 CELERY_TASK_ACKS_LATE = True
@@ -269,27 +275,22 @@ else:
     EMAIL_HOST = os.environ.get('EMAIL_HOST', 'smtp.gmail.com')
     EMAIL_PORT = int(os.environ.get('EMAIL_PORT', 587))
     EMAIL_USE_TLS = os.environ.get('EMAIL_USE_TLS', 'True') == 'True'
-    
     EMAIL_HOST_USER = os.environ.get('DJANGO_EMAIL_HOST_USER')
     EMAIL_HOST_PASSWORD = os.environ.get('DJANGO_EMAIL_HOST_PASSWORD')
-    
     DEFAULT_FROM_EMAIL = os.environ.get('DEFAULT_FROM_EMAIL', EMAIL_HOST_USER)
-
     if not EMAIL_HOST_USER or not EMAIL_HOST_PASSWORD:
         raise ValueError("Üretim ortamı için DJANGO_EMAIL_HOST_USER ve DJANGO_EMAIL_HOST_PASSWORD ortam değişkenleri ayarlanmalıdır.")
 
 # --- YÖNETİCİ BİLDİRİM AYARLARI ---
 ADMIN_EMAIL_RECIPIENTS_STR = os.environ.get('DJANGO_ADMIN_EMAIL_RECIPIENTS', 'akma.koray@gmail.com')
 ADMIN_EMAIL_RECIPIENTS = [email.strip() for email in ADMIN_EMAIL_RECIPIENTS_STR.split(',') if email.strip()]
-
 if not DEBUG and not ADMIN_EMAIL_RECIPIENTS:
     print("UYARI: Üretim ortamında yeni üyelik bildirimleri için DJANGO_ADMIN_EMAIL_RECIPIENTS ayarlanmamış.")
 elif DEBUG and not ADMIN_EMAIL_RECIPIENTS:
     print("UYARI: Geliştirme ortamında yeni üyelik bildirimleri için DJANGO_ADMIN_EMAIL_RECIPIENTS ayarlanmamış. Bildirim gönderilmeyecek.")
 
-# === GOOGLE & SUBSCRIPTION AYARLARI ===
+# --- GOOGLE & SUBSCRIPTION AYARLARI ---
 GOOGLE_APPLICATION_CREDENTIALS = os.environ.get('GOOGLE_APPLICATION_CREDENTIALS_PATH')
-
 if not GOOGLE_APPLICATION_CREDENTIALS:
     local_credentials_path = os.path.join(BASE_DIR, 'google-credentials.json')
     if os.path.exists(local_credentials_path):
@@ -299,7 +300,7 @@ if not GOOGLE_APPLICATION_CREDENTIALS:
 
 ANDROID_PACKAGE_NAME = os.environ.get('ANDROID_PACKAGE_NAME', 'com.orderai.app')
 
-# === SOCKET.IO AYARLARI ===
+# --- SOCKET.IO AYARLARI ---
 SOCKETIO_SETTINGS = {
     'ping_timeout': 60000,
     'ping_interval': 25000,
@@ -309,14 +310,11 @@ SOCKETIO_SETTINGS = {
     'cookie': False,
     'cors_credentials': True,
 }
-
 SOCKETIO_SETTINGS['cors_allowed_origins'] = CORS_ALLOWED_ORIGINS
-
 print("🏠 Production ortam - Memory Optimized Socket.IO ayarları kullanılıyor")
-
 SOCKETIO_ASYNC_MODE = 'threading'
 
-# === DEBUG LOG AYARLARI ===
+# --- DEBUG LOG AYARLARI ---
 print(f"🔧 Socket.IO Ayarları:")
 print(f"   - Ping Timeout: {SOCKETIO_SETTINGS['ping_timeout']}ms")
 print(f"   - Ping Interval: {SOCKETIO_SETTINGS['ping_interval']}ms")
