@@ -4,6 +4,7 @@ from datetime import timedelta
 import dj_database_url
 from dotenv import load_dotenv
 import json
+import ssl  # <- EKLEDİM: SSL ayarları için gerekli
 
 # --- TEMEL AYARLARI ---
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -17,17 +18,14 @@ DEBUG = os.environ.get('DJANGO_DEBUG', 'True') == 'True'
 # --- HOST AYARLARI (RENDER İÇİN GÜNCELLENDİ) ---
 ALLOWED_HOSTS = []
 
-# Render.com, deploy edilen servisin URL'sini bu ortam değişkeni ile sağlar.
 RENDER_EXTERNAL_HOSTNAME = os.environ.get('RENDER_EXTERNAL_HOSTNAME')
 if RENDER_EXTERNAL_HOSTNAME:
     ALLOWED_HOSTS.append(RENDER_EXTERNAL_HOSTNAME)
 
-# Kendi özel alan adınızı (custom domain) da bir ortam değişkeninden ekleyebilirsiniz.
 allowed_hosts_env = os.environ.get('DJANGO_ALLOWED_HOSTS')
 if allowed_hosts_env:
     ALLOWED_HOSTS.extend([host.strip() for host in allowed_hosts_env.split(',') if host.strip()])
 
-# Geliştirme ortamı (DEBUG=True) için localhost ekler.
 if DEBUG:
     ALLOWED_HOSTS.extend(['localhost', '127.0.0.1'])
 
@@ -94,19 +92,15 @@ DATABASES = {
 DATABASE_URL_ENV = os.environ.get('DATABASE_URL')
 
 if DATABASE_URL_ENV:
-    # Supabase Transaction Pooler için optimizasyon
     DATABASES['default'] = dj_database_url.config(
         default=DATABASE_URL_ENV,
-        conn_max_age=60,  # Transaction pooler için daha kısa
-        ssl_require=False,  # Pooler IPv4 proxy kullandığı için SSL'i kendisi halleder
+        conn_max_age=60,
+        ssl_require=False,
     )
-    
-    # Supabase Transaction Pooler için özel ayarlar
     DATABASES['default']['OPTIONS'] = {
         'connect_timeout': 10,
         'options': '-c default_transaction_isolation=read_committed'
     }
-    
 elif DEBUG:
     print("--- LOKAL GELİŞTİRME: SQLite KULLANILIYOR ---")
     DATABASES['default'] = {
@@ -164,45 +158,57 @@ CORS_ALLOWED_ORIGINS = [
     "http://localhost:60387",
 ]
 
-# Render URL'sini de CORS'a eklemek için ortam değişkeni kullanıyoruz.
 RENDER_EXTERNAL_URL = os.environ.get('RENDER_EXTERNAL_URL')
 if RENDER_EXTERNAL_URL:
     CORS_ALLOWED_ORIGINS.append(RENDER_EXTERNAL_URL)
 
-# === CHANNELS ve CELERY için REDIS Yapılandırması ===
+# === CHANNELS ve CELERY için REDIS Yapılandırması (YENİDEN DÜZENLENDİ) ===
 REDIS_URL = os.environ.get('REDIS_URL', 'redis://localhost:6379/0')
 
-# Upstash TLS/SSL bağlantıları için
+# 1. Channels için Ayarlar
+# channels_redis kütüphanesi, SSL ayarlarını URL sonundaki parametrelerden okuyabiliyor.
+channel_redis_url = REDIS_URL
 if REDIS_URL.startswith('rediss://'):
-    CELERY_BROKER_URL = REDIS_URL
+    channel_redis_url += f'?ssl_cert_reqs=required&ssl_ca_certs={os.path.join(BASE_DIR, "upstash.crt")}'
 
 CHANNEL_LAYERS = {
     'default': {
         'BACKEND': 'channels_redis.core.RedisChannelLayer',
         'CONFIG': {
-            "hosts": [REDIS_URL],
+            "hosts": [channel_redis_url],
         },
     },
 }
 
-CELERY_BROKER_URL = os.environ.get("REDIS_URL")
+# 2. Celery için Ayarlar
+# Celery ise SSL ayarlarını URL'den okumakta zorlanabiliyor.
+# Bu yüzden URL'i sade bırakıp, SSL ayarlarını özel transport_options ile veriyoruz.
+CELERY_BROKER_URL = REDIS_URL
 CELERY_RESULT_BACKEND = REDIS_URL
+
+if REDIS_URL.startswith('rediss://'):
+    ssl_options = {
+        'ssl_cert_reqs': ssl.CERT_REQUIRED,
+        'ssl_ca_certs': os.path.join(BASE_DIR, "upstash.crt")
+    }
+    CELERY_BROKER_TRANSPORT_OPTIONS = ssl_options
+    CELERY_RESULT_BACKEND_TRANSPORT_OPTIONS = ssl_options
+
+# Standart Celery Ayarları
 CELERY_ACCEPT_CONTENT = ['json']
 CELERY_TASK_SERIALIZER = 'json'
 CELERY_RESULT_SERIALIZER = 'json'
 CELERY_TIMEZONE = TIME_ZONE
 
 # === RENDER İÇİN MEMORY OPTİMİZE EDİLMİŞ CELERY AYARLARI ===
-CELERY_WORKER_CONCURRENCY = 2  # 16'dan 2'ye düşürüldü
+CELERY_WORKER_CONCURRENCY = 2
 CELERY_WORKER_PREFETCH_MULTIPLIER = 1
 CELERY_TASK_ACKS_LATE = True
-CELERY_WORKER_MAX_TASKS_PER_CHILD = 100  # 1000'den 100'e düşürüldü
+CELERY_WORKER_MAX_TASKS_PER_CHILD = 100
 CELERY_WORKER_DISABLE_RATE_LIMITS = True
 CELERY_TASK_REJECT_ON_WORKER_LOST = True
-
-# Memory optimization
 CELERY_WORKER_POOL_RESTARTS = True
-CELERY_WORKER_MAX_MEMORY_PER_CHILD = 200000  # 200MB limit per worker
+CELERY_WORKER_MAX_MEMORY_PER_CHILD = 200000
 
 # --- SIMPLE JWT AYARLARI ---
 SIMPLE_JWT = {
