@@ -153,7 +153,7 @@ RENDER_EXTERNAL_URL = os.environ.get('RENDER_EXTERNAL_URL')
 if RENDER_EXTERNAL_URL:
     CORS_ALLOWED_ORIGINS.append(RENDER_EXTERNAL_URL)
 
-# === REDIS BAĞLANTI YAPILANDIRMASI ===
+# === REDIS SSL BAĞLANTI YAPILANDIRMASI ===
 REDIS_URL = os.environ.get('REDIS_URL', 'redis://localhost:6379/0')
 
 def patch_redis_url(url, extra_params: dict):
