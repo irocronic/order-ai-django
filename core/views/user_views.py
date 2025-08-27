@@ -8,12 +8,17 @@ from rest_framework.exceptions import PermissionDenied, ValidationError
 from django.contrib.auth import get_user_model
 from django.shortcuts import get_object_or_404
 
-# --- GÜNCELLENEN IMPORTLAR ---
+# --- GÜNCELLENEN IMPORTLAR BAŞLANGICI ---
 from ..mixins import LimitCheckMixin
 from subscriptions.models import Subscription, Plan
-# --- /GÜNCELLENEN IMPORTLAR ---
-
+# Django'nun zaman ve zaman dilimi araçları
+from django.utils import timezone
+from datetime import timedelta
+import pytz
+# Gerekli modeller
 from ..models import Business, NOTIFICATION_EVENT_TYPES, KDSScreen, ScheduledShift
+# --- GÜNCELLENEN IMPORTLAR SONU ---
+
 from ..serializers import (
     AccountSettingsSerializer,
     StaffUserSerializer,
@@ -182,3 +187,82 @@ class StaffUserViewSet(LimitCheckMixin, viewsets.ModelViewSet):
             'staff_id': staff_id,
             'has_shifts': has_shifts_assigned
         })
+
+    # +++++++++++++++++++++ YENİ EKLENEN BÖLÜM BAŞLANGICI +++++++++++++++++++++
+    @action(detail=False, methods=['get'], url_path='current-shift')
+    def get_current_shift(self, request):
+        """
+        Giriş yapmış olan personel (staff/kitchen_staff) kullanıcısının
+        o anki aktif vardiyasını döndürür.
+        """
+        user = request.user
+        if user.user_type not in ['staff', 'kitchen_staff']:
+            return Response(
+                {"detail": "Bu endpoint sadece personel kullanıcıları içindir."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        business = user.associated_business
+        if not business:
+            return Response(
+                {"detail": "Kullanıcı bir işletmeye atanmamış."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            business_tz = pytz.timezone(business.timezone)
+        except pytz.UnknownTimeZoneError:
+            business_tz = timezone.get_current_timezone()
+        
+        now_in_business_tz = timezone.now().astimezone(business_tz)
+        today = now_in_business_tz.date()
+        yesterday = today - timedelta(days=1)
+        current_time = now_in_business_tz.time()
+
+        potential_shifts = ScheduledShift.objects.filter(
+            staff=user,
+            date__in=[today, yesterday]
+        ).select_related('shift')
+
+        active_shift = None
+        for scheduled_shift in potential_shifts:
+            shift = scheduled_shift.shift
+            shift_start_time = shift.start_time
+            shift_end_time = shift.end_time
+
+            # Normal (aynı gün biten) vardiya
+            if shift_start_time <= shift_end_time:
+                if scheduled_shift.date == today and shift_start_time <= current_time <= shift_end_time:
+                    active_shift = scheduled_shift
+                    break
+            # Gece yarısını geçen vardiya
+            else:
+                if (scheduled_shift.date == today and current_time >= shift_start_time) or \
+                   (scheduled_shift.date == yesterday and current_time <= shift_end_time):
+                    active_shift = scheduled_shift
+                    break
+        
+        if active_shift:
+            # Vardiyanın bitiş zamanını tam bir DateTime nesnesine çevirelim
+            shift_end_date = active_shift.date
+            if active_shift.shift.start_time > active_shift.shift.end_time: # Gece vardiyası ise
+                shift_end_date += timedelta(days=1)
+
+            end_datetime_naive = datetime.combine(shift_end_date, active_shift.shift.end_time)
+            end_datetime_aware = business_tz.localize(end_datetime_naive)
+
+            return Response({
+                "id": active_shift.id,
+                "shift_id": active_shift.shift.id,
+                "shift_name": active_shift.shift.name,
+                "start_time": active_shift.shift.start_time.strftime('%H:%M'),
+                "end_time": active_shift.shift.end_time.strftime('%H:%M'),
+                "date": active_shift.date.strftime('%Y-%m-%d'),
+                "end_datetime_utc": end_datetime_aware.isoformat() # Flutter'ın kolayca parse etmesi için ISO formatı
+            }, status=status.HTTP_200_OK)
+        else:
+            return Response(
+                {"detail": "Şu an için aktif bir vardiya bulunamadı."},
+                status=status.HTTP_404_NOT_FOUND
+            )
+    # +++++++++++++++++++++ YENİ EKLENEN BÖLÜM SONU +++++++++++++++++++++
