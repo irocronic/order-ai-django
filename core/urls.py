@@ -55,12 +55,12 @@ router.register(r'order_items', OrderItemViewSet, basename='orderitem')
 router.register(r'stocks', StockViewSet, basename='stock')
 router.register(r'stock-movements', StockMovementViewSet, basename='stockmovement')
 
-# +++++++++++++++++++++ YENİ EKLENEN YORUM BAŞLANGICI +++++++++++++++++++++
+# +++++++++++++++++++++ AÇIKLAYICI YORUM BAŞLANGICI +++++++++++++++++++++
 # Aşağıdaki StaffUserViewSet kaydı, içindeki özel @action'lar için de otomatik URL'ler oluşturur.
 # Örneğin, user_views.py içinde 'current-shift' url_path'i ile tanımlanan action için
 # '/api/staff-users/current-shift/' adresi otomatik olarak yaratılır.
 # Bu yüzden bu dosyada ek bir path tanımına gerek yoktur.
-# +++++++++++++++++++++ YENİ EKLENEN YORUM SONU +++++++++++++++++++++
+# +++++++++++++++++++++ AÇIKLAYICI YORUM SONU +++++++++++++++++++++
 router.register(r'staff-users', StaffUserViewSet, basename='staffuser')
 
 router.register(r'pagers', PagerViewSet, basename='pager')

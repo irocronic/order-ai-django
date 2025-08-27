@@ -13,7 +13,7 @@ from ..mixins import LimitCheckMixin
 from subscriptions.models import Subscription, Plan
 # Django'nun zaman ve zaman dilimi araçları
 from django.utils import timezone
-from datetime import timedelta
+from datetime import timedelta, datetime # datetime eklendi
 import pytz
 # Gerekli modeller
 from ..models import Business, NOTIFICATION_EVENT_TYPES, KDSScreen, ScheduledShift
@@ -61,7 +61,6 @@ class StaffUserViewSet(LimitCheckMixin, viewsets.ModelViewSet):
             ).prefetch_related('accessible_kds_screens')
         return User.objects.none()
 
-    # --- GÜNCELLENMİŞ perform_create METODU ---
     def perform_create(self, serializer):
         user = self.request.user
         user_business = get_user_business(user)
@@ -72,11 +71,9 @@ class StaffUserViewSet(LimitCheckMixin, viewsets.ModelViewSet):
         # Limit kontrolü
         try:
             subscription = user_business.subscription
-            # Limitin, aboneliğe bağlı Plan'dan geldiğini kontrol et
             if not subscription.plan:
                 raise ValidationError({'detail': 'İşletme için aktif bir abonelik planı bulunamadı.', 'code': 'subscription_error'})
             
-            # Limiti subscription.plan üzerinden al
             limit = getattr(subscription.plan, self.limit_field_name)
             current_count = self.get_queryset().count()
 
@@ -88,7 +85,6 @@ class StaffUserViewSet(LimitCheckMixin, viewsets.ModelViewSet):
         except (Subscription.DoesNotExist, AttributeError):
             raise ValidationError({'detail': 'Abonelik planı bulunamadı veya limitler tanımlanmamış.', 'code': 'subscription_error'})
         
-        # Kalan mantık aynı
         staff_user_type = serializer.validated_data.get('user_type', self.request.data.get('user_type', 'staff'))
         if staff_user_type not in ['staff', 'kitchen_staff']:
             raise ValidationError({"user_type": "Geçerli bir personel tipi ('staff' veya 'kitchen_staff') seçilmelidir."})
@@ -106,7 +102,6 @@ class StaffUserViewSet(LimitCheckMixin, viewsets.ModelViewSet):
             is_active=serializer.validated_data.get('is_active', True),
             is_approved_by_admin=True
         )
-    # --- /GÜNCELLENMİŞ perform_create METODU ---
 
     def perform_update(self, serializer):
         user = self.request.user
@@ -188,12 +183,12 @@ class StaffUserViewSet(LimitCheckMixin, viewsets.ModelViewSet):
             'has_shifts': has_shifts_assigned
         })
 
-    # +++++++++++++++++++++ YENİ EKLENEN BÖLÜM BAŞLANGICI +++++++++++++++++++++
+    # +++++++++++++++++++++ GÜNCELLENMİŞ/EKLENMİŞ BÖLÜM BAŞLANGICI +++++++++++++++++++++
     @action(detail=False, methods=['get'], url_path='current-shift')
     def get_current_shift(self, request):
         """
         Giriş yapmış olan personel (staff/kitchen_staff) kullanıcısının
-        o anki aktif vardiyasını döndürür.
+        o anki aktif vardiyasını ve UTC formatında bitiş zamanını döndürür.
         """
         user = request.user
         if user.user_type not in ['staff', 'kitchen_staff']:
@@ -265,4 +260,4 @@ class StaffUserViewSet(LimitCheckMixin, viewsets.ModelViewSet):
                 {"detail": "Şu an için aktif bir vardiya bulunamadı."},
                 status=status.HTTP_404_NOT_FOUND
             )
-    # +++++++++++++++++++++ YENİ EKLENEN BÖLÜM SONU +++++++++++++++++++++
+    # +++++++++++++++++++++ GÜNCELLENMİŞ/EKLENMİŞ BÖLÜM SONU +++++++++++++++++++++
