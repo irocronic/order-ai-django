@@ -2,9 +2,13 @@
 
 from rest_framework.permissions import BasePermission
 from .utils.order_helpers import get_user_business, PermissionKeys
-from .models import KDSScreen, CustomUser, Business, ScheduledShift, MenuItem, MenuItemVariant, Order, OrderItem, CampaignMenu, Stock # Gerekli importlar
-from django.utils import timezone # Tarih işlemleri için
-from datetime import timedelta # Tarih işlemleri için
+from .models import (
+    KDSScreen, CustomUser, Business, ScheduledShift, MenuItem, MenuItemVariant,
+    Order, OrderItem, CampaignMenu, Stock
+)
+from django.utils import timezone
+from datetime import timedelta
+import pytz  # Zaman dilimi işlemleri için eklendi
 import logging
 
 logger = logging.getLogger(__name__)
@@ -94,26 +98,18 @@ class IsBusinessOwnerAndOwnerOfStaff(BasePermission):
         if not user_business:
             return False
 
-        # Bu kontrol, obj'nin bir CustomUser olduğunu varsayarak yapılmıştır.
-        # Eğer obj CustomUser değilse bu hata alınır.
-        # CampaignMenu için bu izni kullanmamalı veya obj.associated_business/obj.owned_business kontrolü yapmadan önce isinstance kontrolü yapılmalı.
         if hasattr(obj, 'user_type'): # obj bir CustomUser ise
             if obj.user_type in ['staff', 'kitchen_staff'] and hasattr(obj, 'associated_business') and obj.associated_business == user_business:
                 return True
             if obj.user_type == 'business_owner' and hasattr(obj, 'owned_business') and obj.owned_business == user_business:
                 return True
-        # Eğer obj bir CustomUser değilse (örn: CampaignMenu), CampaignMenuViewSet'in bunu doğrudan kullanması hatadır.
-        # Bu durumda, CampaignMenuViewSet'in permissions_classes listesinde IsBusinessOwnerAndOwnerOfObject kullanılmalı.
-        # Veya, bu izin sınıfının CampaignMenu objeleri için de geçerli olmasını istiyorsak,
-        # obj.business veya obj.campaign_menu.business gibi alanları kontrol etmeliyiz:
         elif isinstance(obj, CampaignMenu):
             return obj.business == user_business
         elif isinstance(obj, MenuItem):
             return obj.business == user_business
         elif isinstance(obj, MenuItemVariant):
             return obj.menu_item.business == user_business
-        # Diğer modeller için de benzer kontroller eklenebilir veya bu izin sınıfı sadece CustomUser için kullanılır.
-
+        
         logger.warning(f"IsBusinessOwnerAndOwnerOfStaff: Permission denied for user {request.user} on object {obj} of type {type(obj)}. User Business: {user_business}, Object relevant business: {getattr(obj, 'associated_business', None) or getattr(obj, 'owned_business', None) or getattr(obj, 'business', None)}")
         return False
 
@@ -183,12 +179,12 @@ class CanManageSpecificKDS(BasePermission):
         return False
 
 
-# --- GÜNCELLENMİŞ VE DAHA KAPSAMLI YETKİ SINIFI ---
+# --- GÜNCELLENMİŞ VE DOĞRU ÇALIŞAN YETKİ SINIFI ---
 class IsOnActiveShift(BasePermission):
     """
     Sadece kendisine o an için aktif bir vardiya atanmış personelin
     kritik işlemleri (örn: sipariş alma) yapmasına izin verir.
-    Gece yarısını geçen vardiyaları da doğru şekilde hesaplar.
+    Kontrolü, personelin bağlı olduğu işletmenin yerel zaman dilimine göre yapar.
     """
     message = "Bu işlemi gerçekleştirmek için aktif bir vardiyada olmanız gerekmektedir."
 
@@ -198,16 +194,31 @@ class IsOnActiveShift(BasePermission):
         if not user.is_authenticated:
             return False
             
+        # İşletme sahibi, admin veya müşteri için bu kontrolü atla
         if user.user_type not in ['staff', 'kitchen_staff']:
-            return True # İşletme sahibi, admin veya müşteri için bu kontrol atlanır.
+            return True 
         
+        # Superuser her zaman yetkilidir
         if user.is_superuser:
             return True
 
-        now = timezone.now()
-        today = now.date()
+        # Personelin bağlı olduğu işletmeyi bul
+        business = getattr(user, 'associated_business', None)
+        if not business:
+            # Bu durum normalde olmamalı ama bir güvenlik önlemi
+            return False
+
+        # İşletmenin zaman dilimini al, yoksa varsayılanı kullan
+        try:
+            business_tz = pytz.timezone(business.timezone)
+        except pytz.UnknownTimeZoneError:
+            business_tz = timezone.get_current_timezone()
+
+        # Sunucunun saatini (UTC) işletmenin yerel saatine çevir
+        now_in_business_tz = timezone.now().astimezone(business_tz)
+        today = now_in_business_tz.date()
         yesterday = today - timedelta(days=1)
-        current_time = now.time()
+        current_time = now_in_business_tz.time()
 
         # Personelin bugünkü veya dünkü (gece vardiyası ihtimaline karşı) vardiyalarını çek
         potential_shifts = ScheduledShift.objects.filter(
@@ -226,10 +237,10 @@ class IsOnActiveShift(BasePermission):
             
             # Durum 2: Gece yarısını geçen (ertesi güne sarkan) vardiya
             else: # shift_start_time > shift_end_time
-                # Vardiyanın başlangıç günündeysek (örn: Pazartesi 18:00 - Salı 02:00, ve şu an Pazartesi 22:00)
+                # Vardiyanın başlangıç günündeysek
                 if scheduled_shift.date == today and current_time >= shift_start_time:
                     return True
-                # Vardiyanın bitiş günündeysek (örn: Pazartesi 18:00 - Salı 02:00, ve şu an Salı 01:00)
+                # Vardiyanın bitiş günündeysek
                 if scheduled_shift.date == yesterday and current_time <= shift_end_time:
                     return True
 
