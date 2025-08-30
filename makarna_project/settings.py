@@ -1,3 +1,5 @@
+# makarna_project/settings.py
+
 import os
 from pathlib import Path
 from datetime import timedelta
@@ -218,7 +220,7 @@ CELERY_WORKER_MAX_MEMORY_PER_CHILD = 200000
 
 # --- SIMPLE JWT AYARLARI ---
 SIMPLE_JWT = {
-    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=int(os.environ.get('JWT_ACCESS_TOKEN_LIFETIME_MINUTES', '60'))),
+    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=int(os.environ.get('JWT_ACCESS_TOKEN_LIFETIME_MINUTES', '1'))),
     'REFRESH_TOKEN_LIFETIME': timedelta(days=int(os.environ.get('JWT_REFRESH_TOKEN_LIFETIME_DAYS', '7'))),
     'ROTATE_REFRESH_TOKENS': True,
     'BLACKLIST_AFTER_ROTATION': True,
