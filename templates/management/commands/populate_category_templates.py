@@ -7,28 +7,30 @@ class Command(BaseCommand):
     help = 'Hazır kategori şablonlarını veritabanına ekler.'
 
     def handle(self, *args, **options):
+        # İSİMLER GÜNCELLENDİ VE EKSİK OLAN EKLENDİ
         templates = {
             'tr': [
-                {'name': 'Yiyecekler', 'icon_name': 'restaurant'},
-                {'name': 'İçecekler', 'icon_name': 'local_cafe'},
+                {'name': 'Ana Yemekler', 'icon_name': 'restaurant'},
+                {'name': 'Çorbalar', 'icon_name': 'soup_kitchen'},
+                {'name': 'Mezeler & Aperatifler', 'icon_name': 'tapas'},
+                {'name': 'Salatalar', 'icon_name': 'eco'},
+                {'name': 'Atıştırmalıklar & Fast Food', 'icon_name': 'fastfood'},
                 {'name': 'Tatlılar', 'icon_name': 'cake'},
-                {'name': 'Mezeler', 'icon_name': 'tapas'},
                 {'name': 'Sıcak İçecekler', 'icon_name': 'coffee'},
                 {'name': 'Soğuk İçecekler', 'icon_name': 'ac_unit'},
                 {'name': 'Alkollü İçecekler', 'icon_name': 'local_bar'},
-                {'name': 'Çorbalar', 'icon_name': 'soup_kitchen'},
-                {'name': 'Salatalar', 'icon_name': 'eco'},
             ],
             'en': [
-                {'name': 'Food', 'icon_name': 'restaurant'},
-                {'name': 'Drinks', 'icon_name': 'local_cafe'},
+                # İngilizce karşılıkları da buraya eklenebilir.
+                {'name': 'Main Courses', 'icon_name': 'restaurant'},
+                {'name': 'Soups', 'icon_name': 'soup_kitchen'},
+                {'name': 'Appetizers & Mezes', 'icon_name': 'tapas'},
+                {'name': 'Salads', 'icon_name': 'eco'},
+                {'name': 'Snacks & Fast Food', 'icon_name': 'fastfood'},
                 {'name': 'Desserts', 'icon_name': 'cake'},
-                {'name': 'Appetizers', 'icon_name': 'tapas'},
                 {'name': 'Hot Drinks', 'icon_name': 'coffee'},
                 {'name': 'Cold Drinks', 'icon_name': 'ac_unit'},
                 {'name': 'Alcoholic Drinks', 'icon_name': 'local_bar'},
-                {'name': 'Soups', 'icon_name': 'soup_kitchen'},
-                {'name': 'Salads', 'icon_name': 'eco'},
             ]
         }
 
