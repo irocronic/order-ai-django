@@ -20,6 +20,11 @@ from ..serializers import CategorySerializer, MenuItemSerializer, MenuItemVarian
 from ..utils.order_helpers import get_user_business, PermissionKeys
 from ..permissions import IsBusinessOwnerAndOwnerOfObject
 
+from django.db import transaction
+from templates.models import CategoryTemplate # YENİ IMPORT
+
+from rest_framework.decorators import action
+
 logger = logging.getLogger(__name__)
 
 # === GÜNCELLENMESİ GEREKEN VIEWSET BURASI ===
@@ -33,8 +38,6 @@ class CategoryViewSet(LimitCheckMixin, viewsets.ModelViewSet):
     limit_field_name = "max_categories"
 
     # --- GÜNCELLENEN METOT ---
-    # Bu metot, üst sınıfı çağırmak yerine, isteği yapan kullanıcının
-    # işletmesine göre kategorileri filtreleyip döndürmelidir.
     def get_queryset(self):
         user = self.request.user
         user_business = get_user_business(user)
@@ -97,6 +100,46 @@ class CategoryViewSet(LimitCheckMixin, viewsets.ModelViewSet):
         context['user_business'] = get_user_business(self.request.user)
         return context
 
+    # YENİ ACTION
+    @action(detail=False, methods=['post'], url_path='create-from-template')
+    @transaction.atomic
+    def create_from_template(self, request, *args, **kwargs):
+        user_business = get_user_business(request.user)
+        template_ids = request.data.get('template_ids', [])
+
+        if not isinstance(template_ids, list):
+            raise ValidationError({"detail": "template_ids bir liste olmalıdır."})
+
+        # Abonelik limitlerini kontrol et
+        try:
+            subscription = user_business.subscription
+            if not subscription.plan:
+                raise ValidationError({'detail': 'Aktif bir abonelik planı bulunamadı.', 'code': 'subscription_error'})
+            limit = getattr(subscription.plan, self.limit_field_name)
+            current_count = self.get_queryset().count()
+            if current_count + len(template_ids) > limit:
+                raise ValidationError({
+                    'detail': f"Şablonlarla birlikte kategori limitinizi ({limit}) aşıyorsunuz.",
+                    'code': 'limit_reached'
+                })
+        except (Subscription.DoesNotExist, AttributeError):
+            raise ValidationError({'detail': 'Abonelik planı bulunamadı.', 'code': 'subscription_error'})
+
+        templates = CategoryTemplate.objects.filter(id__in=template_ids)
+        created_categories = []
+        for template in templates:
+            # Aynı isimde kategori varsa oluşturma, mevcut olanı kullan
+            category, created = Category.objects.get_or_create(
+                business=user_business,
+                name=template.name,
+                defaults={'parent': None}
+            )
+            if created:
+                created_categories.append(category)
+
+        serializer = self.get_serializer(created_categories, many=True)
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+
 # Diğer ViewSet'ler doğru olduğu için aynı kalıyor
 class MenuItemViewSet(LimitCheckMixin, viewsets.ModelViewSet):
     """Menü öğelerini yönetir. Yeni ürün oluştururken limitleri kontrol eder."""
@@ -127,9 +170,6 @@ class MenuItemViewSet(LimitCheckMixin, viewsets.ModelViewSet):
             bundle_menu_item__isnull=False
         ).values_list('bundle_menu_item_id', flat=True)
 
-        # ================= OPTİMİZASYON GÜNCELLEMESİ =================
-        # Bu queryset, select_related ve prefetch_related ile N+1 problemini
-        # çözmek için güncellenmiştir.
         queryset = MenuItem.objects.filter(
             Q(business=user_business, is_active=True) & 
             (Q(is_campaign_bundle=False) | Q(id__in=list(valid_campaign_menu_item_ids)))
@@ -138,10 +178,8 @@ class MenuItemViewSet(LimitCheckMixin, viewsets.ModelViewSet):
             'category__assigned_kds', 
             'represented_campaign'
         ).prefetch_related(
-            # Varyantları ve varyantlara bağlı stokları tek seferde ve verimli bir şekilde al
             Prefetch('variants', queryset=MenuItemVariant.objects.select_related('stock'))
         )
-        # ================= GÜNCELLEME SONU =========================
         
         return queryset.order_by('category__name', 'name')
 

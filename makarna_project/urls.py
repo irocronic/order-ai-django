@@ -28,6 +28,7 @@ urlpatterns = [
     path('', root_view, name='root'),
 
     path('admin/', admin.site.urls),
+    path('api/templates/', include('templates.urls')),
     path('api/', include('core.urls')), # API URL'leri
 
     # --- MİSAFİR KULLANICILAR İÇİN URL'LER ---
