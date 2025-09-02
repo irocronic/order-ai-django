@@ -21,7 +21,7 @@ from ..utils.order_helpers import get_user_business, PermissionKeys
 from ..permissions import IsBusinessOwnerAndOwnerOfObject
 
 from django.db import transaction
-from templates.models import CategoryTemplate # YENİ IMPORT
+from templates.models import CategoryTemplate, MenuItemTemplate # YENİ IMPORT - MenuItemTemplate eklendi
 
 from rest_framework.decorators import action
 
@@ -248,6 +248,63 @@ class MenuItemViewSet(LimitCheckMixin, viewsets.ModelViewSet):
         context = super().get_serializer_context()
         context['request'] = self.request
         return context
+
+    # === YENİ ACTION: Şablonlardan Menü Öğesi Oluştur ===
+    @action(detail=False, methods=['post'], url_path='create-from-template')
+    @transaction.atomic
+    def create_from_template(self, request, *args, **kwargs):
+        """Şablonlardan menü öğeleri oluşturur"""
+        user_business = get_user_business(request.user)
+        template_ids = request.data.get('template_ids', [])
+        target_category_id = request.data.get('target_category_id')
+
+        if not isinstance(template_ids, list):
+            raise ValidationError({"detail": "template_ids bir liste olmalıdır."})
+        
+        if not target_category_id:
+            raise ValidationError({"detail": "target_category_id gereklidir."})
+
+        # Kategori kontrolü
+        try:
+            category = Category.objects.get(id=target_category_id, business=user_business)
+        except Category.DoesNotExist:
+            raise ValidationError({"detail": "Geçersiz kategori."})
+
+        # Abonelik limitlerini kontrol et
+        try:
+            subscription = user_business.subscription
+            if not subscription.plan:
+                raise ValidationError({'detail': 'Aktif bir abonelik planı bulunamadı.', 'code': 'subscription_error'})
+            limit = getattr(subscription.plan, self.limit_field_name)
+            current_count = self.get_queryset().count()
+            if current_count + len(template_ids) > limit:
+                raise ValidationError({
+                    'detail': f"Şablonlarla birlikte ürün limitinizi ({limit}) aşıyorsunuz.",
+                    'code': 'limit_reached'
+                })
+        except (Subscription.DoesNotExist, AttributeError):
+            raise ValidationError({'detail': 'Abonelik planı bulunamadı.', 'code': 'subscription_error'})
+
+        # Şablonları getir
+        templates = MenuItemTemplate.objects.filter(id__in=template_ids)
+        
+        created_items = []
+        for template in templates:
+            # Aynı isimde ürün varsa oluşturma
+            item, created = MenuItem.objects.get_or_create(
+                business=user_business,
+                category=category,
+                name=template.name,
+                defaults={
+                    'description': f"{template.name} - Şablondan oluşturuldu",
+                    'is_active': True,
+                }
+            )
+            if created:
+                created_items.append(item)
+
+        serializer = self.get_serializer(created_items, many=True)
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
 
 class MenuItemVariantViewSet(LimitCheckMixin, viewsets.ModelViewSet):
     """Menü öğesi varyantlarını yönetir. Yeni varyant oluştururken limitleri kontrol eder."""
