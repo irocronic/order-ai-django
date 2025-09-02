@@ -100,15 +100,26 @@ class CategoryViewSet(LimitCheckMixin, viewsets.ModelViewSet):
         context['user_business'] = get_user_business(self.request.user)
         return context
 
-    # YENİ ACTION
+    # YENİ ACTION - GÜNCELLENMİŞ
     @action(detail=False, methods=['post'], url_path='create-from-template')
     @transaction.atomic
     def create_from_template(self, request, *args, **kwargs):
         user_business = get_user_business(request.user)
         template_ids = request.data.get('template_ids', [])
+        # --- YENİ: Request'ten KDS ID'sini al ---
+        assigned_kds_id = request.data.get('assigned_kds_id')
 
         if not isinstance(template_ids, list):
             raise ValidationError({"detail": "template_ids bir liste olmalıdır."})
+
+        # --- YENİ: Gelen KDS ID'sinin geçerliliğini kontrol et ---
+        assigned_kds_instance = None
+        if assigned_kds_id:
+            try:
+                # KDS ekranının hem var olduğundan hem de bu işletmeye ait olduğundan emin ol
+                assigned_kds_instance = KDSScreen.objects.get(id=assigned_kds_id, business=user_business)
+            except KDSScreen.DoesNotExist:
+                raise ValidationError({"assigned_kds_id": "Geçersiz veya bu işletmeye ait olmayan KDS ekranı."})
 
         # Abonelik limitlerini kontrol et
         try:
@@ -132,7 +143,11 @@ class CategoryViewSet(LimitCheckMixin, viewsets.ModelViewSet):
             category, created = Category.objects.get_or_create(
                 business=user_business,
                 name=template.name,
-                defaults={'parent': None}
+                defaults={
+                    'parent': None,
+                    # --- YENİ: KDS atamasını `defaults` içine ekle ---
+                    'assigned_kds': assigned_kds_instance 
+                }
             )
             if created:
                 created_categories.append(category)
