@@ -2,13 +2,30 @@
 
 from rest_framework import viewsets
 from rest_framework.permissions import IsAuthenticated
-from .models import CategoryTemplate, MenuItemTemplate # MenuItemTemplate import edildi
-from .serializers import CategoryTemplateSerializer, MenuItemTemplateSerializer # MenuItemTemplateSerializer import edildi
+from .models import CategoryTemplate, MenuItemTemplate
+from .serializers import CategoryTemplateSerializer, MenuItemTemplateSerializer
 
 class CategoryTemplateViewSet(viewsets.ReadOnlyModelViewSet):
-    # ... mevcut kod ...
+    """
+    Kullanılabilir kategori şablonlarını listeler.
+    İsteğin 'Accept-Language' başlığına göre uygun dildeki şablonları döndürür.
+    """
+    serializer_class = CategoryTemplateSerializer
+    permission_classes = [IsAuthenticated]
 
-# === YENİ VIEWSET BAŞLANGICI ===
+    def get_queryset(self):
+        # Tarayıcıdan veya uygulamadan gelen dil tercihini al
+        language_code = self.request.META.get('HTTP_ACCEPT_LANGUAGE', 'tr').split(',')[0].split('-')[0]
+        
+        # Önce istenen dildeki şablonları bul
+        queryset = CategoryTemplate.objects.filter(language=language_code)
+        
+        # Eğer istenen dilde şablon yoksa, varsayılan olarak Türkçe (tr) şablonları döndür
+        if not queryset.exists():
+            return CategoryTemplate.objects.filter(language='tr')
+            
+        return queryset
+
 class MenuItemTemplateViewSet(viewsets.ReadOnlyModelViewSet):
     """
     Kullanılabilir menü öğesi şablonlarını listeler.
@@ -30,4 +47,3 @@ class MenuItemTemplateViewSet(viewsets.ReadOnlyModelViewSet):
             queryset = queryset.filter(category_template_id=category_template_id)
             
         return queryset
-# === YENİ VIEWSET SONU ===
