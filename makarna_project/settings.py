@@ -90,36 +90,47 @@ DATABASES = {
 }
 DATABASE_URL_ENV = os.environ.get('DATABASE_URL')
 if DATABASE_URL_ENV:
-    # Supabase için optimizasyonlar
+    # Database bağlantı tipini tespit et
+    is_pooler = 'pooler.supabase.com' in DATABASE_URL_ENV
+    is_direct = 'db.' in DATABASE_URL_ENV and 'supabase.co' in DATABASE_URL_ENV
+    
+    print(f"🔧 Database Connection Type:")
+    print(f"   - Pooler: {'✅' if is_pooler else '❌'}")
+    print(f"   - Direct: {'✅' if is_direct else '❌'}")
+    
     DATABASES['default'] = dj_database_url.config(
         default=DATABASE_URL_ENV,
-        conn_max_age=0,  # Connection pooling kapalı
+        conn_max_age=0 if is_pooler else 300,  # Pooler için 0, direct için 5 dakika
         ssl_require=True,
     )
     
-    # Supabase PgBouncer için özel ayarlar
-    DATABASES['default']['OPTIONS'] = {
-        'connect_timeout': 60,  # Daha uzun timeout
-        'application_name': 'django_app',  # Bağlantı tanımlama
-        'options': '-c default_transaction_isolation=read_committed'
-    }
-    
-    # Eğer pooler kullanıyorsa session mode ayarları
-    if 'pooler.supabase.com' in DATABASE_URL_ENV:
-        print("🔧 Supabase Pooler tespit edildi - Session mode ayarları uygulanıyor")
-        # Session mode için keepalive'ları kaldırıyoruz
-        DATABASES['default']['OPTIONS'].update({
-            'connect_timeout': 60,
-            'application_name': 'django_render_app',
-        })
-    else:
-        # Direct connection için keepalive ayarları
-        DATABASES['default']['OPTIONS'].update({
+    if is_pooler:
+        # Supabase Pooler için minimal ayarlar
+        print("🔧 Supabase Pooler - Transaction mode ayarları")
+        DATABASES['default']['OPTIONS'] = {
+            'connect_timeout': 30,
+            'application_name': 'django_render_pooler',
+            'options': '-c default_transaction_isolation=read_committed'
+        }
+    elif is_direct:
+        # Direct connection için optimize ayarlar
+        print("🔧 Supabase Direct Connection - Session mode ayarları")
+        DATABASES['default']['OPTIONS'] = {
             'connect_timeout': 30,
             'keepalives_idle': 600,
             'keepalives_interval': 30,
             'keepalives_count': 3,
-        })
+            'application_name': 'django_render_direct',
+            'options': '-c default_transaction_isolation=read_committed -c statement_timeout=30s'
+        }
+    else:
+        # Genel PostgreSQL ayarları
+        print("🔧 Generic PostgreSQL ayarları")
+        DATABASES['default']['OPTIONS'] = {
+            'connect_timeout': 30,
+            'application_name': 'django_render_app',
+            'options': '-c default_transaction_isolation=read_committed'
+        }
 
 elif DEBUG:
     print("--- LOKAL GELİŞTİRME: SQLite KULLANILIYOR ---")
@@ -129,6 +140,23 @@ elif DEBUG:
     }
 else:
     raise Exception("DATABASE_URL ortam değişkeni ayarlanmamış ve DEBUG=False. Production için veritabanı yapılandırılmalı.")
+
+# --- DATABASE RETRY MEKANİZMASI ---
+from django.db import transaction
+from django.db.utils import OperationalError
+import time
+
+def retry_db_operation(func, max_retries=3, delay=1):
+    """Veritabanı işlemlerini retry etmek için wrapper"""
+    for attempt in range(max_retries):
+        try:
+            return func()
+        except OperationalError as e:
+            if attempt == max_retries - 1:
+                raise e
+            print(f"Database operation failed (attempt {attempt + 1}), retrying in {delay} seconds...")
+            time.sleep(delay)
+            delay *= 2  # Exponential backoff
 
 # --- ŞİFRE DOĞRULAMA ---
 AUTH_PASSWORD_VALIDATORS = [
