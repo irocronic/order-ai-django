@@ -92,12 +92,16 @@ DATABASE_URL_ENV = os.environ.get('DATABASE_URL')
 if DATABASE_URL_ENV:
     DATABASES['default'] = dj_database_url.config(
         default=DATABASE_URL_ENV,
-        conn_max_age=60,
-        ssl_require=False,
+        conn_max_age=0,  # ✅ POOLER İÇİN CONNECTION REUSE KAPALI
+        ssl_require=True,
     )
     DATABASES['default']['OPTIONS'] = {
-        'connect_timeout': 10,
-        'options': '-c default_transaction_isolation=read_committed'
+        'connect_timeout': 30,  # ✅ UZUN TIMEOUT
+        'keepalives_idle': 600,
+        'keepalives_interval': 30,
+        'keepalives_count': 3,
+        'statement_timeout': 30000,
+        'options': '-c default_transaction_isolation=read_committed -c statement_timeout=30s'
     }
 elif DEBUG:
     print("--- LOKAL GELİŞTİRME: SQLite KULLANILIYOR ---")
