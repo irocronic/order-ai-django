@@ -16,7 +16,28 @@ class Command(BaseCommand):
             'Atıştırmalıklar & Fast Food': ['Hamburger', 'Cheeseburger', 'Double Burger', 'Tavuk Burger', 'Fish Burger', 'Vejetaryen Burger', 'Patates Kızartması', 'Soğan Halkası', 'Pizza', 'Calzone', 'Tost', 'Simit', 'Açma', 'Poğaça', 'Börek', 'Gözleme', 'Midye Dolma', 'Kokoreç', 'Tantuni', 'Dürüm', 'Çiğköfte Dürüm', 'Balık Ekmek', 'Patso'],
             'Tatlılar': ['Baklava', 'Fıstıklı Baklava', 'Cevizli Baklava', 'Şöbiyet', 'Künefe', 'Katmer', 'Sütlaç', 'Kazandibi', 'Profiterol', 'Revani', 'Tulumba Tatlısı', 'Trileçe', 'Dondurma', 'Cheesecake', 'Magnolia', 'Brownie', 'Mozaik Pasta', 'Lokma', 'Helva', 'Ayva Tatlısı', 'Kabak Tatlısı', 'Keşkül', 'Güllaç', 'Tiramisu', 'Ekler', 'Parfe', 'Supangle', 'Panna Cotta'],
             'Soğuk İçecekler': ['Coca Cola', 'Pepsi', 'Fanta', 'Sprite', 'Ice Tea', 'Ayran', 'Şalgam', 'Soda', 'Meyve Suyu', 'Limonata', 'Soğuk Kahve', 'Smoothie', 'Milkshake', 'Mojito', 'Virgin Pina Colada', 'Bubble Tea'],
-            'Sıcak İçecekler': ['Çay', 'Türk Kahvesi', 'Filtre Kahve', 'Latte', 'Cappuccino', 'Espresso', 'Americano', 'Mocha', 'Macchiato', 'Flat White', 'Cortado', 'Ristretto', 'Affogato', 'Salep', 'Bitki Çayı', 'Kış Çayı', 'Kakao']
+            'Sıcak İçecekler': ['Çay', 'Türk Kahvesi', 'Filtre Kahve', 'Latte', 'Cappuccino', 'Espresso', 'Americano', 'Mocha', 'Macchiato', 'Flat White', 'Cortado', 'Ristretto', 'Affogato', 'Salep', 'Bitki Çayı', 'Kış Çayı', 'Kakao'],
+            # YENİ EKLENDİ: Alkollü İçecekler kategorisi
+            'Alkollü İçecekler': [
+                # Bira
+                'Efes', 'Tuborg', 'Heineken', 'Corona', 'Stella Artois', 'Bomonti', 'Carlsberg', 'Guinness',
+                # Rakı
+                'Yeni Rakı', 'Tekirdağ Rakısı', 'Kulüp Rakısı', 'Altınbaş Rakısı', 'İzmir Rakısı',
+                # Şarap
+                'Kırmızı Şarap', 'Beyaz Şarap', 'Rosé Şarap', 'Champagne', 'Prosecco', 'Kavaklidere', 'Doluca', 'Kayra',
+                # Viski
+                'Johnnie Walker', 'Jack Daniels', 'Chivas Regal', 'Ballantines', 'Jameson', 'Tekel Gold',
+                # Votka
+                'Absolut', 'Smirnoff', 'Grey Goose', 'Beluga', 'Russian Standard',
+                # Cin
+                'Bombay Sapphire', 'Hendricks', 'Tanqueray', 'Beefeater',
+                # Rom
+                'Bacardi', 'Captain Morgan', 'Havana Club', 'Mount Gay',
+                # Likör
+                'Baileys', 'Kahlua', 'Amaretto', 'Frangelico', 'Cointreau', 'Grand Marnier',
+                # Kokteyller
+                'Mojito', 'Caipirinha', 'Margarita', 'Cosmopolitan', 'Long Island', 'Pina Colada', 'Bloody Mary', 'Moscow Mule', 'Whiskey Sour', 'Old Fashioned', 'Negroni', 'Aperol Spritz', 'Gin Tonic', 'Screwdriver', 'Sex on the Beach'
+            ]
         }
         
         created_count = 0
