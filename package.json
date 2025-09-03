@@ -1,5 +1,3 @@
 {
-  "devDependencies": {
-    "supabase": "^2.34.3"
-  }
+  "name": "makarna_project"
 }
