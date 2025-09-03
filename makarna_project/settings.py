@@ -90,47 +90,23 @@ DATABASES = {
 }
 DATABASE_URL_ENV = os.environ.get('DATABASE_URL')
 if DATABASE_URL_ENV:
-    # Database bağlantı tipini tespit et
-    is_pooler = 'pooler.supabase.com' in DATABASE_URL_ENV
-    is_direct = 'db.' in DATABASE_URL_ENV and 'supabase.co' in DATABASE_URL_ENV
+    print(f"🔧 Database URL detected: {DATABASE_URL_ENV[:50]}...")
     
-    print(f"🔧 Database Connection Type:")
-    print(f"   - Pooler: {'✅' if is_pooler else '❌'}")
-    print(f"   - Direct: {'✅' if is_direct else '❌'}")
-    
+    # Pooler connection için optimize edilmiş ayarlar
     DATABASES['default'] = dj_database_url.config(
         default=DATABASE_URL_ENV,
-        conn_max_age=0 if is_pooler else 300,  # Pooler için 0, direct için 5 dakika
+        conn_max_age=0,  # Pooler için connection reuse kapalı
         ssl_require=True,
     )
     
-    if is_pooler:
-        # Supabase Pooler için minimal ayarlar
-        print("🔧 Supabase Pooler - Transaction mode ayarları")
-        DATABASES['default']['OPTIONS'] = {
-            'connect_timeout': 30,
-            'application_name': 'django_render_pooler',
-            'options': '-c default_transaction_isolation=read_committed'
-        }
-    elif is_direct:
-        # Direct connection için optimize ayarlar
-        print("🔧 Supabase Direct Connection - Session mode ayarları")
-        DATABASES['default']['OPTIONS'] = {
-            'connect_timeout': 30,
-            'keepalives_idle': 600,
-            'keepalives_interval': 30,
-            'keepalives_count': 3,
-            'application_name': 'django_render_direct',
-            'options': '-c default_transaction_isolation=read_committed -c statement_timeout=30s'
-        }
-    else:
-        # Genel PostgreSQL ayarları
-        print("🔧 Generic PostgreSQL ayarları")
-        DATABASES['default']['OPTIONS'] = {
-            'connect_timeout': 30,
-            'application_name': 'django_render_app',
-            'options': '-c default_transaction_isolation=read_committed'
-        }
+    # Supabase Pooler için Transaction mode ayarları
+    DATABASES['default']['OPTIONS'] = {
+        'connect_timeout': 30,
+        'application_name': 'django_render_app',
+        'options': '-c default_transaction_isolation=read_committed'
+    }
+    
+    print("✅ Supabase Pooler connection configured")
 
 elif DEBUG:
     print("--- LOKAL GELİŞTİRME: SQLite KULLANILIYOR ---")
@@ -140,23 +116,6 @@ elif DEBUG:
     }
 else:
     raise Exception("DATABASE_URL ortam değişkeni ayarlanmamış ve DEBUG=False. Production için veritabanı yapılandırılmalı.")
-
-# --- DATABASE RETRY MEKANİZMASI ---
-from django.db import transaction
-from django.db.utils import OperationalError
-import time
-
-def retry_db_operation(func, max_retries=3, delay=1):
-    """Veritabanı işlemlerini retry etmek için wrapper"""
-    for attempt in range(max_retries):
-        try:
-            return func()
-        except OperationalError as e:
-            if attempt == max_retries - 1:
-                raise e
-            print(f"Database operation failed (attempt {attempt + 1}), retrying in {delay} seconds...")
-            time.sleep(delay)
-            delay *= 2  # Exponential backoff
 
 # --- ŞİFRE DOĞRULAMA ---
 AUTH_PASSWORD_VALIDATORS = [
