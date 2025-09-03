@@ -90,18 +90,37 @@ DATABASES = {
 }
 DATABASE_URL_ENV = os.environ.get('DATABASE_URL')
 if DATABASE_URL_ENV:
+    # Supabase için optimizasyonlar
     DATABASES['default'] = dj_database_url.config(
         default=DATABASE_URL_ENV,
-        conn_max_age=0,  # ✅ POOLER İÇİN CONNECTION REUSE KAPALI
+        conn_max_age=0,  # Connection pooling kapalı
         ssl_require=True,
     )
+    
+    # Supabase PgBouncer için özel ayarlar
     DATABASES['default']['OPTIONS'] = {
-        'connect_timeout': 30,  # ✅ UZUN TIMEOUT
-        'keepalives_idle': 600,
-        'keepalives_interval': 30,
-        'keepalives_count': 3,
-        'options': '-c default_transaction_isolation=read_committed -c statement_timeout=30s'
+        'connect_timeout': 60,  # Daha uzun timeout
+        'application_name': 'django_app',  # Bağlantı tanımlama
+        'options': '-c default_transaction_isolation=read_committed'
     }
+    
+    # Eğer pooler kullanıyorsa session mode ayarları
+    if 'pooler.supabase.com' in DATABASE_URL_ENV:
+        print("🔧 Supabase Pooler tespit edildi - Session mode ayarları uygulanıyor")
+        # Session mode için keepalive'ları kaldırıyoruz
+        DATABASES['default']['OPTIONS'].update({
+            'connect_timeout': 60,
+            'application_name': 'django_render_app',
+        })
+    else:
+        # Direct connection için keepalive ayarları
+        DATABASES['default']['OPTIONS'].update({
+            'connect_timeout': 30,
+            'keepalives_idle': 600,
+            'keepalives_interval': 30,
+            'keepalives_count': 3,
+        })
+
 elif DEBUG:
     print("--- LOKAL GELİŞTİRME: SQLite KULLANILIYOR ---")
     DATABASES['default'] = {
@@ -319,6 +338,44 @@ SOCKETIO_SETTINGS = {
 SOCKETIO_SETTINGS['cors_allowed_origins'] = CORS_ALLOWED_ORIGINS
 print("🏠 Production ortam - Memory Optimized Socket.IO ayarları kullanılıyor")
 SOCKETIO_ASYNC_MODE = 'threading'
+
+# --- LOGGING AYARLARI ---
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'formatters': {
+        'verbose': {
+            'format': '{levelname} {asctime} {module} {process:d} {thread:d} {message}',
+            'style': '{',
+        },
+        'simple': {
+            'format': '{levelname} {message}',
+            'style': '{',
+        },
+    },
+    'handlers': {
+        'console': {
+            'class': 'logging.StreamHandler',
+            'formatter': 'verbose',
+        },
+    },
+    'root': {
+        'handlers': ['console'],
+        'level': 'INFO',
+    },
+    'loggers': {
+        'django': {
+            'handlers': ['console'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+        'django.db.backends': {
+            'handlers': ['console'],
+            'level': 'DEBUG' if DEBUG else 'INFO',
+            'propagate': False,
+        },
+    },
+}
 
 # --- DEBUG LOG AYARLARI ---
 print(f"🔧 Socket.IO Ayarları:")
