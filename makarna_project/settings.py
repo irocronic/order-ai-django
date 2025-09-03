@@ -84,21 +84,35 @@ TEMPLATES = [
 WSGI_APPLICATION = 'makarna_project.wsgi.application'
 ASGI_APPLICATION = 'makarna_project.asgi.application'
 
-# --- VERİTABANI AYARLARI ---
+# --- VERİTABANI AYARLARI (NEON.TECH POOLED CONNECTION İÇİN FİX) ---
 DATABASES = {
     'default': {}
 }
+
 DATABASE_URL_ENV = os.environ.get('DATABASE_URL')
 if DATABASE_URL_ENV:
+    # Boş string kontrolü eklendi
+    if DATABASE_URL_ENV.strip() == '':
+        raise Exception("DATABASE_URL environment variable is empty. Please set a valid PostgreSQL connection string from Neon.tech.")
+    
+    # Neon.tech pooled connection için ayarlar
     DATABASES['default'] = dj_database_url.config(
         default=DATABASE_URL_ENV,
-        conn_max_age=60,
-        ssl_require=False,
+        conn_max_age=600,  # Neon için connection pooling
+        ssl_require=True,  # Neon SSL gerektiriyor
     )
+    
+    # Neon.tech pooled connection için OPTIONS (default_transaction_isolation kaldırıldı)
     DATABASES['default']['OPTIONS'] = {
         'connect_timeout': 10,
-        'options': '-c default_transaction_isolation=read_committed'
+        'sslmode': 'require',  # Neon için SSL zorunlu
+        'application_name': 'orderai_django',  # Connection tracking için
     }
+    
+    print(f"✅ Neon.tech PostgreSQL (Pooled) veritabanı yapılandırıldı")
+    print(f"   - Host: {DATABASES['default'].get('HOST', 'N/A')}")
+    print(f"   - Database: {DATABASES['default'].get('NAME', 'N/A')}")
+    
 elif DEBUG:
     print("--- LOKAL GELİŞTİRME: SQLite KULLANILIYOR ---")
     DATABASES['default'] = {
@@ -106,7 +120,7 @@ elif DEBUG:
         'NAME': BASE_DIR / 'db.sqlite3',
     }
 else:
-    raise Exception("DATABASE_URL ortam değişkeni ayarlanmamış ve DEBUG=False. Production için veritabanı yapılandırılmalı.")
+    raise Exception("DATABASE_URL ortam değişkeni ayarlanmamış ve DEBUG=False. Production için Neon.tech veritabanı yapılandırılmalı.")
 
 # --- ŞİFRE DOĞRULAMA ---
 AUTH_PASSWORD_VALIDATORS = [
