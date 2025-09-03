@@ -90,24 +90,15 @@ DATABASES = {
 }
 DATABASE_URL_ENV = os.environ.get('DATABASE_URL')
 if DATABASE_URL_ENV:
-    print(f"🔧 Database URL detected: {DATABASE_URL_ENV[:50]}...")
-    
-    # Pooler connection için optimize edilmiş ayarlar
     DATABASES['default'] = dj_database_url.config(
         default=DATABASE_URL_ENV,
-        conn_max_age=0,  # Pooler için connection reuse kapalı
-        ssl_require=True,
+        conn_max_age=60,
+        ssl_require=False,
     )
-    
-    # Supabase Pooler için Transaction mode ayarları
     DATABASES['default']['OPTIONS'] = {
-        'connect_timeout': 30,
-        'application_name': 'django_render_app',
+        'connect_timeout': 10,
         'options': '-c default_transaction_isolation=read_committed'
     }
-    
-    print("✅ Supabase Pooler connection configured")
-
 elif DEBUG:
     print("--- LOKAL GELİŞTİRME: SQLite KULLANILIYOR ---")
     DATABASES['default'] = {
@@ -325,44 +316,6 @@ SOCKETIO_SETTINGS = {
 SOCKETIO_SETTINGS['cors_allowed_origins'] = CORS_ALLOWED_ORIGINS
 print("🏠 Production ortam - Memory Optimized Socket.IO ayarları kullanılıyor")
 SOCKETIO_ASYNC_MODE = 'threading'
-
-# --- LOGGING AYARLARI ---
-LOGGING = {
-    'version': 1,
-    'disable_existing_loggers': False,
-    'formatters': {
-        'verbose': {
-            'format': '{levelname} {asctime} {module} {process:d} {thread:d} {message}',
-            'style': '{',
-        },
-        'simple': {
-            'format': '{levelname} {message}',
-            'style': '{',
-        },
-    },
-    'handlers': {
-        'console': {
-            'class': 'logging.StreamHandler',
-            'formatter': 'verbose',
-        },
-    },
-    'root': {
-        'handlers': ['console'],
-        'level': 'INFO',
-    },
-    'loggers': {
-        'django': {
-            'handlers': ['console'],
-            'level': 'INFO',
-            'propagate': False,
-        },
-        'django.db.backends': {
-            'handlers': ['console'],
-            'level': 'DEBUG' if DEBUG else 'INFO',
-            'propagate': False,
-        },
-    },
-}
 
 # --- DEBUG LOG AYARLARI ---
 print(f"🔧 Socket.IO Ayarları:")
