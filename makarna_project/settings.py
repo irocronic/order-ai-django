@@ -100,7 +100,6 @@ if DATABASE_URL_ENV:
         'keepalives_idle': 600,
         'keepalives_interval': 30,
         'keepalives_count': 3,
-        'statement_timeout': 30000,
         'options': '-c default_transaction_isolation=read_committed -c statement_timeout=30s'
     }
 elif DEBUG:
