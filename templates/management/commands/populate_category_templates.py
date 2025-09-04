@@ -7,7 +7,6 @@ class Command(BaseCommand):
     help = 'Hazır kategori şablonlarını veritabanına ekler.'
 
     def handle(self, *args, **options):
-        # İSİMLER GÜNCELLENDİ VE EKSİK OLAN EKLENDİ
         templates = {
             'tr': [
                 {'name': 'Ana Yemekler', 'icon_name': 'restaurant'},
@@ -21,16 +20,15 @@ class Command(BaseCommand):
                 {'name': 'Alkollü İçecekler', 'icon_name': 'local_bar'},
             ],
             'en': [
-                # İngilizce karşılıkları da buraya eklenebilir.
                 {'name': 'Main Courses', 'icon_name': 'restaurant'},
-                {'name': 'Soups', 'icon_name': 'soup_kitchen'},
-                {'name': 'Appetizers & Mezes', 'icon_name': 'tapas'},
-                {'name': 'Salads', 'icon_name': 'eco'},
-                {'name': 'Snacks & Fast Food', 'icon_name': 'fastfood'},
-                {'name': 'Desserts', 'icon_name': 'cake'},
-                {'name': 'Hot Drinks', 'icon_name': 'coffee'},
+                {'name': 'Soups & Starters', 'icon_name': 'soup_kitchen'},
+                {'name': 'Appetizers & Tapas', 'icon_name': 'tapas'},
+                {'name': 'Salads & Bowls', 'icon_name': 'eco'},
+                {'name': 'Street Food & Snacks', 'icon_name': 'fastfood'},
+                {'name': 'Desserts & Sweets', 'icon_name': 'cake'},
+                {'name': 'Hot Beverages', 'icon_name': 'coffee'},
                 {'name': 'Cold Drinks', 'icon_name': 'ac_unit'},
-                {'name': 'Alcoholic Drinks', 'icon_name': 'local_bar'},
+                {'name': 'Alcoholic Beverages', 'icon_name': 'local_bar'},
             ]
         }
 
