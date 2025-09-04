@@ -1,4 +1,4 @@
-# makarna_project/settings.py (VERİTABANI BÖLÜMÜ GÜNCELLENMİŞ)
+# makarna_project/settings.py
 
 import os
 from pathlib import Path
@@ -84,7 +84,7 @@ TEMPLATES = [
 WSGI_APPLICATION = 'makarna_project.wsgi.application'
 ASGI_APPLICATION = 'makarna_project.asgi.application'
 
-# === GÜNCELLENMİŞ VERİTABANI AYARLARI (SSL CONNECTION DROP FİX) ===
+# --- VERİTABANI AYARLARI (NEON.TECH POOLED CONNECTION İÇİN FİX) ---
 DATABASES = {
     'default': {}
 }
@@ -98,27 +98,20 @@ if DATABASE_URL_ENV:
     # Neon.tech pooled connection için ayarlar
     DATABASES['default'] = dj_database_url.config(
         default=DATABASE_URL_ENV,
-        conn_max_age=300,  # 5 dakika (600'den düşürüldü)
+        conn_max_age=600,  # Neon için connection pooling
         ssl_require=True,  # Neon SSL gerektiriyor
     )
     
-    # === YENİ: SSL CONNECTION DROP PROBLEMİ İÇİN OPTİMİZE EDİLMİŞ AYARLAR ===
+    # Neon.tech pooled connection için OPTIONS (default_transaction_isolation kaldırıldı)
     DATABASES['default']['OPTIONS'] = {
-        'connect_timeout': 30,      # Bağlantı timeout artırıldı
-        'keepalives_idle': 600,     # TCP keepalive başlangıcı 10 dakika
-        'keepalives_interval': 30,  # Keepalive paket aralığı 30 saniye  
-        'keepalives_count': 3,      # Kaç başarısız keepalive sonrası bağlantıyı kapat
-        'sslmode': 'require',       # Neon için SSL zorunlu
-        'application_name': 'orderai_django_celery',  # Connection tracking için
-        # Cursor ömrünü sınırla
-        'server_side_binding': True,
+        'connect_timeout': 10,
+        'sslmode': 'require',  # Neon için SSL zorunlu
+        'application_name': 'orderai_django',  # Connection tracking için
     }
-    # === SSL CONNECTION DROP FİX SONU ===
     
-    print(f"✅ Neon.tech PostgreSQL (SSL Optimized) veritabanı yapılandırıldı")
+    print(f"✅ Neon.tech PostgreSQL (Pooled) veritabanı yapılandırıldı")
     print(f"   - Host: {DATABASES['default'].get('HOST', 'N/A')}")
     print(f"   - Database: {DATABASES['default'].get('NAME', 'N/A')}")
-    print(f"   - Connection Max Age: {DATABASES['default'].get('CONN_MAX_AGE', 'N/A')}s")
     
 elif DEBUG:
     print("--- LOKAL GELİŞTİRME: SQLite KULLANILIYOR ---")
@@ -210,7 +203,7 @@ CHANNEL_LAYERS = {
     },
 }
 
-# === GÜNCELLENMİŞ CELERY AYARLARI (MEMORY + CONNECTION OPTIMIZATION) ===
+# Celery için ayarlar (transport_options ile)
 CELERY_BROKER_URL = patch_redis_url(
     REDIS_URL,
     {"ssl_cert_reqs": "CERT_REQUIRED"}
@@ -231,29 +224,14 @@ CELERY_ACCEPT_CONTENT = ['json']
 CELERY_TASK_SERIALIZER = 'json'
 CELERY_RESULT_SERIALIZER = 'json'
 CELERY_TIMEZONE = TIME_ZONE
-
-# === DATABASE CONNECTION İÇİN OPTİMİZE EDİLMİŞ WORKER AYARLARI ===
 CELERY_WORKER_CONCURRENCY = 2
 CELERY_WORKER_PREFETCH_MULTIPLIER = 1
 CELERY_TASK_ACKS_LATE = True
-CELERY_WORKER_MAX_TASKS_PER_CHILD = 50    # 100'den düşürüldü (daha sık restart)
+CELERY_WORKER_MAX_TASKS_PER_CHILD = 100
 CELERY_WORKER_DISABLE_RATE_LIMITS = True
 CELERY_TASK_REJECT_ON_WORKER_LOST = True
 CELERY_WORKER_POOL_RESTARTS = True
-CELERY_WORKER_MAX_MEMORY_PER_CHILD = 150000  # 200000'den düşürüldü
-
-# === YENİ: DATABASE CONNECTION POOL AYARLARI ===
-CELERY_WORKER_HIJACK_ROOT_LOGGER = False
-CELERY_WORKER_LOG_COLOR = False
-# Database connection'ları daha sık temizle
-CELERY_BEAT_SCHEDULE = {
-    'cleanup-connections': {
-        'task': 'django.core.management.call_command',
-        'schedule': 300.0,  # Her 5 dakikada bir
-        'args': ('clearsessions',),
-    },
-}
-# === CONNECTION POOL AYARLARI SONU ===
+CELERY_WORKER_MAX_MEMORY_PER_CHILD = 200000
 
 # --- SIMPLE JWT AYARLARI ---
 SIMPLE_JWT = {
@@ -357,8 +335,7 @@ SOCKETIO_ASYNC_MODE = 'threading'
 print(f"🔧 Socket.IO Ayarları:")
 print(f"   - Ping Timeout: {SOCKETIO_SETTINGS['ping_timeout']}ms")
 print(f"   - Ping Interval: {SOCKETIO_SETTINGS['ping_interval']}ms")
-print(f"🔧 Celery Memory + Connection Optimization:")
+print(f"🔧 Celery Memory Optimization:")
 print(f"   - Worker Concurrency: {CELERY_WORKER_CONCURRENCY}")
 print(f"   - Max Tasks Per Child: {CELERY_WORKER_MAX_TASKS_PER_CHILD}")
 print(f"   - Max Memory Per Child: {CELERY_WORKER_MAX_MEMORY_PER_CHILD}KB")
-print(f"   - Database Conn Max Age: {DATABASES['default'].get('CONN_MAX_AGE', 'N/A')}s")
