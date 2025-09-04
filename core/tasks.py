@@ -1,4 +1,4 @@
-# core/tasks.py (GÜNCELLENMİŞ VE TAM VERSİYON)
+# core/tasks.py (GÜNCELLENMİŞ VE TAM VERSİYON - DATABASE RETRY MEKANIZMASI İLE)
 
 from celery import shared_task
 from django.conf import settings
@@ -6,6 +6,8 @@ import logging
 from urllib.parse import urlparse
 import redis
 import json
+import time
+from functools import wraps
 
 from .models import Order
 from .serializers import OrderSerializer
@@ -14,7 +16,69 @@ from datetime import datetime
 from .utils.json_helpers import convert_decimals_to_strings
 from .utils.notification_gate import is_notification_active
 
+# === YENİ EKLENEN: DATABASE RETRY MEKANIZMASI ===
+from django.db import transaction, connection
+from django.db.utils import OperationalError, InterfaceError
+from django.core.exceptions import ValidationError
+
 logger = logging.getLogger(__name__)
+
+def retry_on_database_error(max_retries=3, delay=1, backoff=2):
+    """
+    Veritabanı bağlantı hatalarında otomatik retry yapan decorator.
+    SSL connection drops, timeouts vb. için tasarlanmış.
+    """
+    def decorator(func):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            last_exception = None
+            
+            for attempt in range(max_retries + 1):
+                try:
+                    # Her denemede bağlantıyı temizle
+                    if attempt > 0:
+                        connection.close()
+                        logger.warning(f"[RETRY {attempt}/{max_retries}] Database connection reset for {func.__name__}")
+                    
+                    # Fonksiyonu çalıştır
+                    return func(*args, **kwargs)
+                    
+                except (OperationalError, InterfaceError) as e:
+                    last_exception = e
+                    error_msg = str(e).lower()
+                    
+                    # SSL ve bağlantı hatalarını yakala
+                    if any(keyword in error_msg for keyword in [
+                        'ssl connection', 'connection closed', 'connection lost',
+                        'server closed', 'timeout', 'network'
+                    ]):
+                        if attempt < max_retries:
+                            wait_time = delay * (backoff ** attempt)
+                            logger.warning(
+                                f"[RETRY {attempt + 1}/{max_retries}] Database error in {func.__name__}: {e}. "
+                                f"Retrying in {wait_time}s..."
+                            )
+                            time.sleep(wait_time)
+                            continue
+                        else:
+                            logger.error(f"[RETRY FAILED] Max retries ({max_retries}) reached for {func.__name__}: {e}")
+                    else:
+                        # SSL ile ilgili olmayan hatalar için retry yapma
+                        logger.error(f"[NO RETRY] Non-connection database error in {func.__name__}: {e}")
+                        break
+                        
+                except Exception as e:
+                    # Veritabanı dışı hatalar için retry yapma
+                    logger.error(f"[NO RETRY] Non-database error in {func.__name__}: {e}")
+                    break
+            
+            # Son exception'ı yeniden fırlat
+            if last_exception:
+                raise last_exception
+                
+        return wrapper
+    return decorator
+# === RETRY MEKANIZMASI SONU ===
 
 # Redis istemcisini kurma
 try:
@@ -118,16 +182,18 @@ def send_socket_io_notification(room, event, data):
 # ==================== GÜNCELLENMİŞ FONKSİYON SONU ====================
 
 
-# ==================== GÜNCELLENMİŞ GÖREV BAŞLANGICI ====================
-@shared_task(name="send_order_update_notification")
-def send_order_update_task(order_id, event_type, message, extra_data=None):
+# ==================== GÜNCELLENMİŞ GÖREV (RETRY MEKANIZMASI İLE) ====================
+@shared_task(name="send_order_update_notification", bind=True, autoretry_for=(OperationalError, InterfaceError), retry_kwargs={'max_retries': 3, 'countdown': 5})
+@retry_on_database_error(max_retries=3, delay=1, backoff=2)
+def send_order_update_task(self, order_id, event_type, message, extra_data=None):
     """
     WebSocket üzerinden sipariş güncelleme bildirimini gönderen Celery task'i.
-    Loglama mantığı, engellenen bildirimleri hata olarak göstermemesi için güncellendi.
+    Artık database connection hatalarına karşı retry mekanizması ile korumalı.
     """
     logger.info(f"[Celery Task] Sending notification for Order ID: {order_id}, Event: {event_type}")
     
     try:
+        # === RETRY KORUNMALI DATABASE SORGUSU ===
         order = Order.objects.select_related(
             'table', 'customer', 'business', 'taken_by_staff'
         ).prefetch_related(
@@ -193,10 +259,16 @@ def send_order_update_task(order_id, event_type, message, extra_data=None):
 
     except Order.DoesNotExist:
         logger.error(f"[Celery Task] Order with ID {order_id} not found.")
-        raise
+        # Bu durumda retry yapmayalım çünkü sipariş gerçekten yok
+        return
+    except (OperationalError, InterfaceError) as e:
+        logger.error(f"[Celery Task] Database connection error for order {order_id}: {e}")
+        # Retry decorator otomatik olarak tekrar deneyecek
+        raise  # Celery'nin autoretry mekanizmasını tetiklemek için
     except Exception as e:
         logger.error(f"[Celery Task] Failed to send notification for order {order_id}. Error: {e}", exc_info=True)
-        raise
+        # Diğer hatalar için de retry yapalım (ama daha az)
+        raise self.retry(countdown=10, max_retries=1)
 
 # ==================== GÜNCELLENMİŞ GÖREV SONU ====================
 
@@ -216,6 +288,7 @@ def send_bulk_order_notifications(notification_list):
 
 
 @shared_task(name="test_socket_connection")
+@retry_on_database_error(max_retries=2, delay=1)
 def test_socket_connection():
     """
     Socket bağlantısını test eden task
