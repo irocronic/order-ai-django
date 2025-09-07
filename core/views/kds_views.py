@@ -268,20 +268,34 @@ class KDSOrderViewSet(viewsets.ReadOnlyModelViewSet):
         )
         logger.info(f"KDS '{target_kds_screen.name}': Order #{order.id} için {updated_item_count} kalem 'KDS Hazır' olarak işaretlendi.")
 
+        # ==================== ÇÖZÜMÜN UYGULANDIĞI YER BAŞLANGICI ====================
+
+        # 1. Masa siparişleri için mevcut "tüm KDS'ler hazır mı?" kontrolü (Aynı kalıyor)
         all_kds_relevant_items = OrderItem.objects.filter(
             order=order,
             is_awaiting_staff_approval=False,
             delivered=False,
             menu_item__category__assigned_kds__isnull=False
         )
-        
         all_items_globally_ready = not all_kds_relevant_items.exclude(kds_status=OrderItem.KDS_ITEM_STATUS_READY).exists()
         
-        # +++ ÇÖZÜM KODU BAŞLANGICI +++
-        
+        # 2. YENİ: Takeaway siparişleri için "bu KDS'teki ürünler hazır mı?" kontrolü
+        all_items_on_this_kds_qs = order.order_items.filter(
+            menu_item__category__assigned_kds_id=target_kds_screen.id,
+            is_awaiting_staff_approval=False,
+            delivered=False
+        )
+        all_items_on_this_kds_are_now_ready = not all_items_on_this_kds_qs.exclude(kds_status=OrderItem.KDS_ITEM_STATUS_READY).exists()
+
+        # 3. YENİ: Birleşik koşul
+        # Siparişin hazır sayılması için ya masa siparişidir ve tüm KDS'ler hazırdır,
+        # YA DA paket sipariştir ve bu KDS'teki tüm ürünler hazırdır.
+        is_order_ready_for_pickup = all_items_globally_ready or \
+                                    (order.order_type == 'takeaway' and all_items_on_this_kds_are_now_ready)
+
         notification_event_to_send = None
 
-        if all_items_globally_ready:
+        if is_order_ready_for_pickup:
             if order.status != Order.STATUS_READY_FOR_PICKUP:
                 order.status = Order.STATUS_READY_FOR_PICKUP
                 order.kitchen_completed_at = timezone.now()
@@ -309,7 +323,7 @@ class KDSOrderViewSet(viewsets.ReadOnlyModelViewSet):
                 )
             )
             
-        # +++ ÇÖZÜM KODU SONU +++
+        # ==================== ÇÖZÜMÜN UYGULANDIĞI YER SONU ====================
             
         order.refresh_from_db()
         serializer = self.get_serializer(order)
