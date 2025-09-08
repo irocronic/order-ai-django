@@ -38,7 +38,8 @@ from core.views import (
     ScheduledShiftViewSet,
     NotificationSettingViewSet,
     # ================== YENİ IMPORT ==================
-    IngredientViewSet, # Yeni IngredientViewSet'i import et
+    IngredientViewSet,
+    UnitOfMeasureViewSet, # Yeni UnitOfMeasureViewSet'i import et
     # ================================================
 )
 
@@ -57,9 +58,11 @@ router.register(r'order_items', OrderItemViewSet, basename='orderitem')
 router.register(r'stocks', StockViewSet, basename='stock')
 router.register(r'stock-movements', StockMovementViewSet, basename='stockmovement')
 
-# ================== YENİ KAYIT SATIRI ==================
+# ================== YENİ KAYIT SATIRLARI ==================
 # /api/ingredients/ URL'sini aktif hale getirir
 router.register(r'ingredients', IngredientViewSet, basename='ingredient')
+# /api/units-of-measure/ URL'sini aktif hale getirir
+router.register(r'units-of-measure', UnitOfMeasureViewSet, basename='unitofmeasure')
 # =======================================================
 
 router.register(r'staff-users', StaffUserViewSet, basename='staffuser')

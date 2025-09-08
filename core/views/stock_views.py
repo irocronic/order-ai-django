@@ -8,7 +8,7 @@ from django.db import transaction
 from rest_framework.exceptions import PermissionDenied, ValidationError, NotFound
 
 from ..models import Stock, MenuItemVariant, StockMovement, Business, CustomUser as User, Ingredient
-from ..serializers import StockSerializer, StockMovementSerializer, IngredientSerializer
+from ..serializers import StockSerializer, StockMovementSerializer, IngredientSerializer, UnitOfMeasureSerializer
 from ..utils.order_helpers import get_user_business, PermissionKeys
 
 class StockViewSet(viewsets.ModelViewSet):
@@ -252,4 +252,15 @@ class IngredientViewSet(viewsets.ModelViewSet):
             raise PermissionDenied("Malzeme güncelleme yetkiniz yok.")
             
         serializer.save()
-# =======================================================
+
+
+
+ ================== YENİ EKLENEN BÖLÜM ==================
+class UnitOfMeasureViewSet(viewsets.ReadOnlyModelViewSet):
+    """
+    Tüm ölçü birimlerini listeler.
+    """
+    serializer_class = UnitOfMeasureSerializer
+    permission_classes = [IsAuthenticated]
+    queryset = UnitOfMeasure.objects.all()
+# ======================================================
