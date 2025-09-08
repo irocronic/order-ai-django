@@ -5,21 +5,21 @@ from django.dispatch import receiver
 from django.db import transaction
 from django.db.models import F
 import logging
+from decimal import Decimal # Decimal işlemleri için eklendi
 
-# === GÜNCELLENMİŞ IMPORTLAR ===
 from ..models import (
     Payment, Ingredient, IngredientStockMovement, MenuItemVariant,
     Stock, StockMovement
 )
-# ==============================
 
 logger = logging.getLogger(__name__)
 
-# ==================== YENİ FONKSİYON BAŞLANGICI ====================
 def deduct_variant_stock(variant: MenuItemVariant, quantity_sold: int, order_item_instance):
     """
     Bir varyant satıldığında, onun ana stok kalemini (Stock modeli) düşer.
     Bu, "Stok Yönetimi" ekranındaki stokları yönetir.
+    HATA DÜZELTMESİ: Stok miktarını veritabanına kaydetmeden önce hesaplar
+    ve negatif olmasını engeller.
     """
     try:
         # Yarış koşullarını (race condition) önlemek için satırı kilitle
@@ -32,17 +32,19 @@ def deduct_variant_stock(variant: MenuItemVariant, quantity_sold: int, order_ite
 
         original_quantity = stock_to_update.quantity
         
-        # Stoktan düşülecek miktar, mevcut stoktan fazlaysa stoğu sıfırla.
+        # === ÇÖZÜM: Yeni miktar veritabanına yazmadan ÖNCE hesaplanır ===
+        # Stoktan düşülecek miktar, mevcut stoktan fazlaysa stoğu sıfırlar.
         new_quantity_val = max(0, original_quantity - quantity_sold)
+        # ===============================================================
 
-        # Stok hareketini kaydet
+        # Stok hareketini kaydet (yeni ve güvenli değeri kullanarak)
         StockMovement.objects.create(
             stock=stock_to_update,
             variant=variant,
             movement_type='SALE',
             quantity_change=-quantity_sold,
             quantity_before=original_quantity,
-            quantity_after=new_quantity_val, # Hesaplanan yeni değeri kullan
+            quantity_after=new_quantity_val,
             user=order_item_instance.order.taken_by_staff,
             description=f"Sipariş #{order_item_instance.order.id} ile satış.",
             related_order=order_item_instance.order
@@ -52,7 +54,7 @@ def deduct_variant_stock(variant: MenuItemVariant, quantity_sold: int, order_ite
         stock_to_update.quantity = F('quantity') - quantity_sold
         stock_to_update.save(update_fields=['quantity'])
         
-        # Negatif stok olmaması için stoğu tekrar kontrol et ve gerekirse düzelt
+        # Negatif stok olmaması için stoğu tekrar kontrol et ve gerekirse düzelt (Ekstra Güvenlik)
         stock_to_update.refresh_from_db()
         if stock_to_update.quantity < 0:
             stock_to_update.quantity = 0
@@ -68,7 +70,6 @@ def deduct_variant_stock(variant: MenuItemVariant, quantity_sold: int, order_ite
         logger.warning(f"ANA STOK DÜŞME HATASI: Varyant '{variant.name}' (ID: {variant.id}) için stok kaydı bulunamadı.")
     except Exception as e:
         logger.error(f"ANA STOK DÜŞME HATASI: Varyant '{variant.name}' düşülürken beklenmedik hata: {e}", exc_info=True)
-# ==================== YENİ FONKSİYON SONU ======================
 
 
 def deduct_ingredients_for_variant(variant: MenuItemVariant, quantity_sold: int, order_item_instance):
@@ -84,7 +85,9 @@ def deduct_ingredients_for_variant(variant: MenuItemVariant, quantity_sold: int,
             ingredient_to_update = Ingredient.objects.select_for_update().get(id=ingredient.id)
             
             original_quantity = ingredient_to_update.stock_quantity
-            new_quantity = original_quantity - quantity_to_deduct
+            
+            # GÜVENLİK GÜNCELLEMESİ: Malzeme stoğunun da eksiye düşmemesini garantile
+            new_quantity = max(Decimal('0.000'), original_quantity - quantity_to_deduct)
 
             IngredientStockMovement.objects.create(
                 ingredient=ingredient_to_update,
@@ -99,6 +102,13 @@ def deduct_ingredients_for_variant(variant: MenuItemVariant, quantity_sold: int,
             
             ingredient_to_update.stock_quantity = F('stock_quantity') - quantity_to_deduct
             ingredient_to_update.save(update_fields=['stock_quantity'])
+            
+            # Ekstra güvenlik katmanı
+            ingredient_to_update.refresh_from_db()
+            if ingredient_to_update.stock_quantity < 0:
+                ingredient_to_update.stock_quantity = Decimal('0.000')
+                ingredient_to_update.save(update_fields=['stock_quantity'])
+
 
             logger.info(
                 f"Malzeme Stoğu Düşüldü: '{ingredient.name}' (ID: {ingredient.id}), "
@@ -112,7 +122,6 @@ def deduct_ingredients_for_variant(variant: MenuItemVariant, quantity_sold: int,
             logger.error(f"MALZEME STOK DÜŞME HATASI: Malzeme '{ingredient.name}' düşülürken beklenmedik hata: {e}", exc_info=True)
 
 
-# ==================== GÜNCELLENMİŞ SİNYAL FONKSİYONU ====================
 @receiver(post_save, sender=Payment)
 @transaction.atomic
 def handle_payment_and_stock_deduction(sender, instance: Payment, created: bool, **kwargs):
@@ -146,14 +155,14 @@ def handle_payment_and_stock_deduction(sender, instance: Payment, created: bool,
                     total_quantity_sold = order_item.quantity * campaign_item.quantity
                     # Malzeme stoğunu düş (reçete sistemi)
                     deduct_ingredients_for_variant(campaign_item.variant, total_quantity_sold, order_item)
-                    # === YENİ: Ana ürün stoğunu düş ===
+                    # Ana ürün stoğunu düş
                     deduct_variant_stock(campaign_item.variant, total_quantity_sold, order_item)
 
         # Durum 2: Satılan ürün normal bir ürün ise (varyantı olan)
         elif order_item.variant:
             # Malzeme stoğunu düş (reçete sistemi)
             deduct_ingredients_for_variant(order_item.variant, order_item.quantity, order_item)
-            # === YENİ: Ana ürün stoğunu düş ===
+            # Ana ürün stoğunu düş
             deduct_variant_stock(order_item.variant, order_item.quantity, order_item)
 
         # Durum 3: Satılan ürünün ekstraları varsa, onların da stoğunu düş
@@ -161,5 +170,5 @@ def handle_payment_and_stock_deduction(sender, instance: Payment, created: bool,
             total_extra_quantity_sold = order_item.quantity * extra.quantity
             # Malzeme stoğunu düş (reçete sistemi)
             deduct_ingredients_for_variant(extra.variant, total_extra_quantity_sold, order_item)
-            # === YENİ: Ana ürün stoğunu düş ===
+            # Ana ürün stoğunu düş
             deduct_variant_stock(extra.variant, total_extra_quantity_sold, order_item)
