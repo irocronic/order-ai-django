@@ -8,18 +8,25 @@ from django.db import transaction
 from django.db.models import F
 from decimal import Decimal
 from rest_framework.exceptions import PermissionDenied, ValidationError, NotFound
+from django.utils import timezone # timezone importu eklendi
 
 from ..models import (
-    Stock, MenuItemVariant, StockMovement, Business, CustomUser as User, 
-    Ingredient, UnitOfMeasure, RecipeItem, IngredientStockMovement, 
+    Stock, MenuItemVariant, StockMovement, Business, CustomUser as User,
+    Ingredient, UnitOfMeasure, RecipeItem, IngredientStockMovement,
     Supplier, PurchaseOrder, PurchaseOrderItem
 )
 from ..serializers import (
-    StockSerializer, StockMovementSerializer, IngredientSerializer, 
+    StockSerializer, StockMovementSerializer, IngredientSerializer,
     UnitOfMeasureSerializer, RecipeItemSerializer, IngredientStockMovementSerializer,
     SupplierSerializer, PurchaseOrderSerializer
 )
 from ..utils.order_helpers import get_user_business, PermissionKeys
+
+
+# StockViewSet, StockMovementViewSet, IngredientViewSet, UnitOfMeasureViewSet, 
+# RecipeItemViewSet ve SupplierViewSet sınıfları burada yer alacak (değişiklik yok)
+# ...
+# ...
 
 class StockViewSet(viewsets.ModelViewSet):
     serializer_class = StockSerializer
@@ -180,6 +187,7 @@ class StockViewSet(viewsets.ModelViewSet):
         serializer = StockMovementSerializer(movements, many=True, context={'request': request})
         return Response(serializer.data)
 
+
 class StockMovementViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):
     serializer_class = StockMovementSerializer
     permission_classes = [IsAuthenticated]
@@ -227,10 +235,8 @@ class StockMovementViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):
             
         return queryset.order_by('-timestamp')
 
+
 class IngredientViewSet(viewsets.ModelViewSet):
-    """
-    Malzemeleri (ingredients) yönetmek için API endpoint'leri.
-    """
     serializer_class = IngredientSerializer
     permission_classes = [IsAuthenticated]
 
@@ -262,7 +268,6 @@ class IngredientViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['post'], url_path='adjust-stock')
     @transaction.atomic
     def adjust_stock(self, request, pk=None):
-        """ Malzeme stoğunu manuel olarak ayarlar (giriş, fire, sayım vb.). """
         ingredient = self.get_object()
         user = request.user
 
@@ -316,7 +321,6 @@ class IngredientViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=['get'], url_path='history')
     def history(self, request, pk=None):
-        """ Belirli bir malzemenin tüm stok hareketlerini listeler. """
         ingredient = self.get_object()
         movements = ingredient.movements.select_related('user').order_by('-timestamp')
         
@@ -329,17 +333,11 @@ class IngredientViewSet(viewsets.ModelViewSet):
         return Response(serializer.data)
 
 class UnitOfMeasureViewSet(viewsets.ReadOnlyModelViewSet):
-    """
-    Tüm ölçü birimlerini listeler.
-    """
     serializer_class = UnitOfMeasureSerializer
     permission_classes = [IsAuthenticated]
     queryset = UnitOfMeasure.objects.all()
 
 class RecipeItemViewSet(viewsets.ModelViewSet):
-    """
-    Bir ürün varyantına ait reçete kalemlerini (malzemeleri) yönetir.
-    """
     serializer_class = RecipeItemSerializer
     permission_classes = [IsAuthenticated]
 
@@ -398,6 +396,23 @@ class PurchaseOrderViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         user_business = get_user_business(self.request.user)
         serializer.save(business=user_business)
+    
+    # ==================== EKLENMESİ GEREKEN FONKSİYON ====================
+    @action(detail=True, methods=['post'], url_path='cancel')
+    def cancel_order(self, request, pk=None):
+        """Beklemede olan bir alım siparişini iptal eder."""
+        purchase_order = self.get_object()
+        if purchase_order.status != 'pending':
+            return Response(
+                {'detail': 'Sadece "Beklemede" durumundaki siparişler iptal edilebilir.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        purchase_order.status = 'cancelled'
+        purchase_order.save(update_fields=['status'])
+        
+        return Response(PurchaseOrderSerializer(purchase_order).data)
+    # =====================================================================
 
     @action(detail=True, methods=['post'], url_path='complete')
     def complete_order(self, request, pk=None):
@@ -406,8 +421,9 @@ class PurchaseOrderViewSet(viewsets.ModelViewSet):
             return Response({'detail': 'Bu alım siparişi zaten tamamlanmış.'}, status=status.HTTP_400_BAD_REQUEST)
         
         purchase_order.status = 'completed'
-        purchase_order.completed_at = timezone.now()
+        # Not: Modelinizde 'completed_at' alanı yok, bu satır hata verebilir.
+        # Eğer bu alanı eklemediyseniz, aşağıdaki satırı silin veya yoruma alın.
+        # purchase_order.completed_at = timezone.now() 
         purchase_order.save()
         
-        # Stok güncelleme sinyali burada tetiklenecek.
         return Response(PurchaseOrderSerializer(purchase_order).data)
