@@ -12,7 +12,7 @@ from .payment_views import PaymentViewSet
 from .report_views import ReportView, DetailedSalesReportView
 
 # ================== GÜNCELLEME BURADA ==================
-from .stock_views import StockViewSet, StockMovementViewSet, IngredientViewSet
+from .stock_views import StockViewSet, StockMovementViewSet, IngredientViewSet, UnitOfMeasureViewSet
 # =======================================================
 
 from .table_views import TableViewSet
@@ -48,9 +48,10 @@ __all__ = [
     'DetailedSalesReportView',
     'StaffPerformanceReportView',
     'StockViewSet',
-    'StockMovementViewSet',
-    # ================== GÜNCELLEME BURADA ==================
+    'StockMovementViewSet,
     'IngredientViewSet',
+    # ================== GÜNCELLEME BURADA ==================
+    'UnitOfMeasureViewSet',
     # =======================================================
     'TableViewSet',
     'WaitingCustomerList',
