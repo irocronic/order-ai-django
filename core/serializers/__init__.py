@@ -38,10 +38,14 @@ from .order_serializers import (
 from .waiting_customer_serializers import (
     WaitingCustomerSerializer,
 )
+# ================== GÜNCELLEME BURADA ==================
 from .stock_serializers import (
     StockSerializer,
     StockMovementSerializer,
+    IngredientSerializer, # YENİ: IngredientSerializer eklendi
+    UnitOfMeasureSerializer, # YENİ: UnitOfMeasureSerializer eklendi
 )
+# =======================================================
 from .report_serializers import (
     StaffPerformanceSerializer,
     DetailedSaleItemSerializer,
@@ -76,8 +80,12 @@ __all__ = [
     'CategorySerializer',
     'MenuItemVariantSerializer',
     'MenuItemSerializer',
+    # ================== GÜNCELLEME BURADA ==================
     'StockSerializer',
     'StockMovementSerializer',
+    'IngredientSerializer', # YENİ: __all__ listesine eklendi
+    'UnitOfMeasureSerializer', # YENİ: __all__ listesine eklendi
+    # =======================================================
     'PaymentSerializer',
     'CreditPaymentDetailsSerializer',
     'OrderItemExtraSerializer',
