@@ -10,7 +10,18 @@ from .menu_views import CategoryViewSet, MenuItemViewSet, MenuItemVariantViewSet
 from .order_views import OrderViewSet, OrderItemViewSet
 from .payment_views import PaymentViewSet
 from .report_views import ReportView, DetailedSalesReportView
-from .stock_views import StockViewSet, StockMovementViewSet, IngredientViewSet, UnitOfMeasureViewSet, RecipeItemViewSet # <<< HATA ÇÖZÜMÜ 1: RecipeItemViewSet buraya eklendi
+# === GÜNCELLEME BURADA BAŞLIYOR ===
+from .stock_views import (
+    StockViewSet, 
+    StockMovementViewSet, 
+    IngredientViewSet, 
+    UnitOfMeasureViewSet, 
+    RecipeItemViewSet,
+    # YENİ: Alım Yönetimi ViewSet'leri eklendi
+    SupplierViewSet,
+    PurchaseOrderViewSet,
+)
+# === GÜNCELLEME BURADA BİTİYOR ===
 from .table_views import TableViewSet
 from .waiting_customer_views import WaitingCustomerList, WaitingCustomerDetail
 from .user_views import AccountSettingsView, StaffUserViewSet
@@ -47,7 +58,11 @@ __all__ = [
     'StockMovementViewSet',
     'IngredientViewSet',
     'UnitOfMeasureViewSet',
-    'RecipeItemViewSet',  # <<< HATA ÇÖZÜMÜ 2: RecipeItemViewSet __all__ listesine eklendi
+    'RecipeItemViewSet',
+    # === YENİ: Alım Yönetimi ViewSet'leri __all__ listesine eklendi ===
+    'SupplierViewSet',
+    'PurchaseOrderViewSet',
+    # ===============================================================
     'TableViewSet',
     'WaitingCustomerList',
     'WaitingCustomerDetail',

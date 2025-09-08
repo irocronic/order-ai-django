@@ -45,7 +45,12 @@ from .stock_serializers import (
     IngredientSerializer, 
     UnitOfMeasureSerializer,
     RecipeItemSerializer,
-    IngredientStockMovementSerializer, # YENİ: IngredientStockMovementSerializer eklendi
+    IngredientStockMovementSerializer,
+    # === YENİ: Alım Yönetimi Serializer'ları eklendi ===
+    SupplierSerializer,
+    PurchaseOrderItemSerializer,
+    PurchaseOrderSerializer,
+    # =================================================
 )
 # =======================================================
 from .report_serializers import (
@@ -88,7 +93,12 @@ __all__ = [
     'IngredientSerializer', 
     'UnitOfMeasureSerializer',
     'RecipeItemSerializer',
-    'IngredientStockMovementSerializer', # YENİ: __all__ listesine eklendi
+    'IngredientStockMovementSerializer',
+    # === YENİ: Alım Yönetimi Serializer'ları __all__ listesine eklendi ===
+    'SupplierSerializer',
+    'PurchaseOrderItemSerializer',
+    'PurchaseOrderSerializer',
+    # ===================================================================
     # =======================================================
     'PaymentSerializer',
     'CreditPaymentDetailsSerializer',

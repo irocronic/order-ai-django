@@ -6,8 +6,9 @@ import logging
 from urllib.parse import urlparse
 import redis
 import json
+from django.core.mail import send_mail # E-posta göndermek için eklendi
 
-from .models import Order
+from .models import Order, Ingredient # Ingredient modeli import edildi
 from .serializers import OrderSerializer
 import uuid
 from datetime import datetime
@@ -283,3 +284,69 @@ def send_test_notification(business_id=67):
     else:
         logger.error(f"[Celery Task] 🧪 Manual test notification failed for {room}")
         return False
+
+# ==================== YENİ GÖREV BAŞLANGICI ====================
+
+@shared_task(name="send_low_stock_email_to_supplier")
+def send_low_stock_notification_email_task(ingredient_id):
+    """
+    Bir malzemenin stoğu kritik seviyenin altına düştüğünde,
+    o malzemenin tercih edilen tedarikçisine e-posta gönderir.
+    """
+    logger.info(f"[Celery Task] Düşük stok e-posta bildirimi başlatılıyor. Malzeme ID: {ingredient_id}")
+    try:
+        # İlgili modelleri ve fonksiyonları task içinde import etmek iyi bir pratiktir.
+        ingredient = Ingredient.objects.select_related('preferred_supplier', 'unit', 'business').get(id=ingredient_id)
+
+        # 1. Tercih edilen tedarikçi veya e-posta adresi var mı kontrol et.
+        if not ingredient.preferred_supplier or not ingredient.preferred_supplier.email:
+            logger.warning(f"Malzeme '{ingredient.name}' (ID: {ingredient.id}) için tercih edilen tedarikçi veya e-posta adresi bulunamadı. E-posta gönderilmedi.")
+            return
+
+        supplier = ingredient.preferred_supplier
+        business = ingredient.business
+
+        # 2. E-posta içeriğini oluştur.
+        subject = f"Düşük Stok Uyarısı: {ingredient.name} - {business.name}"
+        message = f"""
+Merhaba {supplier.contact_person or supplier.name},
+
+{business.name} adlı işletmemizde, yönettiğiniz bir ürün için stok seviyesi kritik düzeyin altına düşmüştür.
+
+Malzeme Detayları:
+- Malzeme Adı: {ingredient.name}
+- Mevcut Stok: {ingredient.stock_quantity} {ingredient.unit.abbreviation}
+- Uyarı Eşiği: {ingredient.alert_threshold} {ingredient.unit.abbreviation}
+
+Lütfen en kısa sürede yeni bir sevkiyat planlaması için bizimle iletişime geçin.
+
+İşletme Bilgileri:
+- İşletme: {business.name}
+- Telefon: {business.phone or 'Belirtilmemiş'}
+
+Teşekkürler,
+{business.name} Yönetimi
+"""
+        from_email = settings.DEFAULT_FROM_EMAIL
+        recipient_list = [supplier.email]
+
+        # 3. E-postayı gönder.
+        send_mail(
+            subject,
+            message,
+            from_email,
+            recipient_list,
+            fail_silently=False
+        )
+        
+        logger.info(f"[Celery Task] ✅ Düşük stok e-postası başarıyla '{supplier.email}' adresine gönderildi. Malzeme: {ingredient.name}")
+
+    except Ingredient.DoesNotExist:
+        logger.error(f"[Celery Task] ❌ Malzeme ID'si {ingredient_id} olan bir malzeme bulunamadı.")
+    except Exception as e:
+        logger.error(f"[Celery Task] ❌ Düşük stok e-postası gönderilirken beklenmedik bir hata oluştu: {e}", exc_info=True)
+        # Hata durumunda görevin tekrar denenmesini sağlamak için hatayı tekrar fırlat.
+        # Bu, Celery'nin retry mekanizmasını kullanmanıza olanak tanır.
+        raise self.retry(exc=e, countdown=60) # 60 saniye sonra tekrar dene
+
+# ==================== YENİ GÖREV SONU ====================

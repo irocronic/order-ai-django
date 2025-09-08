@@ -40,6 +40,10 @@ from core.views import (
     IngredientViewSet,
     UnitOfMeasureViewSet,
     RecipeItemViewSet,
+    # === YENİ: Alım Yönetimi için ViewSet'ler import edildi ===
+    SupplierViewSet,
+    PurchaseOrderViewSet,
+    # =========================================================
 )
 
 from subscriptions.views import VerifyPurchaseView
@@ -65,6 +69,11 @@ router.register(r'campaigns', CampaignMenuViewSet, basename='campaignmenu')
 router.register(r'kds-screens', KDSScreenViewSet, basename='kdsscreen')
 router.register(r'shifts', ShiftViewSet, basename='shift')
 router.register(r'schedule', ScheduledShiftViewSet, basename='scheduledshift')
+
+# === YENİ: Alım Yönetimi için router kayıtları eklendi ===
+router.register(r'suppliers', SupplierViewSet, basename='supplier')
+router.register(r'purchase-orders', PurchaseOrderViewSet, basename='purchaseorder')
+# =========================================================
 
 # YÖNETİCİ API'leri için ayrı bir DefaultRouter
 admin_router = DefaultRouter()

@@ -1,7 +1,7 @@
 # core/serializers/stock_serializers.py
 
 from rest_framework import serializers
-from ..models import Stock, StockMovement, MenuItemVariant, CustomUser as User, Ingredient, UnitOfMeasure, RecipeItem, IngredientStockMovement
+from ..models import Stock, StockMovement, MenuItemVariant, CustomUser as User, Ingredient, UnitOfMeasure, RecipeItem, IngredientStockMovement, Supplier, PurchaseOrder, PurchaseOrderItem
 
 class StockSerializer(serializers.ModelSerializer):
     variant_name = serializers.CharField(source='variant.name', read_only=True)
@@ -73,7 +73,7 @@ class IngredientSerializer(serializers.ModelSerializer):
         model = Ingredient
         fields = [
             'id', 'name', 'unit', 'unit_id', 'stock_quantity', 
-            'alert_threshold', 'last_updated', 'business'
+            'alert_threshold', 'last_updated', 'business', 'preferred_supplier'
         ]
         read_only_fields = ['last_updated', 'business']
 
@@ -116,3 +116,26 @@ class IngredientStockMovementSerializer(serializers.ModelSerializer):
             'quantity_after', 'timestamp', 'user_username', 'description', 
             'related_order_item'
         ]
+
+class SupplierSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Supplier
+        fields = ['id', 'name', 'contact_person', 'email', 'phone', 'address']
+        read_only_fields = ['business']
+
+class PurchaseOrderItemSerializer(serializers.ModelSerializer):
+    ingredient_name = serializers.CharField(source='ingredient.name', read_only=True)
+    unit_abbreviation = serializers.CharField(source='ingredient.unit.abbreviation', read_only=True)
+
+    class Meta:
+        model = PurchaseOrderItem
+        fields = ['id', 'ingredient', 'ingredient_name', 'unit_abbreviation', 'quantity', 'unit_price']
+
+class PurchaseOrderSerializer(serializers.ModelSerializer):
+    items = PurchaseOrderItemSerializer(many=True)
+    supplier_name = serializers.CharField(source='supplier.name', read_only=True)
+
+    class Meta:
+        model = PurchaseOrder
+        fields = ['id', 'supplier', 'supplier_name', 'status', 'created_at', 'completed_at', 'total_cost', 'items']
+        read_only_fields = ['business', 'total_cost']

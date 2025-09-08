@@ -9,10 +9,15 @@ from django.db.models import F
 from decimal import Decimal
 from rest_framework.exceptions import PermissionDenied, ValidationError, NotFound
 
-from ..models import Stock, MenuItemVariant, StockMovement, Business, CustomUser as User, Ingredient, UnitOfMeasure, RecipeItem, IngredientStockMovement
+from ..models import (
+    Stock, MenuItemVariant, StockMovement, Business, CustomUser as User, 
+    Ingredient, UnitOfMeasure, RecipeItem, IngredientStockMovement, 
+    Supplier, PurchaseOrder, PurchaseOrderItem
+)
 from ..serializers import (
     StockSerializer, StockMovementSerializer, IngredientSerializer, 
-    UnitOfMeasureSerializer, RecipeItemSerializer, IngredientStockMovementSerializer
+    UnitOfMeasureSerializer, RecipeItemSerializer, IngredientStockMovementSerializer,
+    SupplierSerializer, PurchaseOrderSerializer
 )
 from ..utils.order_helpers import get_user_business, PermissionKeys
 
@@ -363,3 +368,46 @@ class RecipeItemViewSet(viewsets.ModelViewSet):
             raise PermissionDenied("Bu ürüne malzeme ekleme yetkiniz yok.")
             
         serializer.save()
+
+class SupplierViewSet(viewsets.ModelViewSet):
+    serializer_class = SupplierSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        user = self.request.user
+        user_business = get_user_business(user)
+        if user_business:
+            return Supplier.objects.filter(business=user_business)
+        return Supplier.objects.none()
+
+    def perform_create(self, serializer):
+        user_business = get_user_business(self.request.user)
+        serializer.save(business=user_business)
+
+class PurchaseOrderViewSet(viewsets.ModelViewSet):
+    serializer_class = PurchaseOrderSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        user = self.request.user
+        user_business = get_user_business(user)
+        if user_business:
+            return PurchaseOrder.objects.filter(business=user_business).prefetch_related('items__ingredient__unit')
+        return PurchaseOrder.objects.none()
+
+    def perform_create(self, serializer):
+        user_business = get_user_business(self.request.user)
+        serializer.save(business=user_business)
+
+    @action(detail=True, methods=['post'], url_path='complete')
+    def complete_order(self, request, pk=None):
+        purchase_order = self.get_object()
+        if purchase_order.status == 'completed':
+            return Response({'detail': 'Bu alım siparişi zaten tamamlanmış.'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        purchase_order.status = 'completed'
+        purchase_order.completed_at = timezone.now()
+        purchase_order.save()
+        
+        # Stok güncelleme sinyali burada tetiklenecek.
+        return Response(PurchaseOrderSerializer(purchase_order).data)

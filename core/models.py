@@ -200,7 +200,54 @@ class Business(models.Model):
     def __str__(self):
         return self.name
 
-# === YENİ MODELLER BAŞLANGICI ===
+# === YENİ MODELLER: Tedarikçi ve Alım Yönetimi ===
+
+class Supplier(models.Model):
+    """
+    Malzeme alımı yapılan tedarikçileri temsil eder.
+    """
+    business = models.ForeignKey(Business, on_delete=models.CASCADE, related_name='suppliers', verbose_name="İşletme")
+    name = models.CharField(max_length=200, verbose_name="Tedarikçi Adı")
+    contact_person = models.CharField(max_length=150, blank=True, null=True, verbose_name="Yetkili Kişi")
+    email = models.EmailField(max_length=255, blank=True, null=True, verbose_name="E-posta Adresi", help_text="Düşük stok bildirimleri bu adrese gönderilir.")
+    phone = models.CharField(max_length=20, blank=True, null=True, verbose_name="Telefon")
+    address = models.TextField(blank=True, null=True, verbose_name="Adres")
+
+    class Meta:
+        verbose_name = "Tedarikçi"
+        verbose_name_plural = "Tedarikçiler"
+        unique_together = ('business', 'name')
+        ordering = ['name']
+
+    def __str__(self):
+        return self.name
+
+class PurchaseOrder(models.Model):
+    """
+    Tedarikçilerden yapılan alımları (faturaları) temsil eder.
+    """
+    class Status(models.TextChoices):
+        PENDING = 'pending', _('Beklemede')
+        COMPLETED = 'completed', _('Tamamlandı')
+        CANCELLED = 'cancelled', _('İptal Edildi')
+
+    business = models.ForeignKey(Business, on_delete=models.CASCADE, related_name='purchase_orders', verbose_name="İşletme")
+    supplier = models.ForeignKey(Supplier, on_delete=models.PROTECT, related_name='purchase_orders', verbose_name="Tedarikçi")
+    order_date = models.DateTimeField(default=timezone.now, verbose_name="Alım Tarihi")
+    status = models.CharField(max_length=20, choices=Status.choices, default=Status.PENDING, verbose_name="Durum")
+    notes = models.TextField(blank=True, null=True, verbose_name="Notlar")
+    invoice_image_url = models.URLField(max_length=1024, blank=True, null=True, verbose_name="Fatura Görseli URL")
+    total_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0.00, verbose_name="Toplam Tutar")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Alım Faturası"
+        verbose_name_plural = "Alım Faturaları"
+        ordering = ['-order_date']
+
+    def __str__(self):
+        return f"Alım #{self.id} - {self.supplier.name} ({self.order_date.strftime('%d.%m.%Y')})"
 
 class UnitOfMeasure(models.Model):
     """Ölçü birimlerini tanımlar (örn: Gram, Adet, Litre)."""
@@ -222,7 +269,11 @@ class Ingredient(models.Model):
     stock_quantity = models.DecimalField(max_digits=10, decimal_places=3, default=0.000, verbose_name="Stok Miktarı")
     alert_threshold = models.DecimalField(max_digits=10, decimal_places=3, null=True, blank=True, verbose_name="Uyarı Eşiği")
     last_updated = models.DateTimeField(auto_now=True)
-
+    # --- YENİ ALANLAR ---
+    supplier = models.ForeignKey(Supplier, on_delete=models.SET_NULL, null=True, blank=True, related_name='ingredients', verbose_name="Tedarikçi")
+    cost_price = models.DecimalField(max_digits=10, decimal_places=3, null=True, blank=True, verbose_name="Birim Maliyet Fiyatı")
+    # --------------------
+    
     class Meta:
         verbose_name = "Malzeme"
         verbose_name_plural = "Malzemeler"
@@ -232,7 +283,22 @@ class Ingredient(models.Model):
     def __str__(self):
         return f"{self.name} ({self.stock_quantity} {self.unit.abbreviation})"
 
-# === YENİ MODELLER SONU ===
+class PurchaseOrderItem(models.Model):
+    """
+    Bir alım faturasındaki her bir malzeme kalemini temsil eder.
+    """
+    purchase_order = models.ForeignKey(PurchaseOrder, on_delete=models.CASCADE, related_name='items', verbose_name="Alım Faturası")
+    ingredient = models.ForeignKey(Ingredient, on_delete=models.PROTECT, related_name='purchase_items', verbose_name="Malzeme")
+    quantity = models.DecimalField(max_digits=10, decimal_places=3, verbose_name="Miktar")
+    unit_price = models.DecimalField(max_digits=10, decimal_places=3, verbose_name="Birim Alış Fiyatı (Maliyet)")
+
+    class Meta:
+        verbose_name = "Alım Faturası Kalemi"
+        verbose_name_plural = "Alım Faturası Kalemleri"
+        unique_together = ('purchase_order', 'ingredient')
+
+    def __str__(self):
+        return f"{self.quantity} {self.ingredient.unit.abbreviation} x {self.ingredient.name}"
 
 class KDSScreen(models.Model):
     business = models.ForeignKey(Business, on_delete=models.CASCADE, related_name='kds_screens', verbose_name="İşletme")
@@ -889,9 +955,6 @@ class ScheduledShift(models.Model):
 
     def __str__(self):
         return f"{self.staff.username} - {self.date.strftime('%d/%m/%Y')} - {self.shift.name}"
-
-
-
 
 class NotificationSetting(models.Model):
     """

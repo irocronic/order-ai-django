@@ -17,7 +17,8 @@ from .models import (
     Shift, ScheduledShift,
     STAFF_PERMISSION_CHOICES, NOTIFICATION_EVENT_TYPES,
     # === YENİ: UnitOfMeasure ve Ingredient modelleri import edildi ===
-    UnitOfMeasure, Ingredient, RecipeItem, IngredientStockMovement 
+    UnitOfMeasure, Ingredient, RecipeItem, IngredientStockMovement,
+    Supplier, PurchaseOrder, PurchaseOrderItem # YENİ EKLENENLER
     # =============================================================
 )
 
@@ -27,6 +28,62 @@ class UnitOfMeasureAdmin(admin.ModelAdmin):
     list_display = ('name', 'abbreviation')
     search_fields = ('name',)
 # =====================================================
+
+# === YENİ: Supplier, PurchaseOrder için Admin sınıfları ===
+@admin.register(Supplier)
+class SupplierAdmin(admin.ModelAdmin):
+    list_display = ('name', 'business', 'contact_person', 'email', 'phone')
+    list_filter = ('business',)
+    search_fields = ('name', 'contact_person', 'email', 'business__name')
+
+class PurchaseOrderItemInline(admin.TabularInline):
+    model = PurchaseOrderItem
+    extra = 1
+    autocomplete_fields = ['ingredient']
+
+@admin.register(PurchaseOrder)
+class PurchaseOrderAdmin(admin.ModelAdmin):
+    list_display = ('id', 'supplier', 'business', 'order_date', 'status', 'total_amount')
+    list_filter = ('status', 'business', 'supplier')
+    search_fields = ('id', 'supplier__name', 'business__name')
+    list_editable = ('status',)
+    inlines = [PurchaseOrderItemInline]
+    autocomplete_fields = ['supplier']
+# ==========================================================
+
+# === GÜNCELLENECEK: IngredientAdmin ===
+@admin.register(Ingredient)
+class IngredientAdmin(admin.ModelAdmin):
+    list_display = ('name', 'business', 'stock_quantity', 'unit', 'supplier', 'cost_price', 'alert_threshold')
+    list_filter = ('business', 'unit', 'supplier')
+    search_fields = ('name', 'business__name', 'supplier__name')
+    autocomplete_fields = ['business', 'unit', 'supplier']
+    list_editable = ('stock_quantity', 'cost_price', 'alert_threshold')
+# ======================================
+
+# === YENİ: RecipeItem için Admin sınıfı ===
+@admin.register(RecipeItem)
+class RecipeItemAdmin(admin.ModelAdmin):
+    list_display = ('variant', 'ingredient', 'quantity', 'ingredient_unit')
+    list_filter = ('variant__menu_item__business', 'ingredient__business')
+    search_fields = ('variant__name', 'variant__menu_item__name', 'ingredient__name')
+    autocomplete_fields = ['variant', 'ingredient']
+    
+    def ingredient_unit(self, obj):
+        return obj.ingredient.unit.abbreviation
+    ingredient_unit.short_description = 'Birim'
+# =============================================
+
+# === YENİ: IngredientStockMovement için Admin sınıfı ===
+@admin.register(IngredientStockMovement)
+class IngredientStockMovementAdmin(admin.ModelAdmin):
+    list_display = ('ingredient', 'movement_type', 'quantity_change', 'quantity_before', 'quantity_after', 'timestamp', 'user')
+    list_filter = ('movement_type', 'ingredient__business', 'timestamp')
+    search_fields = ('ingredient__name', 'user__username', 'description')
+    readonly_fields = ('timestamp',)
+    date_hierarchy = 'timestamp'
+    list_select_related = ('ingredient', 'user', 'related_order_item')
+# =======================================================
 
 # CustomUserAdmin sınıfında değişiklik yok, aynı kalıyor
 @admin.register(CustomUser)
