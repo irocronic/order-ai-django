@@ -1,4 +1,4 @@
-# core/tasks.py (GÜNCELLENMİŞ VE TAM VERSİYON)
+# core/tasks.py
 
 from celery import shared_task
 from django.conf import settings
@@ -6,9 +6,9 @@ import logging
 from urllib.parse import urlparse
 import redis
 import json
-from django.core.mail import send_mail # E-posta göndermek için eklendi
+from django.core.mail import send_mail
 
-from .models import Order, Ingredient # Ingredient modeli import edildi
+from .models import Order, Ingredient
 from .serializers import OrderSerializer
 import uuid
 from datetime import datetime
@@ -25,7 +25,7 @@ try:
         'port': url.port,
         'ssl': url.scheme == 'rediss',
         'ssl_cert_reqs': None,
-        'decode_responses': False,  # Binary veri için False
+        'decode_responses': False,
     }
     if url.password:
         redis_opts['password'] = url.password
@@ -38,7 +38,6 @@ except Exception as e:
     redis_client = None
 
 
-# ==================== GÜNCELLENMİŞ FONKSİYON BAŞLANGICI ====================
 def send_socket_io_notification(room, event, data):
     """
     Socket.IO bildirimi gönderen yardımcı fonksiyon.
@@ -49,11 +48,10 @@ def send_socket_io_notification(room, event, data):
     if event_type_to_check and event_type_to_check != 'test_notification':
         if not is_notification_active(event_type_to_check):
             logger.info(f"[Notification Gate] Bildirim engellendi (pasif): {event_type_to_check}")
-            return 'blocked'  # DEĞİŞİKLİK 1: 'False' yerine 'blocked' döndürülüyor.
+            return 'blocked'
 
     success = False
     
-    # Method 1: ASGI app üzerinden direkt emit (en güvenilir)
     try:
         from makarna_project.asgi import sio
         import asyncio
@@ -76,7 +74,6 @@ def send_socket_io_notification(room, event, data):
     except Exception as e:
         logger.error(f"[Notification] Direct Socket.IO emit failed: {e}")
     
-    # Method 2: Redis pub/sub
     if not success and redis_client:
         try:
             message = {
@@ -93,7 +90,6 @@ def send_socket_io_notification(room, event, data):
         except Exception as e:
             logger.error(f"[Notification] Redis pub/sub failed: {e}")
     
-    # Method 3: HTTP webhook fallback
     if not success:
         try:
             import requests
@@ -113,18 +109,13 @@ def send_socket_io_notification(room, event, data):
         except Exception as e:
             logger.debug(f"[Notification] HTTP webhook not available: {e}")
     
-    # DEĞİŞİKLİK 2: Başarı durumuna göre string olarak sonuç döndürülüyor.
     return 'sent' if success else 'failed'
 
-# ==================== GÜNCELLENMİŞ FONKSİYON SONU ====================
 
-
-# ==================== GÜNCELLENMİŞ GÖREV BAŞLANGICI ====================
 @shared_task(name="send_order_update_notification")
 def send_order_update_task(order_id, event_type, message, extra_data=None):
     """
     WebSocket üzerinden sipariş güncelleme bildirimini gönderen Celery task'i.
-    Loglama mantığı, engellenen bildirimleri hata olarak göstermemesi için güncellendi.
     """
     logger.info(f"[Celery Task] Sending notification for Order ID: {order_id}, Event: {event_type}")
     
@@ -151,7 +142,6 @@ def send_order_update_task(order_id, event_type, message, extra_data=None):
         if extra_data:
             update_data.update(extra_data)
 
-        # --- GÜNCELLENMİŞ LOGLAMA MANTIĞI ---
         business_room = f"business_{order.business_id}"
         business_status = send_socket_io_notification(business_room, 'order_status_update', update_data)
 
@@ -173,15 +163,13 @@ def send_order_update_task(order_id, event_type, message, extra_data=None):
             elif kds_status == 'blocked':
                 kds_blocked_count += 1
         
-        # İşletme odası için loglama
         if business_status == 'sent':
             logger.info(f"[Celery Task] ✅ Business notification sent successfully for order {order_id}")
         elif business_status == 'blocked':
             logger.info(f"[Celery Task] 🔵 Business notification for order {order_id} was blocked by admin settings.")
-        else: # 'failed'
+        else:
             logger.error(f"[Celery Task] ❌ Business notification failed for order {order_id}")
             
-        # KDS odaları için loglama
         total_kds_notifications = len(kds_screens_with_items)
         if kds_sent_count == total_kds_notifications:
             logger.info(f"[Celery Task] ✅ All {kds_sent_count} KDS notifications sent successfully for order {order_id}")
@@ -190,7 +178,6 @@ def send_order_update_task(order_id, event_type, message, extra_data=None):
         else:
             kds_failed_count = total_kds_notifications - kds_sent_count - kds_blocked_count
             logger.warning(f"[Celery Task] ⚠️ KDS notifications for order {order_id}: {kds_sent_count} sent, {kds_blocked_count} blocked, {kds_failed_count} failed.")
-        # --- GÜNCELLEME SONU ---
 
     except Order.DoesNotExist:
         logger.error(f"[Celery Task] Order with ID {order_id} not found.")
@@ -198,8 +185,6 @@ def send_order_update_task(order_id, event_type, message, extra_data=None):
     except Exception as e:
         logger.error(f"[Celery Task] Failed to send notification for order {order_id}. Error: {e}", exc_info=True)
         raise
-
-# ==================== GÜNCELLENMİŞ GÖREV SONU ====================
 
 
 @shared_task(name="send_bulk_order_notifications")
@@ -285,25 +270,26 @@ def send_test_notification(business_id=67):
         logger.error(f"[Celery Task] 🧪 Manual test notification failed for {room}")
         return False
 
-# ==================== YENİ GÖREV BAŞLANGICI ====================
 
-@shared_task(name="send_low_stock_email_to_supplier")
-def send_low_stock_notification_email_task(ingredient_id):
+# === DÜZELTİLMİŞ GÖREV BAŞLANGICI ===
+@shared_task(bind=True, name="send_low_stock_email_to_supplier")
+def send_low_stock_notification_email_task(self, ingredient_id):
     """
     Bir malzemenin stoğu kritik seviyenin altına düştüğünde,
-    o malzemenin tercih edilen tedarikçisine e-posta gönderir.
+    o malzemenin tedarikçisine e-posta gönderir.
+    HATA DÜZELTMESİ: 'preferred_supplier' yerine 'supplier' alanı kullanıldı.
     """
     logger.info(f"[Celery Task] Düşük stok e-posta bildirimi başlatılıyor. Malzeme ID: {ingredient_id}")
     try:
         # İlgili modelleri ve fonksiyonları task içinde import etmek iyi bir pratiktir.
-        ingredient = Ingredient.objects.select_related('preferred_supplier', 'unit', 'business').get(id=ingredient_id)
+        ingredient = Ingredient.objects.select_related('supplier', 'unit', 'business').get(id=ingredient_id)
 
-        # 1. Tercih edilen tedarikçi veya e-posta adresi var mı kontrol et.
-        if not ingredient.preferred_supplier or not ingredient.preferred_supplier.email:
-            logger.warning(f"Malzeme '{ingredient.name}' (ID: {ingredient.id}) için tercih edilen tedarikçi veya e-posta adresi bulunamadı. E-posta gönderilmedi.")
+        # 1. Tedarikçi veya e-posta adresi var mı kontrol et.
+        if not ingredient.supplier or not ingredient.supplier.email:
+            logger.warning(f"Malzeme '{ingredient.name}' (ID: {ingredient.id}) için tedarikçi veya e-posta adresi bulunamadı. E-posta gönderilmedi.")
             return
 
-        supplier = ingredient.preferred_supplier
+        supplier = ingredient.supplier
         business = ingredient.business
 
         # 2. E-posta içeriğini oluştur.
@@ -346,7 +332,5 @@ Teşekkürler,
     except Exception as e:
         logger.error(f"[Celery Task] ❌ Düşük stok e-postası gönderilirken beklenmedik bir hata oluştu: {e}", exc_info=True)
         # Hata durumunda görevin tekrar denenmesini sağlamak için hatayı tekrar fırlat.
-        # Bu, Celery'nin retry mekanizmasını kullanmanıza olanak tanır.
         raise self.retry(exc=e, countdown=60) # 60 saniye sonra tekrar dene
-
-# ==================== YENİ GÖREV SONU ====================
+# === DÜZELTİLMİŞ GÖREV SONU ===

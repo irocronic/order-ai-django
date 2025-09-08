@@ -11,6 +11,8 @@ from ..models import (
     Payment, Ingredient, IngredientStockMovement, MenuItemVariant,
     Stock, StockMovement
 )
+# E-posta görevini tetiklemek için tasks.py dosyasını import ediyoruz
+from ..tasks import send_low_stock_notification_email_task
 
 logger = logging.getLogger(__name__)
 
@@ -21,8 +23,10 @@ def deduct_variant_stock(variant: MenuItemVariant, quantity_sold: int, order_ite
     hesaplanır, böylece negatif değere düşmesi engellenir.
     """
     try:
+        # Yarış koşullarını (race condition) önlemek için satırı kilitle
         stock_to_update = Stock.objects.select_for_update().get(variant=variant)
 
+        # Sadece stok takibi aktifse işlem yap
         if not stock_to_update.track_stock:
             logger.info(f"Ana Stok Düşümü Atlandı (Takip Dışı): '{variant.name}'")
             return
@@ -76,7 +80,7 @@ def deduct_ingredients_for_variant(variant: MenuItemVariant, quantity_sold: int,
             
             original_quantity = ingredient_to_update.stock_quantity
             
-            # GÜVENLİK GÜNCELLEMESİ: Malzeme stoğunun da eksiye düşmemesini garantile
+            # Malzeme stoğunun da eksiye düşmemesini garantile
             new_quantity = max(Decimal('0.000'), original_quantity - quantity_to_deduct)
 
             IngredientStockMovement.objects.create(
@@ -90,9 +94,17 @@ def deduct_ingredients_for_variant(variant: MenuItemVariant, quantity_sold: int,
                 related_order_item=order_item_instance
             )
             
-            # GÜVENLİK GÜNCELLEMESİ: F() yerine hesaplanmış değer kullan
+            # F() yerine hesaplanmış değeri kullanarak güncelle
             ingredient_to_update.stock_quantity = new_quantity
             ingredient_to_update.save(update_fields=['stock_quantity'])
+
+            # Düşük stok kontrolü ve e-posta görevini tetikleme
+            ingredient_to_update.refresh_from_db()
+            if ingredient_to_update.alert_threshold is not None and \
+               ingredient_to_update.stock_quantity <= ingredient_to_update.alert_threshold:
+                
+                logger.info(f"Düşük stok tespit edildi: {ingredient_to_update.name}. E-posta görevi kuyruğa alınıyor.")
+                send_low_stock_notification_email_task.delay(ingredient_to_update.id)
 
             logger.info(
                 f"Malzeme Stoğu Düşüldü: '{ingredient.name}' (ID: {ingredient.id}), "
