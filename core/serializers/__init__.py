@@ -42,7 +42,7 @@ from .waiting_customer_serializers import (
 from .stock_serializers import (
     StockSerializer,
     StockMovementSerializer,
-    IngredientSerializer, # YENİ: IngredientSerializer eklendi
+    IngredientSerializer, 
     UnitOfMeasureSerializer, # YENİ: UnitOfMeasureSerializer eklendi
 )
 # =======================================================
@@ -83,7 +83,7 @@ __all__ = [
     # ================== GÜNCELLEME BURADA ==================
     'StockSerializer',
     'StockMovementSerializer',
-    'IngredientSerializer', # YENİ: __all__ listesine eklendi
+    'IngredientSerializer', 
     'UnitOfMeasureSerializer', # YENİ: __all__ listesine eklendi
     # =======================================================
     'PaymentSerializer',
