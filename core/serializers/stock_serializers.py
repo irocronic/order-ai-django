@@ -2,6 +2,8 @@
 
 from rest_framework import serializers
 from ..models import Stock, StockMovement, MenuItemVariant, CustomUser as User, Ingredient, UnitOfMeasure, RecipeItem, IngredientStockMovement, Supplier, PurchaseOrder, PurchaseOrderItem
+from django.db import transaction
+from decimal import Decimal
 
 class StockSerializer(serializers.ModelSerializer):
     variant_name = serializers.CharField(source='variant.name', read_only=True)
@@ -19,11 +21,15 @@ class StockSerializer(serializers.ModelSerializer):
 
     def validate_variant(self, value):
         request = self.context.get('request')
-        if request and hasattr(request.user, 'business'):
-            if value.menu_item.business != request.user.business:
-                raise serializers.ValidationError("Seçilen varyant bu işletmeye ait değil.")
-        else:
-            pass
+        user_business = None # İşletme bilgisini almak için bir helper fonksiyon daha iyi olabilir
+        if request and hasattr(request.user, 'user_type'):
+             if request.user.user_type == 'business_owner':
+                 user_business = getattr(request.user, 'owned_business', None)
+             elif request.user.user_type in ['staff', 'kitchen_staff']:
+                 user_business = getattr(request.user, 'associated_business', None)
+
+        if value and user_business and value.menu_item.business != user_business:
+            raise serializers.ValidationError("Seçilen varyant bu işletmeye ait değil.")
         return value
 
 class StockMovementSerializer(serializers.ModelSerializer):
@@ -48,9 +54,15 @@ class StockMovementSerializer(serializers.ModelSerializer):
 
     def validate_variant(self, value):
         request = self.context.get('request')
-        if request and hasattr(request.user, 'business'):
-            if value.menu_item.business != request.user.business:
-                raise serializers.ValidationError("Bu varyant için stok hareketi oluşturma yetkiniz yok.")
+        user_business = None
+        if request and hasattr(request.user, 'user_type'):
+             if request.user.user_type == 'business_owner':
+                 user_business = getattr(request.user, 'owned_business', None)
+             elif request.user.user_type in ['staff', 'kitchen_staff']:
+                 user_business = getattr(request.user, 'associated_business', None)
+        
+        if value and user_business and value.menu_item.business != user_business:
+            raise serializers.ValidationError("Bu varyant için stok hareketi oluşturma yetkiniz yok.")
         return value
 
     def create(self, validated_data):
@@ -62,9 +74,7 @@ class UnitOfMeasureSerializer(serializers.ModelSerializer):
         fields = ['id', 'name', 'abbreviation']
 
 class IngredientSerializer(serializers.ModelSerializer):
-    # Okuma sırasında birim detaylarını göstermek için
     unit = UnitOfMeasureSerializer(read_only=True)
-    # Yazma sırasında sadece ID almak için
     unit_id = serializers.PrimaryKeyRelatedField(
         queryset=UnitOfMeasure.objects.all(), source='unit', write_only=True
     )
@@ -74,37 +84,26 @@ class IngredientSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'name', 'unit', 'unit_id', 'stock_quantity', 
             'alert_threshold', 'last_updated', 'business', 
-            'supplier', # <-- DÜZELTİLDİ: 'preferred_supplier' -> 'supplier'
-            'cost_price' # <-- EKSİK ALAN: Modeldeki bu alanı da eklemek iyi bir pratik olacaktır.
+            'supplier', # 'preferred_supplier' -> 'supplier' olarak düzeltildi
+            'cost_price'
         ]
         read_only_fields = ['last_updated', 'business']
 
 class RecipeItemSerializer(serializers.ModelSerializer):
-    """
-    Bir ürün varyantının reçete kalemlerini yönetmek için serializer.
-    """
-    # Okuma sırasında ingredient ve unit bilgilerini detaylı göstermek için
     ingredient_name = serializers.CharField(source='ingredient.name', read_only=True)
     unit_abbreviation = serializers.CharField(source='ingredient.unit.abbreviation', read_only=True)
-
-    # Yazma sırasında sadece ID'leri almak için
     ingredient = serializers.PrimaryKeyRelatedField(queryset=Ingredient.objects.all())
     variant = serializers.PrimaryKeyRelatedField(queryset=MenuItemVariant.objects.all())
 
     class Meta:
         model = RecipeItem
         fields = [
-            'id',
-            'variant',
-            'ingredient',
-            'ingredient_name',
-            'unit_abbreviation',
-            'quantity',
+            'id', 'variant', 'ingredient', 'ingredient_name',
+            'unit_abbreviation', 'quantity',
         ]
         read_only_fields = ['ingredient_name', 'unit_abbreviation']
         
 class IngredientStockMovementSerializer(serializers.ModelSerializer):
-    """ Malzeme stok hareketlerini serialize eder. """
     user_username = serializers.CharField(source='user.username', read_only=True, allow_null=True)
     movement_type_display = serializers.CharField(source='get_movement_type_display', read_only=True)
     ingredient_name = serializers.CharField(source='ingredient.name', read_only=True)
@@ -139,5 +138,29 @@ class PurchaseOrderSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = PurchaseOrder
-        fields = ['id', 'supplier', 'supplier_name', 'status', 'created_at', 'completed_at', 'total_cost', 'items']
-        read_only_fields = ['business', 'total_cost']
+        fields = [
+            'id', 'supplier', 'supplier_name', 'status', 'order_date', 
+            'notes', 'invoice_image_url', 'total_amount', 'created_at', 'updated_at', 'items'
+        ]
+        read_only_fields = ['business', 'created_at', 'updated_at', 'total_amount']
+
+    @transaction.atomic
+    def create(self, validated_data):
+        """
+        Alım Siparişi (PurchaseOrder) ve ona bağlı kalemleri (items)
+        tek bir istekte oluşturmayı sağlar.
+        """
+        items_data = validated_data.pop('items')
+        purchase_order = PurchaseOrder.objects.create(**validated_data)
+        total_amount = Decimal('0.00')
+
+        for item_data in items_data:
+            PurchaseOrderItem.objects.create(purchase_order=purchase_order, **item_data)
+            quantity = Decimal(str(item_data['quantity']))
+            unit_price = Decimal(str(item_data['unit_price']))
+            total_amount += quantity * unit_price
+
+        purchase_order.total_amount = total_amount
+        purchase_order.save()
+
+        return purchase_order
