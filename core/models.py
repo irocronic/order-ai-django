@@ -200,6 +200,40 @@ class Business(models.Model):
     def __str__(self):
         return self.name
 
+# === YENİ MODELLER BAŞLANGICI ===
+
+class UnitOfMeasure(models.Model):
+    """Ölçü birimlerini tanımlar (örn: Gram, Adet, Litre)."""
+    name = models.CharField(max_length=50, unique=True, verbose_name="Birim Adı") # örn: Gram
+    abbreviation = models.CharField(max_length=10, unique=True, verbose_name="Kısaltma") # örn: gr
+
+    class Meta:
+        verbose_name = "Ölçü Birimi"
+        verbose_name_plural = "Ölçü Birimleri"
+
+    def __str__(self):
+        return f"{self.name} ({self.abbreviation})"
+
+class Ingredient(models.Model):
+    """Stok takibi yapılacak her bir malzemeyi temsil eder."""
+    business = models.ForeignKey(Business, on_delete=models.CASCADE, related_name='ingredients', verbose_name="İşletme")
+    name = models.CharField(max_length=150, verbose_name="Malzeme Adı")
+    unit = models.ForeignKey(UnitOfMeasure, on_delete=models.PROTECT, verbose_name="Ölçü Birimi")
+    stock_quantity = models.DecimalField(max_digits=10, decimal_places=3, default=0.000, verbose_name="Stok Miktarı")
+    alert_threshold = models.DecimalField(max_digits=10, decimal_places=3, null=True, blank=True, verbose_name="Uyarı Eşiği")
+    last_updated = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Malzeme"
+        verbose_name_plural = "Malzemeler"
+        unique_together = ('business', 'name')
+        ordering = ['name']
+
+    def __str__(self):
+        return f"{self.name} ({self.stock_quantity} {self.unit.abbreviation})"
+
+# === YENİ MODELLER SONU ===
+
 class KDSScreen(models.Model):
     business = models.ForeignKey(Business, on_delete=models.CASCADE, related_name='kds_screens', verbose_name="İşletme")
     name = models.CharField(max_length=100, verbose_name="KDS Ekran Adı")
@@ -324,6 +358,52 @@ class MenuItemVariant(models.Model):
         extra_str = " (Ekstra)" if self.is_extra else ""
         active_status_menu_item = "" if self.menu_item.is_active else " [Ana Ürün Pasif]"
         return f"{self.menu_item.name}{active_status_menu_item} - {self.name}{extra_str} ({self.price} TL)"
+
+# === REÇETE MODELLERİ ===
+
+class RecipeItem(models.Model):
+    """Bir ürün varyantının reçetesini oluşturan her bir malzeme kalemini temsil eder."""
+    variant = models.ForeignKey(MenuItemVariant, on_delete=models.CASCADE, related_name='recipe_items', verbose_name="Ürün Varyantı")
+    ingredient = models.ForeignKey(Ingredient, on_delete=models.CASCADE, related_name='used_in_recipes', verbose_name="Malzeme")
+    quantity = models.DecimalField(max_digits=10, decimal_places=3, verbose_name="Gerekli Miktar")
+
+    class Meta:
+        verbose_name = "Reçete Kalemi"
+        verbose_name_plural = "Reçete Kalemleri"
+        unique_together = ('variant', 'ingredient')
+
+    def __str__(self):
+        return f"{self.variant.menu_item.name} ({self.variant.name}) -> {self.quantity} {self.ingredient.unit.abbreviation} {self.ingredient.name}"
+
+class IngredientStockMovement(models.Model):
+    """Malzeme stoklarındaki tüm hareketleri kaydeder."""
+    MOVEMENT_TYPES = [
+        ('INITIAL', 'Başlangıç Stoku'),
+        ('ADDITION', 'Stok Girişi (Alım)'),
+        ('SALE', 'Satıştan Düşüm'),
+        ('RETURN', 'İade'),
+        ('ADJUSTMENT_IN', 'Sayım Düzeltme (Fazla)'),
+        ('ADJUSTMENT_OUT', 'Sayım Düzeltme (Eksik)'),
+        ('WASTAGE', 'Zayiat/Fire'),
+    ]
+
+    ingredient = models.ForeignKey(Ingredient, on_delete=models.CASCADE, related_name='movements')
+    movement_type = models.CharField(max_length=20, choices=MOVEMENT_TYPES)
+    quantity_change = models.DecimalField(max_digits=10, decimal_places=3)
+    quantity_before = models.DecimalField(max_digits=10, decimal_places=3)
+    quantity_after = models.DecimalField(max_digits=10, decimal_places=3)
+    timestamp = models.DateTimeField(auto_now_add=True)
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True)
+    description = models.TextField(blank=True, null=True)
+    related_order_item = models.ForeignKey('OrderItem', on_delete=models.SET_NULL, null=True, blank=True, related_name='ingredient_movements')
+
+    class Meta:
+        ordering = ['-timestamp']
+        verbose_name = "Malzeme Stok Hareketi"
+        verbose_name_plural = "Malzeme Stok Hareketleri"
+
+    def __str__(self):
+        return f"{self.ingredient.name} - {self.get_movement_type_display()}: {self.quantity_change}"
 
 class CampaignMenu(models.Model):
     business = models.ForeignKey(Business, on_delete=models.CASCADE, related_name='campaigns')
