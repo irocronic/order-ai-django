@@ -1,5 +1,3 @@
-# core/urls.py
-
 from django.urls import path, include, re_path
 from rest_framework.routers import DefaultRouter
 from django.conf import settings
@@ -37,9 +35,10 @@ from core.views import (
     ShiftViewSet,
     ScheduledShiftViewSet,
     NotificationSettingViewSet,
-    # ================== YENİ IMPORT ==================
+    # ================== YENİ IMPORT'LAR ==================
     IngredientViewSet,
-    UnitOfMeasureViewSet, # Yeni UnitOfMeasureViewSet'i import et
+    UnitOfMeasureViewSet,
+    RecipeItemViewSet, # <<< HATA ÇÖZÜMÜ 1: RecipeItemViewSet'i import et
     # ================================================
 )
 
@@ -57,13 +56,11 @@ router.register(r'categories', CategoryViewSet, basename='category')
 router.register(r'order_items', OrderItemViewSet, basename='orderitem')
 router.register(r'stocks', StockViewSet, basename='stock')
 router.register(r'stock-movements', StockMovementViewSet, basename='stockmovement')
-
-# ================== YENİ KAYIT SATIRLARI ==================
-# /api/ingredients/ URL'sini aktif hale getirir
 router.register(r'ingredients', IngredientViewSet, basename='ingredient')
-# /api/units-of-measure/ URL'sini aktif hale getirir
 router.register(r'units-of-measure', UnitOfMeasureViewSet, basename='unitofmeasure')
-# =======================================================
+
+# <<< HATA ÇÖZÜMÜ 2: Yeni RecipeItemViewSet'i router'a kaydet >>>
+router.register(r'recipes', RecipeItemViewSet, basename='recipeitem')
 
 router.register(r'staff-users', StaffUserViewSet, basename='staffuser')
 router.register(r'pagers', PagerViewSet, basename='pager')

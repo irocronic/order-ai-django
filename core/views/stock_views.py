@@ -7,8 +7,8 @@ from rest_framework.decorators import action
 from django.db import transaction
 from rest_framework.exceptions import PermissionDenied, ValidationError, NotFound
 
-from ..models import Stock, MenuItemVariant, StockMovement, Business, CustomUser as User, Ingredient, UnitOfMeasure
-from ..serializers import StockSerializer, StockMovementSerializer, IngredientSerializer, UnitOfMeasureSerializer
+from ..models import Stock, MenuItemVariant, StockMovement, Business, CustomUser as User, Ingredient, UnitOfMeasure, RecipeItem
+from ..serializers import StockSerializer, StockMovementSerializer, IngredientSerializer, UnitOfMeasureSerializer, RecipeItemSerializer
 from ..utils.order_helpers import get_user_business, PermissionKeys
 
 class StockViewSet(viewsets.ModelViewSet):
@@ -252,7 +252,6 @@ class IngredientViewSet(viewsets.ModelViewSet):
             
         serializer.save()
 
-# ================== YENİ EKLENEN BÖLÜM ==================
 class UnitOfMeasureViewSet(viewsets.ReadOnlyModelViewSet):
     """
     Tüm ölçü birimlerini listeler.
@@ -260,4 +259,40 @@ class UnitOfMeasureViewSet(viewsets.ReadOnlyModelViewSet):
     serializer_class = UnitOfMeasureSerializer
     permission_classes = [IsAuthenticated]
     queryset = UnitOfMeasure.objects.all()
+
+# ================== YENİ EKLENEN BÖLÜM ==================
+class RecipeItemViewSet(viewsets.ModelViewSet):
+    """
+    Bir ürün varyantına ait reçete kalemlerini (malzemeleri) yönetir.
+    """
+    serializer_class = RecipeItemSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        user = self.request.user
+        user_business = get_user_business(user)
+        if not user_business:
+            return RecipeItem.objects.none()
+
+        queryset = RecipeItem.objects.filter(
+            variant__menu_item__business=user_business
+        ).select_related('ingredient', 'ingredient__unit')
+
+        # Belirli bir varyantın reçetesini getirmek için filtreleme
+        variant_id = self.request.query_params.get('variant_id')
+        if variant_id:
+            return queryset.filter(variant_id=variant_id)
+            
+        return queryset
+
+    def perform_create(self, serializer):
+        user = self.request.user
+        user_business = get_user_business(user)
+        variant = serializer.validated_data.get('variant')
+
+        # Yetki kontrolü: Kullanıcı bu varyantın ait olduğu işletmede mi?
+        if not user_business or variant.menu_item.business != user_business:
+            raise PermissionDenied("Bu ürüne malzeme ekleme yetkiniz yok.")
+            
+        serializer.save()
 # =======================================================

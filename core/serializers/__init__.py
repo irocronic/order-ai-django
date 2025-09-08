@@ -1,5 +1,3 @@
-# core/serializers/__init__.py
-
 # Bu dosya, artık admin_serializers'ı doğrudan import ETMİYOR.
 # İhtiyaç duyulan yerlerde doğrudan import edilecek.
 from .user_serializers import (
@@ -43,7 +41,8 @@ from .stock_serializers import (
     StockSerializer,
     StockMovementSerializer,
     IngredientSerializer, 
-    UnitOfMeasureSerializer, # YENİ: UnitOfMeasureSerializer eklendi
+    UnitOfMeasureSerializer,
+    RecipeItemSerializer, # YENİ: RecipeItemSerializer eklendi
 )
 # =======================================================
 from .report_serializers import (
@@ -84,7 +83,8 @@ __all__ = [
     'StockSerializer',
     'StockMovementSerializer',
     'IngredientSerializer', 
-    'UnitOfMeasureSerializer', # YENİ: __all__ listesine eklendi
+    'UnitOfMeasureSerializer',
+    'RecipeItemSerializer', # YENİ: __all__ listesine eklendi
     # =======================================================
     'PaymentSerializer',
     'CreditPaymentDetailsSerializer',

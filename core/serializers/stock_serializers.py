@@ -1,7 +1,5 @@
-# core/serializers/stock_serializers.py
-
 from rest_framework import serializers
-from ..models import Stock, StockMovement, MenuItemVariant, CustomUser as User, Ingredient, UnitOfMeasure
+from ..models import Stock, StockMovement, MenuItemVariant, CustomUser as User, Ingredient, UnitOfMeasure, RecipeItem
 
 class StockSerializer(serializers.ModelSerializer):
     variant_name = serializers.CharField(source='variant.name', read_only=True)
@@ -56,7 +54,6 @@ class StockMovementSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         return super().create(validated_data)
 
-# ================== YENİ EKLENEN BÖLÜM ==================
 class UnitOfMeasureSerializer(serializers.ModelSerializer):
     class Meta:
         model = UnitOfMeasure
@@ -77,4 +74,29 @@ class IngredientSerializer(serializers.ModelSerializer):
             'alert_threshold', 'last_updated', 'business'
         ]
         read_only_fields = ['last_updated', 'business']
+
+# ================== YENİ EKLENEN BÖLÜM ==================
+class RecipeItemSerializer(serializers.ModelSerializer):
+    """
+    Bir ürün varyantının reçete kalemlerini yönetmek için serializer.
+    """
+    # Okuma sırasında ingredient ve unit bilgilerini detaylı göstermek için
+    ingredient_name = serializers.CharField(source='ingredient.name', read_only=True)
+    unit_abbreviation = serializers.CharField(source='ingredient.unit.abbreviation', read_only=True)
+
+    # Yazma sırasında sadece ID'leri almak için
+    ingredient = serializers.PrimaryKeyRelatedField(queryset=Ingredient.objects.all())
+    variant = serializers.PrimaryKeyRelatedField(queryset=MenuItemVariant.objects.all())
+
+    class Meta:
+        model = RecipeItem
+        fields = [
+            'id',
+            'variant',
+            'ingredient',
+            'ingredient_name',
+            'unit_abbreviation',
+            'quantity',
+        ]
+        read_only_fields = ['ingredient_name', 'unit_abbreviation']
 # =======================================================
