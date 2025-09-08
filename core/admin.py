@@ -15,8 +15,18 @@ from .models import (
     Pager, CampaignMenu, CampaignMenuItem,
     KDSScreen,
     Shift, ScheduledShift,
-    STAFF_PERMISSION_CHOICES, NOTIFICATION_EVENT_TYPES
+    STAFF_PERMISSION_CHOICES, NOTIFICATION_EVENT_TYPES,
+    # === YENİ: UnitOfMeasure ve Ingredient modelleri import edildi ===
+    UnitOfMeasure, Ingredient, RecipeItem, IngredientStockMovement 
+    # =============================================================
 )
+
+# === YENİ: UnitOfMeasure için Admin sınıfı eklendi ===
+@admin.register(UnitOfMeasure)
+class UnitOfMeasureAdmin(admin.ModelAdmin):
+    list_display = ('name', 'abbreviation')
+    search_fields = ('name',)
+# =====================================================
 
 # CustomUserAdmin sınıfında değişiklik yok, aynı kalıyor
 @admin.register(CustomUser)
