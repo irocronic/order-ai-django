@@ -1,3 +1,5 @@
+# core/urls.py
+
 from django.urls import path, include, re_path
 from rest_framework.routers import DefaultRouter
 from django.conf import settings
@@ -35,11 +37,9 @@ from core.views import (
     ShiftViewSet,
     ScheduledShiftViewSet,
     NotificationSettingViewSet,
-    # ================== YENİ IMPORT'LAR ==================
     IngredientViewSet,
     UnitOfMeasureViewSet,
-    RecipeItemViewSet, # <<< HATA ÇÖZÜMÜ 1: RecipeItemViewSet'i import et
-    # ================================================
+    RecipeItemViewSet,
 )
 
 from subscriptions.views import VerifyPurchaseView
@@ -58,10 +58,7 @@ router.register(r'stocks', StockViewSet, basename='stock')
 router.register(r'stock-movements', StockMovementViewSet, basename='stockmovement')
 router.register(r'ingredients', IngredientViewSet, basename='ingredient')
 router.register(r'units-of-measure', UnitOfMeasureViewSet, basename='unitofmeasure')
-
-# <<< HATA ÇÖZÜMÜ 2: Yeni RecipeItemViewSet'i router'a kaydet >>>
 router.register(r'recipes', RecipeItemViewSet, basename='recipeitem')
-
 router.register(r'staff-users', StaffUserViewSet, basename='staffuser')
 router.register(r'pagers', PagerViewSet, basename='pager')
 router.register(r'campaigns', CampaignMenuViewSet, basename='campaignmenu')
@@ -81,13 +78,11 @@ urlpatterns = [
     path('', include(router.urls)),
     path('admin-panel/', include(admin_router.urls)),
 
-
     # ==================== YENİ EKLENEN/GÜNCELLENEN BÖLÜM ====================
     # IngredientViewSet için özel action URL'leri
     path('ingredients/<int:pk>/adjust-stock/', IngredientViewSet.as_view({'post': 'adjust_stock'}), name='ingredient-adjust-stock'),
     path('ingredients/<int:pk>/history/', IngredientViewSet.as_view({'get': 'history'}), name='ingredient-history'),
     # =====================================================================
-
 
     # KDS Siparişleri için URL'ler
     re_path(r'^kds-orders/(?P<kds_slug>[-\w]+)/$', KDSOrderViewSet.as_view({'get': 'list'}), name='kdsorder-list'),
