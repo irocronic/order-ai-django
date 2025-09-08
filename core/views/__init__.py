@@ -1,5 +1,3 @@
-# core/views/__init__.py
-
 from .auth_views import (
     RegisterView,
     PasswordResetRequestView,
@@ -10,7 +8,7 @@ from .menu_views import CategoryViewSet, MenuItemViewSet, MenuItemVariantViewSet
 from .order_views import OrderViewSet, OrderItemViewSet
 from .payment_views import PaymentViewSet
 from .report_views import ReportView, DetailedSalesReportView
-from .stock_views import StockViewSet, StockMovementViewSet, IngredientViewSet, UnitOfMeasureViewSet
+from .stock_views import StockViewSet, StockMovementViewSet, IngredientViewSet, UnitOfMeasureViewSet, RecipeItemViewSet # <<< HATA ÇÖZÜMÜ 1: RecipeItemViewSet buraya eklendi
 from .table_views import TableViewSet
 from .waiting_customer_views import WaitingCustomerList, WaitingCustomerDetail
 from .user_views import AccountSettingsView, StaffUserViewSet
@@ -44,9 +42,10 @@ __all__ = [
     'DetailedSalesReportView',
     'StaffPerformanceReportView',
     'StockViewSet',
-    'StockMovementViewSet',  # DÜZELTİLDİ: Sona virgül eklendi
+    'StockMovementViewSet',
     'IngredientViewSet',
     'UnitOfMeasureViewSet',
+    'RecipeItemViewSet',  # <<< HATA ÇÖZÜMÜ 2: RecipeItemViewSet __all__ listesine eklendi
     'TableViewSet',
     'WaitingCustomerList',
     'WaitingCustomerDetail',
