@@ -382,6 +382,22 @@ class SupplierViewSet(viewsets.ModelViewSet):
         user_business = get_user_business(self.request.user)
         serializer.save(business=user_business)
 
+    # ==================== YENİ EKLENEN METOT ====================
+    def destroy(self, request, *args, **kwargs):
+        """
+        Bir tedarikçiyi silmeye çalışır. Eğer ilişkili alım siparişleri varsa,
+        ProtectedError'ı yakalar ve kullanıcı dostu bir hata mesajı döndürür.
+        """
+        instance = self.get_object()
+        try:
+            self.perform_destroy(instance)
+            return Response(status=status.HTTP_204_NO_CONTENT)
+        except ProtectedError:
+            return Response(
+                {"detail": "Bu tedarikçi, mevcut alım siparişleriyle ilişkili olduğu için silinemez. Önce ilgili siparişleri silmeniz veya düzenlemeniz gerekmektedir."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
 class PurchaseOrderViewSet(viewsets.ModelViewSet):
     serializer_class = PurchaseOrderSerializer
     permission_classes = [IsAuthenticated]
