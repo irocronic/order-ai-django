@@ -10,7 +10,11 @@ from .menu_views import CategoryViewSet, MenuItemViewSet, MenuItemVariantViewSet
 from .order_views import OrderViewSet, OrderItemViewSet
 from .payment_views import PaymentViewSet
 from .report_views import ReportView, DetailedSalesReportView
-from .stock_views import StockViewSet, StockMovementViewSet
+
+# ================== GÜNCELLEME BURADA ==================
+from .stock_views import StockViewSet, StockMovementViewSet, IngredientViewSet
+# =======================================================
+
 from .table_views import TableViewSet
 from .waiting_customer_views import WaitingCustomerList, WaitingCustomerDetail
 from .user_views import AccountSettingsView, StaffUserViewSet
@@ -22,7 +26,6 @@ from .guest_api_views import (
     GuestTakeawayOrderUpdateView
 )
 from .staff_report_views import StaffPerformanceReportView
-# GÜNCELLENMİŞ IMPORT
 from .admin_views import AdminUserManagementViewSet, NotificationSettingViewSet
 from .kds_views import KDSOrderViewSet
 from .pager_views import PagerViewSet
@@ -46,6 +49,9 @@ __all__ = [
     'StaffPerformanceReportView',
     'StockViewSet',
     'StockMovementViewSet',
+    # ================== GÜNCELLEME BURADA ==================
+    'IngredientViewSet',
+    # =======================================================
     'TableViewSet',
     'WaitingCustomerList',
     'WaitingCustomerDetail',
@@ -58,7 +64,6 @@ __all__ = [
     'GuestTakeawayMenuView',
     'GuestTakeawayOrderUpdateView',
     'AdminUserManagementViewSet',
-    # YENİ
     'NotificationSettingViewSet',
     'KDSOrderViewSet',
     'PagerViewSet',
