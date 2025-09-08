@@ -1,61 +1,27 @@
 # core/views/stock_views.py
+
 from rest_framework import viewsets, status, mixins
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.decorators import action
 from django.db import transaction
-# from django.shortcuts import get_object_or_404 # DRF ViewSet'ler kendi get_object'ini kullanır
 from rest_framework.exceptions import PermissionDenied, ValidationError, NotFound
 
-from ..models import Stock, MenuItemVariant, StockMovement, Business, CustomUser as User # Business ve User import edildi
-from ..serializers import StockSerializer, StockMovementSerializer
-# from .order_views import get_user_business # Helper'ı buradan import etmek yerine lokal olarak tanımlayabiliriz
-                                           # veya bir utils.py dosyasına taşıyabiliriz.
-                                           # Şimdilik lokal olarak tanımlayalım.
-
-# İzin anahtarları (Flutter tarafındaki PermissionKeys sınıfıyla tutarlı olmalı)
-class PermissionKeys:
-    MANAGE_STOCK = 'manage_stock'
-    # Diğer izin anahtarları buraya eklenebilir
-
-# Helper function to get the business for the current user (order_views.py'deki ile aynı)
-def get_user_business(user):
-    if not user or not user.is_authenticated:
-        return None
-    if user.user_type == 'business_owner':
-        try:
-            return user.owned_business
-        except Business.DoesNotExist:
-            # Bu durum, işletme sahibi kullanıcının bir şekilde işletmesinin silindiği anlamına gelir.
-            # Normalde OneToOneField ile bu pek olası değil ama bir önlem.
-            raise PermissionDenied("İşletme sahibi olarak bir işletmeniz bulunmuyor veya işletmeniz silinmiş.")
-        except AttributeError: # owned_business attr'si yoksa (örn: user objesi tam değilse)
-            raise PermissionDenied("İşletme sahibi bilgileri eksik.")
-    elif user.user_type == 'staff':
-        if not user.associated_business:
-            # Bu personelin bir işletmeye atanmadığı anlamına gelir.
-            raise PermissionDenied("Bir işletmeye atanmamışsınız. Yöneticinizle iletişime geçin.")
-        return user.associated_business
-    # Diğer kullanıcı tipleri (admin, customer) için None döner, bu da işletmeye özel işlemlerde yetkisiz anlamına gelir.
-    return None
-
+from ..models import Stock, MenuItemVariant, StockMovement, Business, CustomUser as User, Ingredient
+from ..serializers import StockSerializer, StockMovementSerializer, IngredientSerializer
+from ..utils.order_helpers import get_user_business, PermissionKeys
 
 class StockViewSet(viewsets.ModelViewSet):
     serializer_class = StockSerializer
-    permission_classes = [IsAuthenticated] # Temel kimlik doğrulama
-    # queryset = Stock.objects.all() # get_queryset içinde dinamik olarak belirlenecek
+    permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
         user = self.request.user
         user_business = get_user_business(user)
 
         if not user_business:
-            # Admin tüm stokları görebilir mi? (Opsiyonel)
-            # if user.is_staff or user.is_superuser:
-            #     return Stock.objects.all().select_related('variant__menu_item__business', 'variant__menu_item__category')
             return Stock.objects.none()
         
-        # İşletme sahibi veya personeli sadece kendi işletmesinin stoklarını görür
         return Stock.objects.filter(
             variant__menu_item__business=user_business
         ).select_related('variant__menu_item__business', 'variant__menu_item__category')
@@ -67,7 +33,6 @@ class StockViewSet(viewsets.ModelViewSet):
         if not user_business:
             raise PermissionDenied("Stok eklemek için yetkili bir işletmeniz bulunmuyor.")
 
-        # Sadece işletme sahibi veya 'manage_stock' izni olan personel stok ekleyebilir
         if not (user.user_type == 'business_owner' or 
                 (user.user_type == 'staff' and PermissionKeys.MANAGE_STOCK in user.staff_permissions)):
             raise PermissionDenied("Stok ekleme yetkiniz yok.")
@@ -83,7 +48,7 @@ class StockViewSet(viewsets.ModelViewSet):
             raise ValidationError({"variant": ["Bu varyant için zaten bir stok kaydı mevcut."]})
 
         with transaction.atomic():
-            stock_instance = serializer.save() # variant ve quantity serializer'dan geliyor
+            stock_instance = serializer.save()
             StockMovement.objects.create(
                 stock=stock_instance,
                 variant=stock_instance.variant,
@@ -91,25 +56,20 @@ class StockViewSet(viewsets.ModelViewSet):
                 quantity_change=stock_instance.quantity,
                 quantity_before=0,
                 quantity_after=stock_instance.quantity,
-                user=user, # Hareketi yapan kullanıcı
+                user=user,
                 description="İlk stok kaydı oluşturuldu."
             )
 
     def perform_update(self, serializer):
         user = self.request.user
-        stock_instance = self.get_object() # get_object içinde yetki kontrolü de olacak
-        user_business = get_user_business(user) # Bu satır get_object sonrası olduğu için zaten user_business vardır.
-
+        stock_instance = self.get_object()
+        
         if not (user.user_type == 'business_owner' or 
                 (user.user_type == 'staff' and PermissionKeys.MANAGE_STOCK in user.staff_permissions)):
             raise PermissionDenied("Stok güncelleme yetkiniz yok.")
         
-        # get_object zaten instance'ın kullanıcıya ait olduğunu kontrol etmeli.
-        # if stock_instance.variant.menu_item.business != user_business:
-        #     raise PermissionDenied("Bu stok kaydını güncelleme yetkiniz yok.") # Bu kontrol get_object'te var
-
         original_quantity = stock_instance.quantity
-        updated_stock = serializer.save() # quantity alanı serializer üzerinden güncelleniyor
+        updated_stock = serializer.save()
         new_quantity = updated_stock.quantity
         quantity_diff = new_quantity - original_quantity
 
@@ -117,7 +77,7 @@ class StockViewSet(viewsets.ModelViewSet):
             StockMovement.objects.create(
                 stock=updated_stock,
                 variant=updated_stock.variant,
-                movement_type='MANUAL_EDIT', # Direkt PUT/PATCH ile güncelleme manuel düzenleme sayılır
+                movement_type='MANUAL_EDIT',
                 quantity_change=quantity_diff,
                 quantity_before=original_quantity,
                 quantity_after=new_quantity,
@@ -126,19 +86,17 @@ class StockViewSet(viewsets.ModelViewSet):
             )
 
     def get_object(self):
-        """ Sadece kendi işletmesine ait stok objesine erişim. """
         obj = super().get_object()
         user = self.request.user
         user_business = get_user_business(user)
         if not user_business or obj.variant.menu_item.business != user_business:
-            if not (user.is_staff or user.is_superuser): # Adminler erişebilir
+            if not (user.is_staff or user.is_superuser):
                 raise PermissionDenied("Bu stok kaydına erişim yetkiniz yok.")
         return obj
 
-
     @action(detail=True, methods=['post'], url_path='adjust-stock')
     def adjust_stock(self, request, pk=None):
-        stock_instance = self.get_object() # Yetki kontrolü get_object içinde
+        stock_instance = self.get_object()
         user = request.user
 
         if not (user.user_type == 'business_owner' or 
@@ -165,7 +123,6 @@ class StockViewSet(viewsets.ModelViewSet):
             quantity_to_apply = -quantity_change_input
 
         with transaction.atomic():
-            # Yarış koşullarını önlemek için stock_instance'ı tekrar kilitle
             current_stock = Stock.objects.select_for_update().get(id=stock_instance.id)
             original_quantity = current_stock.quantity
             
@@ -173,7 +130,7 @@ class StockViewSet(viewsets.ModelViewSet):
                 return Response({'detail': 'Çıkarılacak miktar mevcut stoktan fazla olamaz.'}, status=status.HTTP_400_BAD_REQUEST)
 
             new_quantity = original_quantity + quantity_to_apply
-            if new_quantity < 0: # Bu durum yukarıdaki kontrolle engellenmeli ama yine de ekleyelim
+            if new_quantity < 0:
                 new_quantity = 0 
             
             current_stock.quantity = new_quantity
@@ -195,10 +152,10 @@ class StockViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=['get'], url_path='history')
     def history(self, request, pk=None):
-        stock_instance = self.get_object() # Yetki kontrolü get_object içinde
+        stock_instance = self.get_object()
         user = request.user
         if not (user.user_type == 'business_owner' or 
-                (user.user_type == 'staff' and PermissionKeys.MANAGE_STOCK in user.staff_permissions)): # Veya 'view_stock_history'
+                (user.user_type == 'staff' and PermissionKeys.MANAGE_STOCK in user.staff_permissions)):
             raise PermissionDenied("Stok geçmişini görüntüleme yetkiniz yok.")
 
         movements = stock_instance.movements.select_related(
@@ -213,7 +170,6 @@ class StockViewSet(viewsets.ModelViewSet):
         serializer = StockMovementSerializer(movements, many=True, context={'request': request})
         return Response(serializer.data)
 
-
 class StockMovementViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):
     serializer_class = StockMovementSerializer
     permission_classes = [IsAuthenticated]
@@ -223,11 +179,8 @@ class StockMovementViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):
         user_business = get_user_business(user)
 
         if not user_business:
-            # if user.is_staff or user.is_superuser: # Admin tüm hareketleri görebilir (opsiyonel)
-            #     return StockMovement.objects.all().select_related('stock', 'variant__menu_item', 'user', 'related_order')
             return StockMovement.objects.none()
 
-        # Sadece işletme sahibi veya 'manage_stock' (veya 'view_stock_movements') izni olan personel
         if not (user.user_type == 'business_owner' or 
                 (user.user_type == 'staff' and PermissionKeys.MANAGE_STOCK in user.staff_permissions)):
             return StockMovement.objects.none()
@@ -247,7 +200,6 @@ class StockMovementViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):
         if movement_type_param:
             queryset = queryset.filter(movement_type=movement_type_param)
         
-        # Diğer filtreler (user_id, start_date, end_date) aynı kalabilir
         user_id_filter = self.request.query_params.get('user_id')
         if user_id_filter:
             try:
@@ -264,3 +216,40 @@ class StockMovementViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):
             queryset = queryset.filter(timestamp__date__lte=end_date_str)
             
         return queryset.order_by('-timestamp')
+
+# ================== YENİ EKLENEN BÖLÜM ==================
+class IngredientViewSet(viewsets.ModelViewSet):
+    """
+    Malzemeleri (ingredients) yönetmek için API endpoint'leri.
+    """
+    serializer_class = IngredientSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        user = self.request.user
+        user_business = get_user_business(user)
+        if user_business:
+            # Sadece kullanıcının kendi işletmesine ait malzemeleri listele
+            return Ingredient.objects.filter(business=user_business).select_related('unit')
+        return Ingredient.objects.none()
+
+    def perform_create(self, serializer):
+        user = self.request.user
+        user_business = get_user_business(user)
+        
+        if not (user.user_type == 'business_owner' or 
+                (user.user_type == 'staff' and PermissionKeys.MANAGE_STOCK in user.staff_permissions)):
+            raise PermissionDenied("Malzeme ekleme yetkiniz yok.")
+            
+        serializer.save(business=user_business)
+
+    def perform_update(self, serializer):
+        # get_object içindeki kontrol sayesinde bu instance'ın zaten
+        # bu işletmeye ait olduğu doğrulanmış olur.
+        user = self.request.user
+        if not (user.user_type == 'business_owner' or 
+                (user.user_type == 'staff' and PermissionKeys.MANAGE_STOCK in user.staff_permissions)):
+            raise PermissionDenied("Malzeme güncelleme yetkiniz yok.")
+            
+        serializer.save()
+# =======================================================

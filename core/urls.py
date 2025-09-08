@@ -36,8 +36,10 @@ from core.views import (
     KDSScreenViewSet,
     ShiftViewSet,
     ScheduledShiftViewSet,
-    # YENİ IMPORT
     NotificationSettingViewSet,
+    # ================== YENİ IMPORT ==================
+    IngredientViewSet, # Yeni IngredientViewSet'i import et
+    # ================================================
 )
 
 from subscriptions.views import VerifyPurchaseView
@@ -55,14 +57,12 @@ router.register(r'order_items', OrderItemViewSet, basename='orderitem')
 router.register(r'stocks', StockViewSet, basename='stock')
 router.register(r'stock-movements', StockMovementViewSet, basename='stockmovement')
 
-# +++++++++++++++++++++ AÇIKLAYICI YORUM BAŞLANGICI +++++++++++++++++++++
-# Aşağıdaki StaffUserViewSet kaydı, içindeki özel @action'lar için de otomatik URL'ler oluşturur.
-# Örneğin, user_views.py içinde 'current-shift' url_path'i ile tanımlanan action için
-# '/api/staff-users/current-shift/' adresi otomatik olarak yaratılır.
-# Bu yüzden bu dosyada ek bir path tanımına gerek yoktur.
-# +++++++++++++++++++++ AÇIKLAYICI YORUM SONU +++++++++++++++++++++
-router.register(r'staff-users', StaffUserViewSet, basename='staffuser')
+# ================== YENİ KAYIT SATIRI ==================
+# /api/ingredients/ URL'sini aktif hale getirir
+router.register(r'ingredients', IngredientViewSet, basename='ingredient')
+# =======================================================
 
+router.register(r'staff-users', StaffUserViewSet, basename='staffuser')
 router.register(r'pagers', PagerViewSet, basename='pager')
 router.register(r'campaigns', CampaignMenuViewSet, basename='campaignmenu')
 router.register(r'kds-screens', KDSScreenViewSet, basename='kdsscreen')
@@ -72,7 +72,6 @@ router.register(r'schedule', ScheduledShiftViewSet, basename='scheduledshift')
 # YÖNETİCİ API'leri için ayrı bir DefaultRouter
 admin_router = DefaultRouter()
 admin_router.register(r'manage-users', AdminUserManagementViewSet, basename='admin-manage-user')
-# YENİ KAYIT
 admin_router.register(r'notification-settings', NotificationSettingViewSet, basename='admin-notification-setting')
 
 

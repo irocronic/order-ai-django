@@ -1,6 +1,7 @@
 # core/serializers/stock_serializers.py
+
 from rest_framework import serializers
-from ..models import Stock, StockMovement, MenuItemVariant, CustomUser as User
+from ..models import Stock, StockMovement, MenuItemVariant, CustomUser as User, Ingredient, UnitOfMeasure
 
 class StockSerializer(serializers.ModelSerializer):
     variant_name = serializers.CharField(source='variant.name', read_only=True)
@@ -54,3 +55,26 @@ class StockMovementSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         return super().create(validated_data)
+
+# ================== YENİ EKLENEN BÖLÜM ==================
+class UnitOfMeasureSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = UnitOfMeasure
+        fields = ['id', 'name', 'abbreviation']
+
+class IngredientSerializer(serializers.ModelSerializer):
+    # Okuma sırasında birim detaylarını göstermek için
+    unit = UnitOfMeasureSerializer(read_only=True)
+    # Yazma sırasında sadece ID almak için
+    unit_id = serializers.PrimaryKeyRelatedField(
+        queryset=UnitOfMeasure.objects.all(), source='unit', write_only=True
+    )
+
+    class Meta:
+        model = Ingredient
+        fields = [
+            'id', 'name', 'unit', 'unit_id', 'stock_quantity', 
+            'alert_threshold', 'last_updated', 'business'
+        ]
+        read_only_fields = ['last_updated', 'business']
+# =======================================================
