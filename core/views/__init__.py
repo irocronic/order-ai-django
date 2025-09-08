@@ -1,3 +1,5 @@
+# core/views/__init__.py
+
 from .auth_views import (
     RegisterView,
     PasswordResetRequestView,
