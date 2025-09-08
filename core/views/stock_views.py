@@ -7,7 +7,7 @@ from rest_framework.decorators import action
 from django.db import transaction
 from rest_framework.exceptions import PermissionDenied, ValidationError, NotFound
 
-from ..models import Stock, MenuItemVariant, StockMovement, Business, CustomUser as User, Ingredient
+from ..models import Stock, MenuItemVariant, StockMovement, Business, CustomUser as User, Ingredient, UnitOfMeasure
 from ..serializers import StockSerializer, StockMovementSerializer, IngredientSerializer, UnitOfMeasureSerializer
 from ..utils.order_helpers import get_user_business, PermissionKeys
 
@@ -217,7 +217,6 @@ class StockMovementViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):
             
         return queryset.order_by('-timestamp')
 
-# ================== YENİ EKLENEN BÖLÜM ==================
 class IngredientViewSet(viewsets.ModelViewSet):
     """
     Malzemeleri (ingredients) yönetmek için API endpoint'leri.
@@ -253,9 +252,7 @@ class IngredientViewSet(viewsets.ModelViewSet):
             
         serializer.save()
 
-
-
- ================== YENİ EKLENEN BÖLÜM ==================
+# ================== YENİ EKLENEN BÖLÜM ==================
 class UnitOfMeasureViewSet(viewsets.ReadOnlyModelViewSet):
     """
     Tüm ölçü birimlerini listeler.
@@ -263,4 +260,4 @@ class UnitOfMeasureViewSet(viewsets.ReadOnlyModelViewSet):
     serializer_class = UnitOfMeasureSerializer
     permission_classes = [IsAuthenticated]
     queryset = UnitOfMeasure.objects.all()
-# ======================================================
+# =======================================================
