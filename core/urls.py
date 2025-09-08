@@ -1,5 +1,7 @@
 # core/urls.py
 
+# core/urls.py
+
 from django.urls import path, include, re_path
 from rest_framework.routers import DefaultRouter
 from django.conf import settings
