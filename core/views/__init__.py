@@ -10,11 +10,7 @@ from .menu_views import CategoryViewSet, MenuItemViewSet, MenuItemVariantViewSet
 from .order_views import OrderViewSet, OrderItemViewSet
 from .payment_views import PaymentViewSet
 from .report_views import ReportView, DetailedSalesReportView
-
-# ================== GÜNCELLEME BURADA ==================
 from .stock_views import StockViewSet, StockMovementViewSet, IngredientViewSet, UnitOfMeasureViewSet
-# =======================================================
-
 from .table_views import TableViewSet
 from .waiting_customer_views import WaitingCustomerList, WaitingCustomerDetail
 from .user_views import AccountSettingsView, StaffUserViewSet
@@ -48,11 +44,9 @@ __all__ = [
     'DetailedSalesReportView',
     'StaffPerformanceReportView',
     'StockViewSet',
-    'StockMovementViewSet,
+    'StockMovementViewSet',  # DÜZELTİLDİ: Sona virgül eklendi
     'IngredientViewSet',
-    # ================== GÜNCELLEME BURADA ==================
     'UnitOfMeasureViewSet',
-    # =======================================================
     'TableViewSet',
     'WaitingCustomerList',
     'WaitingCustomerDetail',
