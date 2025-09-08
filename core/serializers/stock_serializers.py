@@ -1,5 +1,7 @@
+# core/serializers/stock_serializers.py
+
 from rest_framework import serializers
-from ..models import Stock, StockMovement, MenuItemVariant, CustomUser as User, Ingredient, UnitOfMeasure, RecipeItem
+from ..models import Stock, StockMovement, MenuItemVariant, CustomUser as User, Ingredient, UnitOfMeasure, RecipeItem, IngredientStockMovement
 
 class StockSerializer(serializers.ModelSerializer):
     variant_name = serializers.CharField(source='variant.name', read_only=True)
@@ -75,7 +77,6 @@ class IngredientSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ['last_updated', 'business']
 
-# ================== YENİ EKLENEN BÖLÜM ==================
 class RecipeItemSerializer(serializers.ModelSerializer):
     """
     Bir ürün varyantının reçete kalemlerini yönetmek için serializer.
@@ -99,4 +100,19 @@ class RecipeItemSerializer(serializers.ModelSerializer):
             'quantity',
         ]
         read_only_fields = ['ingredient_name', 'unit_abbreviation']
-# =======================================================
+        
+class IngredientStockMovementSerializer(serializers.ModelSerializer):
+    """ Malzeme stok hareketlerini serialize eder. """
+    user_username = serializers.CharField(source='user.username', read_only=True, allow_null=True)
+    movement_type_display = serializers.CharField(source='get_movement_type_display', read_only=True)
+    ingredient_name = serializers.CharField(source='ingredient.name', read_only=True)
+    unit_abbreviation = serializers.CharField(source='ingredient.unit.abbreviation', read_only=True)
+
+    class Meta:
+        model = IngredientStockMovement
+        fields = [
+            'id', 'ingredient_name', 'unit_abbreviation', 'movement_type', 
+            'movement_type_display', 'quantity_change', 'quantity_before', 
+            'quantity_after', 'timestamp', 'user_username', 'description', 
+            'related_order_item'
+        ]

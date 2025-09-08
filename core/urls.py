@@ -81,6 +81,14 @@ urlpatterns = [
     path('', include(router.urls)),
     path('admin-panel/', include(admin_router.urls)),
 
+
+    # ==================== YENİ EKLENEN/GÜNCELLENEN BÖLÜM ====================
+    # IngredientViewSet için özel action URL'leri
+    path('ingredients/<int:pk>/adjust-stock/', IngredientViewSet.as_view({'post': 'adjust_stock'}), name='ingredient-adjust-stock'),
+    path('ingredients/<int:pk>/history/', IngredientViewSet.as_view({'get': 'history'}), name='ingredient-history'),
+    # =====================================================================
+
+
     # KDS Siparişleri için URL'ler
     re_path(r'^kds-orders/(?P<kds_slug>[-\w]+)/$', KDSOrderViewSet.as_view({'get': 'list'}), name='kdsorder-list'),
     re_path(r'^kds-orders/(?P<kds_slug>[-\w]+)/(?P<pk>\d+)/$', KDSOrderViewSet.as_view({'get': 'retrieve'}), name='kdsorder-detail'),

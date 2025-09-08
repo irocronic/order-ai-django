@@ -5,10 +5,15 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.decorators import action
 from django.db import transaction
+from django.db.models import F
+from decimal import Decimal
 from rest_framework.exceptions import PermissionDenied, ValidationError, NotFound
 
-from ..models import Stock, MenuItemVariant, StockMovement, Business, CustomUser as User, Ingredient, UnitOfMeasure, RecipeItem
-from ..serializers import StockSerializer, StockMovementSerializer, IngredientSerializer, UnitOfMeasureSerializer, RecipeItemSerializer
+from ..models import Stock, MenuItemVariant, StockMovement, Business, CustomUser as User, Ingredient, UnitOfMeasure, RecipeItem, IngredientStockMovement
+from ..serializers import (
+    StockSerializer, StockMovementSerializer, IngredientSerializer, 
+    UnitOfMeasureSerializer, RecipeItemSerializer, IngredientStockMovementSerializer
+)
 from ..utils.order_helpers import get_user_business, PermissionKeys
 
 class StockViewSet(viewsets.ModelViewSet):
@@ -228,7 +233,6 @@ class IngredientViewSet(viewsets.ModelViewSet):
         user = self.request.user
         user_business = get_user_business(user)
         if user_business:
-            # Sadece kullanıcının kendi işletmesine ait malzemeleri listele
             return Ingredient.objects.filter(business=user_business).select_related('unit')
         return Ingredient.objects.none()
 
@@ -243,14 +247,81 @@ class IngredientViewSet(viewsets.ModelViewSet):
         serializer.save(business=user_business)
 
     def perform_update(self, serializer):
-        # get_object içindeki kontrol sayesinde bu instance'ın zaten
-        # bu işletmeye ait olduğu doğrulanmış olur.
         user = self.request.user
         if not (user.user_type == 'business_owner' or 
                 (user.user_type == 'staff' and PermissionKeys.MANAGE_STOCK in user.staff_permissions)):
             raise PermissionDenied("Malzeme güncelleme yetkiniz yok.")
             
         serializer.save()
+        
+    @action(detail=True, methods=['post'], url_path='adjust-stock')
+    @transaction.atomic
+    def adjust_stock(self, request, pk=None):
+        """ Malzeme stoğunu manuel olarak ayarlar (giriş, fire, sayım vb.). """
+        ingredient = self.get_object()
+        user = request.user
+
+        if not (user.user_type == 'business_owner' or 
+                (user.user_type == 'staff' and PermissionKeys.MANAGE_STOCK in user.staff_permissions)):
+            raise PermissionDenied("Malzeme stoğunu ayarlama yetkiniz yok.")
+
+        movement_type = request.data.get('movement_type')
+        try:
+            quantity_change = Decimal(request.data.get('quantity_change', '0'))
+        except (ValueError, TypeError):
+            raise ValidationError({'detail': 'Geçersiz miktar formatı.'})
+        
+        description = request.data.get('description', '')
+
+        valid_manual_types = ['ADDITION', 'WASTAGE', 'ADJUSTMENT_IN', 'ADJUSTMENT_OUT']
+        if movement_type not in valid_manual_types:
+            raise ValidationError({'detail': f'Geçersiz hareket tipi. Kullanılabilir: {", ".join(valid_manual_types)}'})
+
+        if quantity_change <= 0:
+            raise ValidationError({'detail': 'Miktar pozitif bir değer olmalıdır.'})
+
+        quantity_to_apply = quantity_change
+        if movement_type in ['WASTAGE', 'ADJUSTMENT_OUT']:
+            quantity_to_apply = -quantity_change
+
+        ingredient_to_update = Ingredient.objects.select_for_update().get(pk=ingredient.pk)
+        original_quantity = ingredient_to_update.stock_quantity
+
+        if quantity_to_apply < 0 and original_quantity < abs(quantity_to_apply):
+            raise ValidationError({'detail': 'Çıkarılacak miktar mevcut stoktan fazla olamaz.'})
+            
+        new_quantity = original_quantity + quantity_to_apply
+
+        IngredientStockMovement.objects.create(
+            ingredient=ingredient_to_update,
+            movement_type=movement_type,
+            quantity_change=quantity_to_apply,
+            quantity_before=original_quantity,
+            quantity_after=new_quantity,
+            user=user,
+            description=description
+        )
+
+        ingredient_to_update.stock_quantity = F('stock_quantity') + quantity_to_apply
+        ingredient_to_update.save(update_fields=['stock_quantity'])
+        
+        ingredient_to_update.refresh_from_db()
+        serializer = self.get_serializer(ingredient_to_update)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    @action(detail=True, methods=['get'], url_path='history')
+    def history(self, request, pk=None):
+        """ Belirli bir malzemenin tüm stok hareketlerini listeler. """
+        ingredient = self.get_object()
+        movements = ingredient.movements.select_related('user').order_by('-timestamp')
+        
+        page = self.paginate_queryset(movements)
+        if page is not None:
+            serializer = IngredientStockMovementSerializer(page, many=True)
+            return self.get_paginated_response(serializer.data)
+
+        serializer = IngredientStockMovementSerializer(movements, many=True)
+        return Response(serializer.data)
 
 class UnitOfMeasureViewSet(viewsets.ReadOnlyModelViewSet):
     """
@@ -260,7 +331,6 @@ class UnitOfMeasureViewSet(viewsets.ReadOnlyModelViewSet):
     permission_classes = [IsAuthenticated]
     queryset = UnitOfMeasure.objects.all()
 
-# ================== YENİ EKLENEN BÖLÜM ==================
 class RecipeItemViewSet(viewsets.ModelViewSet):
     """
     Bir ürün varyantına ait reçete kalemlerini (malzemeleri) yönetir.
@@ -278,7 +348,6 @@ class RecipeItemViewSet(viewsets.ModelViewSet):
             variant__menu_item__business=user_business
         ).select_related('ingredient', 'ingredient__unit')
 
-        # Belirli bir varyantın reçetesini getirmek için filtreleme
         variant_id = self.request.query_params.get('variant_id')
         if variant_id:
             return queryset.filter(variant_id=variant_id)
@@ -290,9 +359,7 @@ class RecipeItemViewSet(viewsets.ModelViewSet):
         user_business = get_user_business(user)
         variant = serializer.validated_data.get('variant')
 
-        # Yetki kontrolü: Kullanıcı bu varyantın ait olduğu işletmede mi?
         if not user_business or variant.menu_item.business != user_business:
             raise PermissionDenied("Bu ürüne malzeme ekleme yetkiniz yok.")
             
         serializer.save()
-# =======================================================
