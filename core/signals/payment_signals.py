@@ -73,7 +73,7 @@ def deduct_ingredients_for_variant(variant: MenuItemVariant, quantity_sold: int,
 
     for recipe_item in variant.recipe_items.select_related('ingredient', 'ingredient__unit').all():
         ingredient = recipe_item.ingredient
-        quantity_to_deduct = recipe_item.quantity * quantity_sold
+        quantity_to_deduct = recipe_item.quantity * Decimal(str(quantity_sold)) # Decimal dönüşümü eklendi
 
         try:
             ingredient_to_update = Ingredient.objects.select_for_update().get(id=ingredient.id)
@@ -98,13 +98,14 @@ def deduct_ingredients_for_variant(variant: MenuItemVariant, quantity_sold: int,
             ingredient_to_update.stock_quantity = new_quantity
             ingredient_to_update.save(update_fields=['stock_quantity'])
 
-            # Düşük stok kontrolü ve e-posta görevini tetikleme
-            ingredient_to_update.refresh_from_db()
+            # === YENİ: Düşük stok kontrolü ve e-posta tetikleme ===
+            ingredient_to_update.refresh_from_db() # En güncel stok miktarını al
             if ingredient_to_update.alert_threshold is not None and \
                ingredient_to_update.stock_quantity <= ingredient_to_update.alert_threshold:
                 
                 logger.info(f"Düşük stok tespit edildi: {ingredient_to_update.name}. E-posta görevi kuyruğa alınıyor.")
                 send_low_stock_notification_email_task.delay(ingredient_to_update.id)
+            # =======================================================
 
             logger.info(
                 f"Malzeme Stoğu Düşüldü: '{ingredient.name}' (ID: {ingredient.id}), "
