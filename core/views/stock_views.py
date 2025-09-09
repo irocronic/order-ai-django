@@ -330,6 +330,7 @@ class IngredientViewSet(viewsets.ModelViewSet):
         serializer = IngredientStockMovementSerializer(movements, many=True)
         return Response(serializer.data)
 
+    # ==================== YENİ METOT: Tedarikçi Ataması ====================
     @action(detail=False, methods=['post'], url_path='assign-supplier')
     def assign_supplier(self, request):
         """
@@ -356,8 +357,10 @@ class IngredientViewSet(viewsets.ModelViewSet):
             )
 
         try:
+            # Tedarikçinin varlığını ve yetkisini kontrol et
             supplier = Supplier.objects.get(id=supplier_id, business=user_business)
             
+            # Malzemelerin varlığını ve yetkisini kontrol et
             ingredients = Ingredient.objects.filter(
                 id__in=ingredient_ids, 
                 business=user_business
@@ -369,6 +372,7 @@ class IngredientViewSet(viewsets.ModelViewSet):
                     status=status.HTTP_400_BAD_REQUEST
                 )
 
+            # Toplu güncelleme
             updated_count = ingredients.update(supplier=supplier)
             
             logger.info(f"Supplier {supplier.name} assigned to {updated_count} ingredients by user {user.username}")
@@ -391,6 +395,7 @@ class IngredientViewSet(viewsets.ModelViewSet):
                 {'detail': f'Tedarikçi ataması sırasında hata: {str(e)}'}, 
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
+    # =====================================================================
 
 
 class UnitOfMeasureViewSet(viewsets.ReadOnlyModelViewSet):
@@ -477,49 +482,48 @@ class PurchaseOrderViewSet(viewsets.ModelViewSet):
         user = self.request.user
         user_business = get_user_business(user)
         
+        # Purchase order'ı kaydet
         purchase_order = serializer.save(business=user_business)
         
-        # *** YENİ: Purchase order oluşturulduktan sonra malzeme-tedarikçi ve alert threshold güncelleme ***
+        # *** YENİ: Purchase order oluşturulduktan sonra malzeme-tedarikçi ilişkisini güncelle ***
         try:
             items_data = self.request.data.get('items', [])
             supplier = purchase_order.supplier
             
             if supplier and items_data:
+                ingredient_ids_to_update = []
+                
                 for item_data in items_data:
                     ingredient_id = item_data.get('ingredient')
-                    alert_threshold = item_data.get('alert_threshold')  # *** YENİ ***
-                    
                     if ingredient_id:
-                        try:
-                            ingredient = Ingredient.objects.get(
-                                id=ingredient_id, 
-                                business=user_business
-                            )
-                            
-                            # Tedarikçi ataması (sadece tedarikçisi olmayan malzemeler için)
-                            updated_fields = []
-                            if not ingredient.supplier:
-                                ingredient.supplier = supplier
-                                updated_fields.append('supplier')
-                                logger.info(f"✅ Supplier {supplier.name} assigned to ingredient {ingredient.name}")
-                            
-                            # *** YENİ: Alert threshold ataması ***
-                            if alert_threshold is not None and not ingredient.alert_threshold:
-                                ingredient.alert_threshold = Decimal(str(alert_threshold))
-                                updated_fields.append('alert_threshold')
-                                logger.info(f"✅ Alert threshold {alert_threshold} set for ingredient {ingredient.name}")
-                            
-                            # Sadece güncellenecek alanlar varsa kaydet
-                            if updated_fields:
-                                ingredient.save(update_fields=updated_fields)
-                                
-                        except Ingredient.DoesNotExist:
-                            logger.error(f"❌ Ingredient {ingredient_id} not found")
-                        except Exception as ingredient_error:
-                            logger.error(f"❌ Error updating ingredient {ingredient_id}: {str(ingredient_error)}")
+                        ingredient_ids_to_update.append(ingredient_id)
+                
+                if ingredient_ids_to_update:
+                    # Malzemelerin tedarikçisini güncelle (sadece tedarikçisi olmayan malzemeler için)
+                    ingredients_without_supplier = Ingredient.objects.filter(
+                        id__in=ingredient_ids_to_update,
+                        business=user_business,
+                        supplier__isnull=True  # Sadece tedarikçisi olmayan malzemeler
+                    )
+                    
+                    updated_count = ingredients_without_supplier.update(supplier=supplier)
+                    
+                    if updated_count > 0:
+                        logger.info(f"✅ Purchase Order {purchase_order.id}: {updated_count} malzemeye {supplier.name} tedarikçisi atandı")
+                    
+                    # Tedarikçisi olan malzemeler için log
+                    ingredients_with_supplier = Ingredient.objects.filter(
+                        id__in=ingredient_ids_to_update,
+                        business=user_business,
+                        supplier__isnull=False
+                    )
+                    
+                    if ingredients_with_supplier.exists():
+                        existing_suppliers = list(ingredients_with_supplier.values_list('supplier__name', flat=True).distinct())
+                        logger.info(f"ℹ️ Purchase Order {purchase_order.id}: Bazı malzemelerin zaten tedarikçisi var: {existing_suppliers}")
         
         except Exception as e:
-            logger.error(f"❌ Purchase Order {purchase_order.id}: Error in assignment: {str(e)}")
+            logger.error(f"❌ Purchase Order {purchase_order.id}: Malzeme-tedarikçi ataması sırasında hata: {str(e)}")
             # Hata durumunda purchase order'ı iptal etmiyoruz, sadece log yazıyoruz
     # ==========================================================
     
