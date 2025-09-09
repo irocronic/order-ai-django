@@ -275,14 +275,12 @@ def send_low_stock_notification_email_task(self, ingredient_id):
     """
     Bir malzemenin stoğu kritik seviyenin altına düştüğünde,
     o malzemenin tedarikçisine e-posta gönderir.
-    HATA DÜZELTMESİ: 'preferred_supplier' yerine 'supplier' alanı kullanıldı.
+    GÜNCELLENMİŞ LOGLAMA EKLENDİ.
     """
     logger.info(f"[Celery Task] Düşük stok e-posta bildirimi başlatılıyor. Malzeme ID: {ingredient_id}")
     try:
-        # Alan adı 'supplier' olarak düzeltildi
         ingredient = Ingredient.objects.select_related('supplier', 'unit', 'business').get(id=ingredient_id)
 
-        # Kontrol 'supplier' üzerinden yapılıyor
         if not ingredient.supplier or not ingredient.supplier.email:
             logger.warning(f"Malzeme '{ingredient.name}' (ID: {ingredient.id}) için tedarikçi veya e-posta adresi bulunamadı. E-posta gönderilmedi.")
             return
@@ -313,6 +311,10 @@ Teşekkürler,
         from_email = settings.DEFAULT_FROM_EMAIL
         recipient_list = [supplier.email]
 
+        # === YENİ LOG BAŞLANGICI ===
+        logger.info(f"E-posta gönderim denemesi yapılıyor. Kime: {recipient_list}, Kimden: '{from_email}', Konu: '{subject}'")
+        # === YENİ LOG SONU ===
+
         send_mail(
             subject,
             message,
@@ -321,7 +323,9 @@ Teşekkürler,
             fail_silently=False
         )
         
-        logger.info(f"[Celery Task] ✅ Düşük stok e-postası başarıyla '{supplier.email}' adresine gönderildi. Malzeme: {ingredient.name}")
+        # === YENİ LOG BAŞLANGICI ===
+        logger.info(f"[Celery Task] ✅ E-posta gönderme fonksiyonu (send_mail) başarıyla ve hatasız tamamlandı. Alıcı: '{supplier.email}', Malzeme: '{ingredient.name}'")
+        # === YENİ LOG SONU ===
 
     except Ingredient.DoesNotExist:
         logger.error(f"[Celery Task] ❌ Malzeme ID'si {ingredient_id} olan bir malzeme bulunamadı.")
