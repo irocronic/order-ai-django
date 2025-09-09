@@ -1,5 +1,52 @@
+# Ortak ortam değişkenlerini (environment variables) tek bir yerden yönetmek için bir grup oluşturuluyor.
+# Bu, hem web hem de worker servislerinin aynı ayarlara sahip olmasını garanti eder ve yönetimi kolaylaştırır.
+envVarGroups:
+  - name: orderai-env-group
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.4
+      - key: DJANGO_SETTINGS_MODULE
+        value: makarna_project.settings
+      - key: DJANGO_DEBUG
+        value: false
+      - key: PYTHONUNBUFFERED
+        value: "1"
+      - key: DATABASE_URL
+        fromDatabase:
+          name: makarna-db # Render'daki veritabanı adınızla eşleştiğinden emin olun
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: makarna-redis # Render'daki Redis adınızla eşleştiğinden emin olun
+          property: connectionString
+      # --- GÜVENLİK İÇİN SECRET OLARAK TANIMLANAN DEĞİŞKENLER ---
+      # Bu anahtarların değerlerini Render panosundaki "Environment" sekmesinde
+      # "Secret Files" veya "Normal Environment Variables" olarak oluşturmalısınız.
+      - key: DJANGO_SECRET_KEY
+        generateValue: true # Render'ın güvenli bir anahtar üretmesini sağlar
+      - key: DJANGO_EMAIL_HOST_USER
+        value: "akma.koray@gmail.com" # Hassas değilse burada kalabilir, değilse secret yapın
+      - key: DJANGO_EMAIL_HOST_PASSWORD
+        value: ${DJANGO_EMAIL_HOST_PASSWORD} # Render panosundan eklenen secret'ı kullanır
+      - key: DJANGO_ALLOWED_HOSTS
+        value: ${DJANGO_ALLOWED_HOSTS} # Render panosundan eklenen secret'ı kullanır
+      - key: DJANGO_ADMIN_EMAIL_RECIPIENTS
+        value: "akma.koray@gmail.com"
+      # --- UYGULAMA AYARLARI ---
+      - key: ANDROID_PACKAGE_NAME
+        value: "com.orderai.app"
+      - key: GOOGLE_APPLICATION_CREDENTIALS_PATH
+        value: "/etc/secrets/google-credentials.json"
+      - key: DJANGO_SECURE_SSL_REDIRECT
+        value: "True"
+      - key: DJANGO_SESSION_COOKIE_SECURE
+        value: "True"
+      - key: DJANGO_CSRF_COOKIE_SECURE
+        value: "True"
+
 services:
-  # 1. Django Web Servisi (Starter Paket için Ayarlandı)
+  # 1. Django Web Servisi
   - type: web
     name: orderai-web
     env: python
@@ -8,39 +55,9 @@ services:
     buildCommand: "./build.sh"
     startCommand: "gunicorn makarna_project.asgi:application --workers 1 --worker-class uvicorn.workers.UvicornWorker --bind 0.0.0.0:$PORT"
     healthCheckPath: /
-    envVars:
-      - key: PYTHON_VERSION
-        value: 3.12.4
-      - key: DJANGO_SECRET_KEY
-        generateValue: true
-      - key: DJANGO_DEBUG
-        value: false
-      - key: DATABASE_URL
-        value: ${DATABASE_URL}
-      - key: REDIS_URL
-        value: ${REDIS_URL}
-      - key: DJANGO_EMAIL_HOST_PASSWORD
-        value: ${DJANGO_EMAIL_HOST_PASSWORD}
+    envVarGroup: orderai-env-group # Yukarıda tanımlanan ortak grubu kullanır.
 
-      # --- Uygulama Ayarları ---
-      - key: ANDROID_PACKAGE_NAME
-        value: "com.orderai.app"
-      - key: DJANGO_ADMIN_EMAIL_RECIPIENTS
-        value: "akma.koray@gmail.com"
-      - key: DJANGO_EMAIL_HOST_USER
-        value: "akma.koray@gmail.com"
-      - key: DJANGO_SECURE_SSL_REDIRECT
-        value: "True"
-      - key: DJANGO_SESSION_COOKIE_SECURE
-        value: "True"
-      - key: DJANGO_CSRF_COOKIE_SECURE
-        value: "True"
-      - key: PYTHONUNBUFFERED
-        value: "1"
-      - key: GOOGLE_APPLICATION_CREDENTIALS_PATH
-        value: "/etc/secrets/google-credentials.json"
-
-  # 2. Celery Worker Servisi (Starter Paket için Ayarlandı)
+  # 2. Celery Worker Servisi
   - type: worker
     name: orderai-worker
     env: python
@@ -48,46 +65,4 @@ services:
     plan: starter
     buildCommand: "./build.sh"
     startCommand: "celery -A makarna_project worker -l info --concurrency=2 --max-tasks-per-child=100 --prefetch-multiplier=1"
-    envVars:
-      - key: PYTHON_VERSION
-        value: 3.12.4
-      - key: DJANGO_SECRET_KEY
-        fromService:
-          type: web
-          name: orderai-web
-          envVarKey: DJANGO_SECRET_KEY
-      # --- Ortak Değişkenler ---
-      - key: DATABASE_URL
-        fromService:
-          type: web
-          name: orderai-web
-          envVarKey: DATABASE_URL
-      - key: REDIS_URL
-        fromService:
-          type: web
-          name: orderai-web
-          envVarKey: REDIS_URL
-      - key: DJANGO_EMAIL_HOST_PASSWORD
-        fromService:
-          type: web
-          name: orderai-web
-          envVarKey: DJANGO_EMAIL_HOST_PASSWORD
-      - key: ANDROID_PACKAGE_NAME
-        fromService:
-          type: web
-          name: orderai-web
-          envVarKey: ANDROID_PACKAGE_NAME
-      - key: DJANGO_ADMIN_EMAIL_RECIPIENTS
-        fromService:
-          type: web
-          name: orderai-web
-          envVarKey: DJANGO_ADMIN_EMAIL_RECIPIENTS
-      - key: DJANGO_EMAIL_HOST_USER
-        fromService:
-          type: web
-          name: orderai-web
-          envVarKey: DJANGO_EMAIL_HOST_USER
-      - key: PYTHONUNBUFFERED
-        value: "1"
-      - key: GOOGLE_APPLICATION_CREDENTIALS_PATH
-        value: "/etc/secrets/google-credentials.json"
+    envVarGroup: orderai-env-group # Yukarıda tanımlanan ortak grubu kullanır.
