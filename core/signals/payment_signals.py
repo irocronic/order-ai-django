@@ -118,7 +118,8 @@ def deduct_ingredients_for_variant(variant: MenuItemVariant, quantity_sold: int,
                 f"Sonraki Stok: {new_quantity}, "
                 f"Alert Eşiği: {ingredient_to_update.alert_threshold}, "
                 f"Tedarikçi: {supplier_name}, "
-                f"Tedarikçi E-posta: {supplier_email or 'Yok'}"
+                f"Tedarikçi E-posta: {supplier_email or 'Yok'}, "
+                f"Bildirim Gönderildi mi?: {ingredient_to_update.low_stock_notification_sent}"
             )
 
             IngredientStockMovement.objects.create(
@@ -143,12 +144,17 @@ def deduct_ingredients_for_variant(variant: MenuItemVariant, quantity_sold: int,
                 f"ALERT KONTROLÜ: Malzeme='{ingredient_to_update.name}', "
                 f"Mevcut Stok={ingredient_to_update.stock_quantity}, "
                 f"Alert Threshold={ingredient_to_update.alert_threshold}, "
-                f"Supplier Email={supplier_email or 'Yok'}"
+                f"Supplier Email={supplier_email or 'Yok'}, "
+                f"Bildirim Gönderildi mi?: {ingredient_to_update.low_stock_notification_sent}"
             )
             
             # Kapsamlı koşul kontrolü
             if ingredient_to_update.alert_threshold is not None:
-                if ingredient_to_update.stock_quantity <= ingredient_to_update.alert_threshold:
+                # +++++++++++++++ GÜNCELLENEN KOŞUL +++++++++++++++
+                # 1. Stok seviyesi uyarı eşiğinin altına düştü mü?
+                # 2. VE daha önce bu durum için bildirim gönderilmemiş mi?
+                if ingredient_to_update.stock_quantity <= ingredient_to_update.alert_threshold and not ingredient_to_update.low_stock_notification_sent:
+                # ++++++++++++++++++++++++++++++++++++++++++++++++
                     if supplier_email:
                         logger.info(f"DÜŞÜK STOK TESPİT EDİLDİ: '{ingredient_to_update.name}' - E-posta task başlatılıyor.")
                         try:
@@ -156,6 +162,15 @@ def deduct_ingredients_for_variant(variant: MenuItemVariant, quantity_sold: int,
                             from ..tasks import send_low_stock_notification_email_task
                             task_result = send_low_stock_notification_email_task.delay(ingredient_to_update.id)
                             logger.info(f"E-posta task kuyruğa alındı. Task ID: {task_result.id}")
+
+                            # +++++++++++++++ YENİ SATIRLAR: Bayrağı işaretle +++++++++++++++
+                            # E-posta görevi başarıyla kuyruğa alındıktan sonra,
+                            # bu malzeme için bildirim gönderildiğini işaretle.
+                            ingredient_to_update.low_stock_notification_sent = True
+                            ingredient_to_update.save(update_fields=['low_stock_notification_sent'])
+                            logger.info(f"'{ingredient_to_update.name}' için düşük stok bildirim bayrağı True olarak işaretlendi.")
+                            # ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
                         except ImportError as import_error:
                             logger.error(f"E-posta task import hatası: {import_error}")
                         except Exception as task_error:
@@ -163,7 +178,13 @@ def deduct_ingredients_for_variant(variant: MenuItemVariant, quantity_sold: int,
                     else:
                         logger.warning(f"Malzeme '{ingredient_to_update.name}' tedarikçisinin e-posta adresi yok. E-posta gönderilemedi.")
                 else:
-                    logger.info(f"Malzeme '{ingredient_to_update.name}' henüz alert eşiğini aşmadı. (Mevcut: {ingredient_to_update.stock_quantity}, Eşik: {ingredient_to_update.alert_threshold})")
+                    # Bu log, stok düşük olsa bile neden e-posta GÖNDERİLMEDİĞİNİ anlamanıza yardımcı olur.
+                    logger.info(
+                        f"Malzeme '{ingredient_to_update.name}' için e-posta gönderimi atlandı. "
+                        f"Mevcut Stok: {ingredient_to_update.stock_quantity}, "
+                        f"Eşik: {ingredient_to_update.alert_threshold}, "
+                        f"Bildirim Gönderildi mi?: {ingredient_to_update.low_stock_notification_sent}"
+                    )
             else:
                 logger.warning(f"Malzeme '{ingredient_to_update.name}' için alert_threshold ayarlanmamış. E-posta bildirimi gönderilmedi.")
 

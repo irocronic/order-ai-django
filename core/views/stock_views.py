@@ -300,6 +300,23 @@ class IngredientViewSet(viewsets.ModelViewSet):
             
         new_quantity = original_quantity + quantity_to_apply
 
+        # +++++++++++++++ YENİ KONTROL: Bayrağı sıfırla +++++++++++++++
+        # Stok artırılıyor ve yeni miktar uyarı eşiğinin üstüne çıkıyorsa,
+        # düşük stok bildirim bayrağını sıfırla ki yeniden düştüğünde bildirim gönderilebilsin
+        update_fields_for_save = ['stock_quantity']
+        if (quantity_to_apply > 0 and 
+            ingredient_to_update.alert_threshold is not None and 
+            new_quantity > ingredient_to_update.alert_threshold):
+            if ingredient_to_update.low_stock_notification_sent:
+                ingredient_to_update.low_stock_notification_sent = False
+                update_fields_for_save.append('low_stock_notification_sent')
+                logger.info(
+                    f"Malzeme '{ingredient_to_update.name}' için düşük stok bildirim bayrağı sıfırlandı. "
+                    f"Önceki stok: {original_quantity}, Yeni stok: {new_quantity}, "
+                    f"Uyarı eşiği: {ingredient_to_update.alert_threshold}"
+                )
+        # ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
         IngredientStockMovement.objects.create(
             ingredient=ingredient_to_update,
             movement_type=movement_type,
@@ -310,8 +327,8 @@ class IngredientViewSet(viewsets.ModelViewSet):
             description=description
         )
 
-        ingredient_to_update.stock_quantity = F('stock_quantity') + quantity_to_apply
-        ingredient_to_update.save(update_fields=['stock_quantity'])
+        ingredient_to_update.stock_quantity = new_quantity
+        ingredient_to_update.save(update_fields=update_fields_for_save)
         
         ingredient_to_update.refresh_from_db()
         serializer = self.get_serializer(ingredient_to_update)

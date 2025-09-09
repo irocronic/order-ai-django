@@ -272,6 +272,10 @@ class Ingredient(models.Model):
     # --- YENİ ALANLAR ---
     supplier = models.ForeignKey(Supplier, on_delete=models.SET_NULL, null=True, blank=True, related_name='ingredients', verbose_name="Tedarikçi")
     cost_price = models.DecimalField(max_digits=10, decimal_places=3, null=True, blank=True, verbose_name="Birim Maliyet Fiyatı")
+    # +++++++++++++++ YENİ SATIR +++++++++++++++
+    # Bu alan, düşük stok bildirimi gönderildiğinde True olarak işaretlenecek.
+    low_stock_notification_sent = models.BooleanField(default=False, verbose_name="Düşük Stok Bildirimi Gönderildi")
+    # +++++++++++++++++++++++++++++++++++++++++
     # --------------------
     
     class Meta:
