@@ -275,9 +275,25 @@ def send_low_stock_notification_email_task(self, ingredient_id):
     """
     Bir malzemenin stoğu kritik seviyenin altına düştüğünde,
     o malzemenin tedarikçisine e-posta gönderir.
-    GÜNCELLENMİŞ LOGLAMA EKLENDİ.
+    GÜNCELLENMİŞ: Sayı formatlaması eklendi - fazladan sıfırları kaldırır.
     """
     logger.info(f"[Celery Task] Düşük stok e-posta bildirimi başlatılıyor. Malzeme ID: {ingredient_id}")
+    
+    def format_quantity(value):
+        """
+        Sayıları kullanıcı dostu formatta döndürür.
+        20.000 -> 20, 20.500 -> 20.5, 0.000 -> 0
+        """
+        if value is None:
+            return "0"
+        
+        # Eğer tam sayıysa, ondalık kısmını gösterme
+        if value == int(value):
+            return str(int(value))
+        else:
+            # Küsuratı varsa, sondaki gereksiz sıfırları kaldır
+            return f"{value:.3f}".rstrip('0').rstrip('.')
+    
     try:
         ingredient = Ingredient.objects.select_related('supplier', 'unit', 'business').get(id=ingredient_id)
 
@@ -288,6 +304,10 @@ def send_low_stock_notification_email_task(self, ingredient_id):
         supplier = ingredient.supplier
         business = ingredient.business
 
+        # *** YENİ: Formatlanmış sayıları kullan ***
+        formatted_current_stock = format_quantity(ingredient.stock_quantity)
+        formatted_alert_threshold = format_quantity(ingredient.alert_threshold)
+
         subject = f"Düşük Stok Uyarısı: {ingredient.name} - {business.name}"
         message = f"""
 Merhaba {supplier.contact_person or supplier.name},
@@ -296,8 +316,8 @@ Merhaba {supplier.contact_person or supplier.name},
 
 Malzeme Detayları:
 - Malzeme Adı: {ingredient.name}
-- Mevcut Stok: {ingredient.stock_quantity} {ingredient.unit.abbreviation}
-- Uyarı Eşiği: {ingredient.alert_threshold} {ingredient.unit.abbreviation}
+- Mevcut Stok: {formatted_current_stock} {ingredient.unit.abbreviation}
+- Uyarı Eşiği: {formatted_alert_threshold} {ingredient.unit.abbreviation}
 
 Lütfen en kısa sürede yeni bir sevkiyat planlaması için bizimle iletişime geçin.
 
@@ -311,9 +331,7 @@ Teşekkürler,
         from_email = settings.DEFAULT_FROM_EMAIL
         recipient_list = [supplier.email]
 
-        # === YENİ LOG BAŞLANGICI ===
         logger.info(f"E-posta gönderim denemesi yapılıyor. Kime: {recipient_list}, Kimden: '{from_email}', Konu: '{subject}'")
-        # === YENİ LOG SONU ===
 
         send_mail(
             subject,
@@ -323,9 +341,8 @@ Teşekkürler,
             fail_silently=False
         )
         
-        # === YENİ LOG BAŞLANGICI ===
         logger.info(f"[Celery Task] ✅ E-posta gönderme fonksiyonu (send_mail) başarıyla ve hatasız tamamlandı. Alıcı: '{supplier.email}', Malzeme: '{ingredient.name}'")
-        # === YENİ LOG SONU ===
+        logger.info(f"[Celery Task] 📧 Gönderilen değerler: Mevcut Stok: {formatted_current_stock} {ingredient.unit.abbreviation}, Uyarı Eşiği: {formatted_alert_threshold} {ingredient.unit.abbreviation}")
 
     except Ingredient.DoesNotExist:
         logger.error(f"[Celery Task] ❌ Malzeme ID'si {ingredient_id} olan bir malzeme bulunamadı.")
