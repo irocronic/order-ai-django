@@ -8,7 +8,9 @@ from django.db import transaction
 from django.db.models import F
 from decimal import Decimal
 from rest_framework.exceptions import PermissionDenied, ValidationError, NotFound
-from django.utils import timezone # timezone importu eklendi
+from django.utils import timezone
+from django.db.models.deletion import ProtectedError
+import logging
 
 from ..models import (
     Stock, MenuItemVariant, StockMovement, Business, CustomUser as User,
@@ -22,11 +24,7 @@ from ..serializers import (
 )
 from ..utils.order_helpers import get_user_business, PermissionKeys
 
-
-# StockViewSet, StockMovementViewSet, IngredientViewSet, UnitOfMeasureViewSet, 
-# RecipeItemViewSet ve SupplierViewSet sınıfları burada yer alacak (değişiklik yok)
-# ...
-# ...
+logger = logging.getLogger(__name__)
 
 class StockViewSet(viewsets.ModelViewSet):
     serializer_class = StockSerializer
@@ -244,7 +242,7 @@ class IngredientViewSet(viewsets.ModelViewSet):
         user = self.request.user
         user_business = get_user_business(user)
         if user_business:
-            return Ingredient.objects.filter(business=user_business).select_related('unit')
+            return Ingredient.objects.filter(business=user_business).select_related('unit', 'supplier')
         return Ingredient.objects.none()
 
     def perform_create(self, serializer):
@@ -332,10 +330,79 @@ class IngredientViewSet(viewsets.ModelViewSet):
         serializer = IngredientStockMovementSerializer(movements, many=True)
         return Response(serializer.data)
 
+    # ==================== YENİ METOT: Tedarikçi Ataması ====================
+    @action(detail=False, methods=['post'], url_path='assign-supplier')
+    def assign_supplier(self, request):
+        """
+        Birden fazla malzemeye aynı anda tedarikçi atar.
+        Request data: {
+            'supplier_id': 123,
+            'ingredient_ids': [1, 2, 3, 4]
+        }
+        """
+        user = request.user
+        user_business = get_user_business(user)
+        
+        if not (user.user_type == 'business_owner' or 
+                (user.user_type == 'staff' and PermissionKeys.MANAGE_STOCK in user.staff_permissions)):
+            raise PermissionDenied("Malzeme-tedarikçi ataması yapma yetkiniz yok.")
+
+        supplier_id = request.data.get('supplier_id')
+        ingredient_ids = request.data.get('ingredient_ids', [])
+
+        if not supplier_id or not ingredient_ids:
+            return Response(
+                {'detail': 'supplier_id ve ingredient_ids parametreleri gereklidir.'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            # Tedarikçinin varlığını ve yetkisini kontrol et
+            supplier = Supplier.objects.get(id=supplier_id, business=user_business)
+            
+            # Malzemelerin varlığını ve yetkisini kontrol et
+            ingredients = Ingredient.objects.filter(
+                id__in=ingredient_ids, 
+                business=user_business
+            )
+            
+            if ingredients.count() != len(ingredient_ids):
+                return Response(
+                    {'detail': 'Bazı malzemeler bulunamadı veya erişim yetkiniz yok.'}, 
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            # Toplu güncelleme
+            updated_count = ingredients.update(supplier=supplier)
+            
+            logger.info(f"Supplier {supplier.name} assigned to {updated_count} ingredients by user {user.username}")
+            
+            return Response({
+                'success': True,
+                'supplier_name': supplier.name,
+                'updated_ingredients': updated_count,
+                'message': f'{supplier.name} tedarikçisi {updated_count} malzemeye atandı.'
+            }, status=status.HTTP_200_OK)
+            
+        except Supplier.DoesNotExist:
+            return Response(
+                {'detail': 'Belirtilen tedarikçi bulunamadı.'}, 
+                status=status.HTTP_404_NOT_FOUND
+            )
+        except Exception as e:
+            logger.error(f"Error assigning supplier: {str(e)}")
+            return Response(
+                {'detail': f'Tedarikçi ataması sırasında hata: {str(e)}'}, 
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+    # =====================================================================
+
+
 class UnitOfMeasureViewSet(viewsets.ReadOnlyModelViewSet):
     serializer_class = UnitOfMeasureSerializer
     permission_classes = [IsAuthenticated]
     queryset = UnitOfMeasure.objects.all()
+
 
 class RecipeItemViewSet(viewsets.ModelViewSet):
     serializer_class = RecipeItemSerializer
@@ -367,6 +434,7 @@ class RecipeItemViewSet(viewsets.ModelViewSet):
             
         serializer.save()
 
+
 class SupplierViewSet(viewsets.ModelViewSet):
     serializer_class = SupplierSerializer
     permission_classes = [IsAuthenticated]
@@ -382,7 +450,6 @@ class SupplierViewSet(viewsets.ModelViewSet):
         user_business = get_user_business(self.request.user)
         serializer.save(business=user_business)
 
-    # ==================== YENİ EKLENEN METOT ====================
     def destroy(self, request, *args, **kwargs):
         """
         Bir tedarikçiyi silmeye çalışır. Eğer ilişkili alım siparişleri varsa,
@@ -398,6 +465,7 @@ class SupplierViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
+
 class PurchaseOrderViewSet(viewsets.ModelViewSet):
     serializer_class = PurchaseOrderSerializer
     permission_classes = [IsAuthenticated]
@@ -406,14 +474,59 @@ class PurchaseOrderViewSet(viewsets.ModelViewSet):
         user = self.request.user
         user_business = get_user_business(user)
         if user_business:
-            return PurchaseOrder.objects.filter(business=user_business).prefetch_related('items__ingredient__unit')
+            return PurchaseOrder.objects.filter(business=user_business).prefetch_related('items__ingredient__unit').select_related('supplier')
         return PurchaseOrder.objects.none()
 
+    # ==================== GÜNCELLENECEK METOT ====================
     def perform_create(self, serializer):
-        user_business = get_user_business(self.request.user)
-        serializer.save(business=user_business)
+        user = self.request.user
+        user_business = get_user_business(user)
+        
+        # Purchase order'ı kaydet
+        purchase_order = serializer.save(business=user_business)
+        
+        # *** YENİ: Purchase order oluşturulduktan sonra malzeme-tedarikçi ilişkisini güncelle ***
+        try:
+            items_data = self.request.data.get('items', [])
+            supplier = purchase_order.supplier
+            
+            if supplier and items_data:
+                ingredient_ids_to_update = []
+                
+                for item_data in items_data:
+                    ingredient_id = item_data.get('ingredient')
+                    if ingredient_id:
+                        ingredient_ids_to_update.append(ingredient_id)
+                
+                if ingredient_ids_to_update:
+                    # Malzemelerin tedarikçisini güncelle (sadece tedarikçisi olmayan malzemeler için)
+                    ingredients_without_supplier = Ingredient.objects.filter(
+                        id__in=ingredient_ids_to_update,
+                        business=user_business,
+                        supplier__isnull=True  # Sadece tedarikçisi olmayan malzemeler
+                    )
+                    
+                    updated_count = ingredients_without_supplier.update(supplier=supplier)
+                    
+                    if updated_count > 0:
+                        logger.info(f"✅ Purchase Order {purchase_order.id}: {updated_count} malzemeye {supplier.name} tedarikçisi atandı")
+                    
+                    # Tedarikçisi olan malzemeler için log
+                    ingredients_with_supplier = Ingredient.objects.filter(
+                        id__in=ingredient_ids_to_update,
+                        business=user_business,
+                        supplier__isnull=False
+                    )
+                    
+                    if ingredients_with_supplier.exists():
+                        existing_suppliers = list(ingredients_with_supplier.values_list('supplier__name', flat=True).distinct())
+                        logger.info(f"ℹ️ Purchase Order {purchase_order.id}: Bazı malzemelerin zaten tedarikçisi var: {existing_suppliers}")
+        
+        except Exception as e:
+            logger.error(f"❌ Purchase Order {purchase_order.id}: Malzeme-tedarikçi ataması sırasında hata: {str(e)}")
+            # Hata durumunda purchase order'ı iptal etmiyoruz, sadece log yazıyoruz
+    # ==========================================================
     
-    # ==================== EKLENMESİ GEREKEN FONKSİYON ====================
     @action(detail=True, methods=['post'], url_path='cancel')
     def cancel_order(self, request, pk=None):
         """Beklemede olan bir alım siparişini iptal eder."""
@@ -428,7 +541,6 @@ class PurchaseOrderViewSet(viewsets.ModelViewSet):
         purchase_order.save(update_fields=['status'])
         
         return Response(PurchaseOrderSerializer(purchase_order).data)
-    # =====================================================================
 
     @action(detail=True, methods=['post'], url_path='complete')
     def complete_order(self, request, pk=None):
@@ -437,9 +549,6 @@ class PurchaseOrderViewSet(viewsets.ModelViewSet):
             return Response({'detail': 'Bu alım siparişi zaten tamamlanmış.'}, status=status.HTTP_400_BAD_REQUEST)
         
         purchase_order.status = 'completed'
-        # Not: Modelinizde 'completed_at' alanı yok, bu satır hata verebilir.
-        # Eğer bu alanı eklemediyseniz, aşağıdaki satırı silin veya yoruma alın.
-        # purchase_order.completed_at = timezone.now() 
         purchase_order.save()
         
         return Response(PurchaseOrderSerializer(purchase_order).data)
