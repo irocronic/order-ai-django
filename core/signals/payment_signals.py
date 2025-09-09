@@ -73,7 +73,7 @@ def deduct_ingredients_for_variant(variant: MenuItemVariant, quantity_sold: int,
 
     for recipe_item in variant.recipe_items.select_related('ingredient', 'ingredient__unit').all():
         ingredient = recipe_item.ingredient
-        quantity_to_deduct = recipe_item.quantity * Decimal(str(quantity_sold)) # Decimal dönüşümü eklendi
+        quantity_to_deduct = recipe_item.quantity * Decimal(str(quantity_sold))
 
         try:
             ingredient_to_update = Ingredient.objects.select_for_update().get(id=ingredient.id)
@@ -98,14 +98,17 @@ def deduct_ingredients_for_variant(variant: MenuItemVariant, quantity_sold: int,
             ingredient_to_update.stock_quantity = new_quantity
             ingredient_to_update.save(update_fields=['stock_quantity'])
 
-            # === YENİ: Düşük stok kontrolü ve e-posta tetikleme ===
-            ingredient_to_update.refresh_from_db() # En güncel stok miktarını al
+            ingredient_to_update.refresh_from_db()
+            
+            # === KANIT İÇİN EKLENEN LOG SATIRI BAŞLANGICI ===
+            logger.info(f"STOK KONTROLÜ: Malzeme: '{ingredient_to_update.name}', Mevcut Stok: {ingredient_to_update.stock_quantity}, Uyarı Eşiği: {ingredient_to_update.alert_threshold}")
+            # === KANIT İÇİN EKLENEN LOG SATIRI SONU ===
+            
             if ingredient_to_update.alert_threshold is not None and \
                ingredient_to_update.stock_quantity <= ingredient_to_update.alert_threshold:
                 
                 logger.info(f"Düşük stok tespit edildi: {ingredient_to_update.name}. E-posta görevi kuyruğa alınıyor.")
                 send_low_stock_notification_email_task.delay(ingredient_to_update.id)
-            # =======================================================
 
             logger.info(
                 f"Malzeme Stoğu Düşüldü: '{ingredient.name}' (ID: {ingredient.id}), "
@@ -141,7 +144,6 @@ def handle_payment_and_stock_deduction(sender, instance: Payment, created: bool,
         'variant__recipe_items__ingredient__unit'
     ).all():
         
-        # Durum 1: Satılan ürün bir kampanya paketi ise
         if order_item.menu_item.is_campaign_bundle and hasattr(order_item.menu_item, 'represented_campaign'):
             campaign = order_item.menu_item.represented_campaign
             if not campaign:
@@ -153,12 +155,10 @@ def handle_payment_and_stock_deduction(sender, instance: Payment, created: bool,
                     deduct_ingredients_for_variant(campaign_item.variant, total_quantity_sold, order_item)
                     deduct_variant_stock(campaign_item.variant, total_quantity_sold, order_item)
 
-        # Durum 2: Satılan ürün normal bir ürün ise (varyantı olan)
         elif order_item.variant:
             deduct_ingredients_for_variant(order_item.variant, order_item.quantity, order_item)
             deduct_variant_stock(order_item.variant, order_item.quantity, order_item)
 
-        # Durum 3: Satılan ürünün ekstraları varsa, onların da stoğunu düş
         for extra in order_item.extras.select_related('variant').all():
             total_extra_quantity_sold = order_item.quantity * extra.quantity
             deduct_ingredients_for_variant(extra.variant, total_extra_quantity_sold, order_item)
