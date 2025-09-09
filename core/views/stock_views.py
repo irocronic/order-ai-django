@@ -1,4 +1,4 @@
-# core/views/stock_views.py
+# core/views/stock_views.py (Güncel)
 
 from rest_framework import viewsets, status, mixins
 from rest_framework.permissions import IsAuthenticated

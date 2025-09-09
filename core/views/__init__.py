@@ -1,4 +1,4 @@
-# core/views/__init__.py
+# core/views/__init__.py (Güncel)
 
 from .auth_views import (
     RegisterView,
