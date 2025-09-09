@@ -330,7 +330,6 @@ class IngredientViewSet(viewsets.ModelViewSet):
         serializer = IngredientStockMovementSerializer(movements, many=True)
         return Response(serializer.data)
 
-    # ==================== YENİ METOT: Tedarikçi Ataması ====================
     @action(detail=False, methods=['post'], url_path='assign-supplier')
     def assign_supplier(self, request):
         """
@@ -357,10 +356,8 @@ class IngredientViewSet(viewsets.ModelViewSet):
             )
 
         try:
-            # Tedarikçinin varlığını ve yetkisini kontrol et
             supplier = Supplier.objects.get(id=supplier_id, business=user_business)
             
-            # Malzemelerin varlığını ve yetkisini kontrol et
             ingredients = Ingredient.objects.filter(
                 id__in=ingredient_ids, 
                 business=user_business
@@ -372,7 +369,6 @@ class IngredientViewSet(viewsets.ModelViewSet):
                     status=status.HTTP_400_BAD_REQUEST
                 )
 
-            # Toplu güncelleme
             updated_count = ingredients.update(supplier=supplier)
             
             logger.info(f"Supplier {supplier.name} assigned to {updated_count} ingredients by user {user.username}")
@@ -395,7 +391,6 @@ class IngredientViewSet(viewsets.ModelViewSet):
                 {'detail': f'Tedarikçi ataması sırasında hata: {str(e)}'}, 
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
-    # =====================================================================
 
 
 class UnitOfMeasureViewSet(viewsets.ReadOnlyModelViewSet):
@@ -477,7 +472,8 @@ class PurchaseOrderViewSet(viewsets.ModelViewSet):
             return PurchaseOrder.objects.filter(business=user_business).prefetch_related('items__ingredient__unit').select_related('supplier')
         return PurchaseOrder.objects.none()
 
-    # ==================== GÜNCELLENECEK METOT ====================
+    # ==================== SORUN ÇÖZÜMÜ: GÜNCELLENMİŞ METOT ====================
+    @transaction.atomic
     def perform_create(self, serializer):
         user = self.request.user
         user_business = get_user_business(user)
@@ -485,47 +481,70 @@ class PurchaseOrderViewSet(viewsets.ModelViewSet):
         # Purchase order'ı kaydet
         purchase_order = serializer.save(business=user_business)
         
-        # *** YENİ: Purchase order oluşturulduktan sonra malzeme-tedarikçi ilişkisini güncelle ***
+        # *** YENİ: Purchase order oluşturulduktan sonra malzemeleri güncelle ***
         try:
             items_data = self.request.data.get('items', [])
             supplier = purchase_order.supplier
             
             if supplier and items_data:
-                ingredient_ids_to_update = []
-                
                 for item_data in items_data:
                     ingredient_id = item_data.get('ingredient')
+                    alert_threshold = item_data.get('alert_threshold')
+                    unit_price = item_data.get('unit_price')
+                    
                     if ingredient_id:
-                        ingredient_ids_to_update.append(ingredient_id)
+                        try:
+                            ingredient = Ingredient.objects.select_for_update().get(
+                                id=ingredient_id,
+                                business=user_business
+                            )
+                            
+                            updates_made = []
+                            
+                            # 1. Tedarikçi ataması (sadece boş ise)
+                            if not ingredient.supplier:
+                                ingredient.supplier = supplier
+                                updates_made.append('supplier')
+                            
+                            # 2. Alert threshold ataması (sadece boş ise ve geçerli değer varsa)
+                            if alert_threshold is not None and ingredient.alert_threshold is None:
+                                try:
+                                    threshold_value = Decimal(str(alert_threshold))
+                                    if threshold_value > 0:
+                                        ingredient.alert_threshold = threshold_value
+                                        updates_made.append('alert_threshold')
+                                except (ValueError, TypeError):
+                                    logger.warning(f"Invalid alert_threshold value: {alert_threshold}")
+                            
+                            # 3. Unit cost ataması (eğer ingredient modelinde unit_cost alanı varsa)
+                            if hasattr(ingredient, 'unit_cost') and unit_price is not None:
+                                if ingredient.unit_cost is None or ingredient.unit_cost == 0:
+                                    try:
+                                        price_value = Decimal(str(unit_price))
+                                        if price_value > 0:
+                                            ingredient.unit_cost = price_value
+                                            updates_made.append('unit_cost')
+                                    except (ValueError, TypeError):
+                                        logger.warning(f"Invalid unit_price value: {unit_price}")
+                            
+                            # Değişiklik varsa kaydet
+                            if updates_made:
+                                ingredient.save(update_fields=updates_made)
+                                logger.info(f"✅ Purchase Order {purchase_order.id}: Ingredient {ingredient.name} updated fields: {updates_made}")
+                            
+                        except Ingredient.DoesNotExist:
+                            logger.warning(f"❌ Purchase Order {purchase_order.id}: Ingredient ID {ingredient_id} not found")
+                            continue
+                        except Exception as e:
+                            logger.error(f"❌ Purchase Order {purchase_order.id}: Error updating ingredient {ingredient_id}: {str(e)}")
+                            continue
                 
-                if ingredient_ids_to_update:
-                    # Malzemelerin tedarikçisini güncelle (sadece tedarikçisi olmayan malzemeler için)
-                    ingredients_without_supplier = Ingredient.objects.filter(
-                        id__in=ingredient_ids_to_update,
-                        business=user_business,
-                        supplier__isnull=True  # Sadece tedarikçisi olmayan malzemeler
-                    )
-                    
-                    updated_count = ingredients_without_supplier.update(supplier=supplier)
-                    
-                    if updated_count > 0:
-                        logger.info(f"✅ Purchase Order {purchase_order.id}: {updated_count} malzemeye {supplier.name} tedarikçisi atandı")
-                    
-                    # Tedarikçisi olan malzemeler için log
-                    ingredients_with_supplier = Ingredient.objects.filter(
-                        id__in=ingredient_ids_to_update,
-                        business=user_business,
-                        supplier__isnull=False
-                    )
-                    
-                    if ingredients_with_supplier.exists():
-                        existing_suppliers = list(ingredients_with_supplier.values_list('supplier__name', flat=True).distinct())
-                        logger.info(f"ℹ️ Purchase Order {purchase_order.id}: Bazı malzemelerin zaten tedarikçisi var: {existing_suppliers}")
+                logger.info(f"✅ Purchase Order {purchase_order.id}: Malzeme güncellemeleri tamamlandı")
         
         except Exception as e:
-            logger.error(f"❌ Purchase Order {purchase_order.id}: Malzeme-tedarikçi ataması sırasında hata: {str(e)}")
+            logger.error(f"❌ Purchase Order {purchase_order.id}: Malzeme güncelleme sırasında genel hata: {str(e)}")
             # Hata durumunda purchase order'ı iptal etmiyoruz, sadece log yazıyoruz
-    # ==========================================================
+    # =======================================================================
     
     @action(detail=True, methods=['post'], url_path='cancel')
     def cancel_order(self, request, pk=None):
