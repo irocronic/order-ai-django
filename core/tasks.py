@@ -1,4 +1,4 @@
-# core/tasks.py
+# core/tasks.py - GÜVENLİ VERSİYON
 
 from celery import shared_task
 from django.conf import settings
@@ -7,6 +7,12 @@ from urllib.parse import urlparse
 import redis
 import json
 from django.core.mail import send_mail
+import asyncio
+import aiosmtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+import smtplib
+from socket import timeout as SocketTimeout
 
 from .models import Order, Ingredient
 from .serializers import OrderSerializer
@@ -270,41 +276,112 @@ def send_test_notification(business_id=67):
         logger.error(f"[Celery Task] 🧪 Manual test notification failed for {room}")
         return False
 
-@shared_task(bind=True, name="send_low_stock_email_to_supplier")
+
+# ==================== GÜVENLİ E-POSTA SİSTEMİ ====================
+
+async def send_email_async(subject, message, from_email, recipient_list, timeout=10):
+    """
+    Async e-posta gönderme fonksiyonu - timeout koruması ile
+    """
+    try:
+        msg = MIMEMultipart()
+        msg['From'] = from_email
+        msg['To'] = ', '.join(recipient_list)
+        msg['Subject'] = subject
+        msg.attach(MIMEText(message, 'plain', 'utf-8'))
+
+        # SMTP ayarlarını Django settings'den al
+        smtp_host = getattr(settings, 'EMAIL_HOST', 'smtp.gmail.com')
+        smtp_port = getattr(settings, 'EMAIL_PORT', 587)
+        smtp_user = getattr(settings, 'EMAIL_HOST_USER', '')
+        smtp_password = getattr(settings, 'EMAIL_HOST_PASSWORD', '')
+        use_tls = getattr(settings, 'EMAIL_USE_TLS', True)
+
+        # Async SMTP ile gönder
+        server = aiosmtplib.SMTP(hostname=smtp_host, port=smtp_port)
+        
+        # Timeout kontrolü ile bağlantı
+        await asyncio.wait_for(server.connect(), timeout=timeout)
+        
+        if use_tls:
+            await asyncio.wait_for(server.starttls(), timeout=timeout)
+        
+        if smtp_user and smtp_password:
+            await asyncio.wait_for(server.login(smtp_user, smtp_password), timeout=timeout)
+        
+        await asyncio.wait_for(server.send_message(msg), timeout=timeout)
+        await server.quit()
+        
+        logger.info(f"[Email] ✅ Async e-posta başarıyla gönderildi: {recipient_list}")
+        return True
+        
+    except asyncio.TimeoutError:
+        logger.error(f"[Email] ⏰ E-posta gönderimi zaman aşımı ({timeout}s): {recipient_list}")
+        return False
+    except Exception as e:
+        logger.error(f"[Email] ❌ Async e-posta hatası: {e}")
+        return False
+
+
+def send_email_sync_fallback(subject, message, from_email, recipient_list, timeout=5):
+    """
+    Sync fallback e-posta gönderme - kısa timeout ile
+    """
+    try:
+        import socket
+        default_timeout = socket.getdefaulttimeout()
+        socket.setdefaulttimeout(timeout)
+        
+        send_mail(
+            subject,
+            message,
+            from_email,
+            recipient_list,
+            fail_silently=False,
+            connection=None
+        )
+        
+        socket.setdefaulttimeout(default_timeout)
+        logger.info(f"[Email] ✅ Sync fallback e-posta gönderildi: {recipient_list}")
+        return True
+        
+    except (smtplib.SMTPException, SocketTimeout, OSError) as e:
+        logger.error(f"[Email] ❌ Sync fallback e-posta hatası: {e}")
+        return False
+    finally:
+        try:
+            socket.setdefaulttimeout(default_timeout)
+        except:
+            pass
+
+
+@shared_task(bind=True, name="send_low_stock_email_to_supplier", max_retries=2, default_retry_delay=300)
 def send_low_stock_notification_email_task(self, ingredient_id):
     """
-    Bir malzemenin stoğu kritik seviyenin altına düştüğünde,
-    o malzemenin tedarikçisine e-posta gönderir.
-    GÜNCELLENMİŞ: Sayı formatlaması eklendi - fazladan sıfırları kaldırır.
+    GÜVENLİ VERSİYON: Async + Timeout + Fallback + Retry
     """
-    logger.info(f"[Celery Task] Düşük stok e-posta bildirimi başlatılıyor. Malzeme ID: {ingredient_id}")
+    logger.info(f"[Celery Task] 📧 Düşük stok e-posta bildirimi başlatılıyor. Malzeme ID: {ingredient_id}")
     
     def format_quantity(value):
-        """
-        Sayıları kullanıcı dostu formatta döndürür.
-        20.000 -> 20, 20.500 -> 20.5, 0.000 -> 0
-        """
+        """Sayıları kullanıcı dostu formatta döndürür."""
         if value is None:
             return "0"
-        
-        # Eğer tam sayıysa, ondalık kısmını gösterme
         if value == int(value):
             return str(int(value))
         else:
-            # Küsuratı varsa, sondaki gereksiz sıfırları kaldır
             return f"{value:.3f}".rstrip('0').rstrip('.')
     
     try:
         ingredient = Ingredient.objects.select_related('supplier', 'unit', 'business').get(id=ingredient_id)
 
         if not ingredient.supplier or not ingredient.supplier.email:
-            logger.warning(f"Malzeme '{ingredient.name}' (ID: {ingredient.id}) için tedarikçi veya e-posta adresi bulunamadı. E-posta gönderilmedi.")
-            return
+            logger.warning(f"[Email] ⚠️ Malzeme '{ingredient.name}' için tedarikçi/e-posta yok. Atlanıyor.")
+            return {"status": "skipped", "reason": "no_supplier_email"}
 
         supplier = ingredient.supplier
         business = ingredient.business
 
-        # *** YENİ: Formatlanmış sayıları kullan ***
+        # Formatlanmış değerler
         formatted_current_stock = format_quantity(ingredient.stock_quantity)
         formatted_alert_threshold = format_quantity(ingredient.alert_threshold)
 
@@ -328,24 +405,51 @@ Lütfen en kısa sürede yeni bir sevkiyat planlaması için bizimle iletişime 
 Teşekkürler,
 {business.name} Yönetimi
 """
+        
         from_email = settings.DEFAULT_FROM_EMAIL
         recipient_list = [supplier.email]
 
-        logger.info(f"E-posta gönderim denemesi yapılıyor. Kime: {recipient_list}, Kimden: '{from_email}', Konu: '{subject}'")
-
-        send_mail(
-            subject,
-            message,
-            from_email,
-            recipient_list,
-            fail_silently=False
-        )
+        # 1. ÖNCE ASYNC DENEMESİ (10 saniye timeout)
+        try:
+            logger.info(f"[Email] 🚀 Async e-posta denemesi: {recipient_list}")
+            success = asyncio.run(send_email_async(subject, message, from_email, recipient_list, timeout=10))
+            
+            if success:
+                logger.info(f"[Email] ✅ Async e-posta başarılı: '{ingredient.name}' → {supplier.email}")
+                return {"status": "success", "method": "async", "ingredient": ingredient.name}
         
-        logger.info(f"[Celery Task] ✅ E-posta gönderme fonksiyonu (send_mail) başarıyla ve hatasız tamamlandı. Alıcı: '{supplier.email}', Malzeme: '{ingredient.name}'")
-        logger.info(f"[Celery Task] 📧 Gönderilen değerler: Mevcut Stok: {formatted_current_stock} {ingredient.unit.abbreviation}, Uyarı Eşiği: {formatted_alert_threshold} {ingredient.unit.abbreviation}")
+        except Exception as e:
+            logger.warning(f"[Email] ⚠️ Async e-posta hatası, fallback deneniyor: {e}")
+
+        # 2. SYNC FALLBACK (5 saniye timeout)
+        logger.info(f"[Email] 🔄 Sync fallback e-posta denemesi: {recipient_list}")
+        success = send_email_sync_fallback(subject, message, from_email, recipient_list, timeout=5)
+        
+        if success:
+            logger.info(f"[Email] ✅ Sync fallback e-posta başarılı: '{ingredient.name}' → {supplier.email}")
+            return {"status": "success", "method": "sync_fallback", "ingredient": ingredient.name}
+
+        # 3. HER İKİSİ DE BAŞARISIZSA RETRY
+        logger.error(f"[Email] ❌ Tüm e-posta yöntemleri başarısız. Retry yapılacak. Malzeme: {ingredient.name}")
+        
+        # Celery retry mekanizması
+        raise self.retry(countdown=300, max_retries=2)
 
     except Ingredient.DoesNotExist:
-        logger.error(f"[Celery Task] ❌ Malzeme ID'si {ingredient_id} olan bir malzeme bulunamadı.")
+        logger.error(f"[Email] ❌ Malzeme ID {ingredient_id} bulunamadı.")
+        return {"status": "error", "reason": "ingredient_not_found"}
+    
+    except self.Retry:
+        # Retry exception'ı tekrar fırlat
+        raise
+    
     except Exception as e:
-        logger.error(f"[Celery Task] ❌ Düşük stok e-postası gönderilirken beklenmedik bir hata oluştu: {e}", exc_info=True)
-        raise self.retry(exc=e, countdown=60)
+        logger.error(f"[Email] ❌ Kritik e-posta hatası: {e}", exc_info=True)
+        
+        # Son çare olarak retry
+        if self.request.retries < self.max_retries:
+            logger.info(f"[Email] 🔄 Son çare retry. Deneme: {self.request.retries + 1}/{self.max_retries}")
+            raise self.retry(countdown=600, max_retries=2)
+        else:
+            logger.error(f"[Email] ❌ Tüm retry denemeleri tükendi. Malzeme ID: {ingredient_id}")
+            return {"status": "failed", "reason": "max_retries_exceeded", "ingredient_id": ingredient_id}
