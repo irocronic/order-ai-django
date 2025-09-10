@@ -84,9 +84,8 @@ class IngredientSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'name', 'unit', 'unit_id', 'stock_quantity', 
             'alert_threshold', 'last_updated', 'business', 
-            'supplier',
-            'cost_price',
-            'low_stock_notification_sent' # <<< YENİ ALAN EKLENDİ
+            'supplier', # 'preferred_supplier' -> 'supplier' olarak düzeltildi
+            'cost_price'
         ]
         read_only_fields = ['last_updated', 'business']
 

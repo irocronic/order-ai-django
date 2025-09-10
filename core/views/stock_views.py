@@ -12,10 +12,6 @@ from django.utils import timezone
 from django.db.models.deletion import ProtectedError
 import logging
 
-# ✅ YENİ IMPORT'LAR: WebSocket eventi için
-from channels.layers import get_channel_layer
-from asgiref.sync import async_to_sync
-
 from ..models import (
     Stock, MenuItemVariant, StockMovement, Business, CustomUser as User,
     Ingredient, UnitOfMeasure, RecipeItem, IngredientStockMovement,
@@ -165,41 +161,6 @@ class StockViewSet(viewsets.ModelViewSet):
                 user=user,
                 description=description
             )
-
-            # ✅ YENİ EKLENEN: WebSocket eventi gönder
-            try:
-                channel_layer = get_channel_layer()
-                if channel_layer:
-                    business_id = current_stock.variant.menu_item.business.id
-                    
-                    # Variant'ın tam adını al
-                    variant_full_name = f"{current_stock.variant.menu_item.name}"
-                    if current_stock.variant.name:
-                        variant_full_name += f" - {current_stock.variant.name}"
-                    
-                    # WebSocket grupuna mesaj gönder
-                    async_to_sync(channel_layer.group_send)(
-                        f"business_{business_id}",
-                        {
-                            "type": "stock_status_update",
-                            "event_type": "stock_adjusted",
-                            "stock_id": current_stock.id,
-                            "variant_name": variant_full_name,
-                            "movement_type": movement_type,
-                            "quantity_change": quantity_change_input,
-                            "new_quantity": new_quantity,
-                            "variant_full_name": variant_full_name,
-                            "timestamp": timezone.now().isoformat(),
-                        }
-                    )
-                    
-                    logger.info(f"✅ WebSocket stock event sent: Stock ID {current_stock.id}, Business {business_id}")
-                else:
-                    logger.warning("❌ Channel layer not available for WebSocket event")
-                    
-            except Exception as e:
-                logger.error(f"❌ Error sending WebSocket stock event: {str(e)}")
-                # WebSocket hatası, ana işlemi etkilemez
         
         serializer = self.get_serializer(current_stock)
         return Response(serializer.data, status=status.HTTP_200_OK)
@@ -339,23 +300,6 @@ class IngredientViewSet(viewsets.ModelViewSet):
             
         new_quantity = original_quantity + quantity_to_apply
 
-        # +++++++++++++++ YENİ KONTROL: Bayrağı sıfırla +++++++++++++++
-        # Stok artırılıyor ve yeni miktar uyarı eşiğinin üstüne çıkıyorsa,
-        # düşük stok bildirim bayrağını sıfırla ki yeniden düştüğünde bildirim gönderilebilsin
-        update_fields_for_save = ['stock_quantity']
-        if (quantity_to_apply > 0 and 
-            ingredient_to_update.alert_threshold is not None and 
-            new_quantity > ingredient_to_update.alert_threshold):
-            if ingredient_to_update.low_stock_notification_sent:
-                ingredient_to_update.low_stock_notification_sent = False
-                update_fields_for_save.append('low_stock_notification_sent')
-                logger.info(
-                    f"Malzeme '{ingredient_to_update.name}' için düşük stok bildirim bayrağı sıfırlandı. "
-                    f"Önceki stok: {original_quantity}, Yeni stok: {new_quantity}, "
-                    f"Uyarı eşiği: {ingredient_to_update.alert_threshold}"
-                )
-        # ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-
         IngredientStockMovement.objects.create(
             ingredient=ingredient_to_update,
             movement_type=movement_type,
@@ -366,37 +310,8 @@ class IngredientViewSet(viewsets.ModelViewSet):
             description=description
         )
 
-        ingredient_to_update.stock_quantity = new_quantity
-        ingredient_to_update.save(update_fields=update_fields_for_save)
-
-        # ✅ YENİ EKLENEN: Ingredient için WebSocket eventi gönder
-        try:
-            channel_layer = get_channel_layer()
-            if channel_layer:
-                business_id = ingredient_to_update.business.id
-                
-                # WebSocket grupuna mesaj gönder
-                async_to_sync(channel_layer.group_send)(
-                    f"business_{business_id}",
-                    {
-                        "type": "ingredient_status_update",
-                        "event_type": "ingredient_adjusted",
-                        "ingredient_id": ingredient_to_update.id,
-                        "ingredient_name": ingredient_to_update.name,
-                        "movement_type": movement_type,
-                        "quantity_change": float(quantity_change),
-                        "new_stock_quantity": float(new_quantity),
-                        "timestamp": timezone.now().isoformat(),
-                    }
-                )
-                
-                logger.info(f"✅ WebSocket ingredient event sent: Ingredient ID {ingredient_to_update.id}, Business {business_id}")
-            else:
-                logger.warning("❌ Channel layer not available for WebSocket event")
-                
-        except Exception as e:
-            logger.error(f"❌ Error sending WebSocket ingredient event: {str(e)}")
-            # WebSocket hatası, ana işlemi etkilemez
+        ingredient_to_update.stock_quantity = F('stock_quantity') + quantity_to_apply
+        ingredient_to_update.save(update_fields=['stock_quantity'])
         
         ingredient_to_update.refresh_from_db()
         serializer = self.get_serializer(ingredient_to_update)
