@@ -10,6 +10,7 @@ import logging
 
 from django.utils import timezone
 from django.db.models import Q
+from decimal import Decimal
 
 # Gerekli importlar
 from ..mixins import LimitCheckMixin
@@ -193,7 +194,7 @@ class MenuItemViewSet(LimitCheckMixin, viewsets.ModelViewSet):
             'category__assigned_kds', 
             'represented_campaign'
         ).prefetch_related(
-            Prefetch('variants', queryset=MenuItemVariant.objects.select_related('stock'))
+            Prefetch('variants', queryset=MenuItemVariant.objects.all())
         )
         
         return queryset.order_by('category__name', 'name')
@@ -248,6 +249,79 @@ class MenuItemViewSet(LimitCheckMixin, viewsets.ModelViewSet):
         context = super().get_serializer_context()
         context['request'] = self.request
         return context
+
+    # === YENİ AKILLI OLUŞTURMA ACTION'I BAŞLANGICI ===
+    @action(detail=False, methods=['post'], url_path='create-smart')
+    @transaction.atomic
+    def create_smart(self, request, *args, **kwargs):
+        """
+        Yeni bir menü öğesi oluşturur ve eğer reçetesiz ise
+        otomatik olarak envanter kalemini ve 1'e 1'lik reçetesini oluşturur.
+        """
+        # LimitCheckMixin'den perform_create'i çağırarak abonelik limitini kontrol et
+        # Not: Bu, doğrudan serializer.save() çağıracağı için önce manuel kontrol daha güvenli olabilir.
+        # Şimdilik bu şekilde ilerleyelim, gerekirse manuel kontrol eklenir.
+        
+        from_recipe = request.data.get('from_recipe', True)
+        
+        # Limit kontrolünü manuel yapalım
+        self.check_permissions(request) # Önce genel izinleri kontrol et
+        user_business = get_user_business(request.user)
+        
+        try:
+            subscription = user_business.subscription
+            if not subscription.plan:
+                raise ValidationError({'detail': 'Aktif bir abonelik planı bulunamadı.', 'code': 'subscription_error'})
+            limit = getattr(subscription.plan, self.limit_field_name)
+            current_count = self.get_queryset().filter(business=user_business).count()
+            if current_count >= limit:
+                raise ValidationError({
+                    'detail': f"{self.limit_resource_name} oluşturma limitinize ({limit}) ulaştınız.",
+                    'code': 'limit_reached'
+                })
+        except (Subscription.DoesNotExist, AttributeError):
+            raise ValidationError({'detail': 'Abonelik planı bulunamadı.', 'code': 'subscription_error'})
+
+        # Veriyi serileştir ve kaydet
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        self.perform_create(serializer) # Bu, sadece MenuItem'ı kaydeder
+        
+        menu_item = serializer.instance
+        
+        # Eğer ürün reçetesiz ise (doğrudan satılıyorsa)
+        if not from_recipe:
+            from ..models import Ingredient, RecipeItem, MenuItemVariant, UnitOfMeasure
+            
+            # Varsayılan "Adet" birimini al veya oluştur
+            unit, _ = UnitOfMeasure.objects.get_or_create(name='Adet', defaults={'abbreviation': 'ad'})
+            
+            # Menü öğesiyle aynı isimde bir envanter kalemi oluştur
+            inventory_item, created = Ingredient.objects.get_or_create(
+                business=menu_item.business,
+                name=menu_item.name,
+                defaults={'unit': unit, 'stock_quantity': 0, 'track_stock': True}
+            )
+            
+            # Ürün için "Standart" isminde bir varsayılan varyant oluştur
+            # Fiyatı, request'ten gelen 'price' alanından al
+            variant_price = request.data.get('price', '0.00')
+            variant = MenuItemVariant.objects.create(
+                menu_item=menu_item,
+                name='Standart',
+                price=Decimal(variant_price)
+            )
+            
+            # Bu varyant için 1'e 1'lik reçete oluştur (1 adet ürün satıldığında, envanterden 1 adet düş)
+            RecipeItem.objects.create(
+                variant=variant,
+                ingredient=inventory_item,
+                quantity=1
+            )
+            
+        headers = self.get_success_headers(serializer.data)
+        return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
+    # === YENİ AKILLI OLUŞTURMA ACTION'I SONU ===
 
     # === YENİ ACTION: Şablonlardan Menü Öğesi Oluştur ===
     @action(detail=False, methods=['post'], url_path='create-from-template')

@@ -10,8 +10,8 @@ from subscriptions.models import Subscription
 
 from .models import (
     Business, Table, MenuItem, Order, OrderItem, Payment, Category,
-    MenuItemVariant, Stock, WaitingCustomer, CreditPaymentDetails,
-    StockMovement, CustomUser, OrderTableUser, OrderItemExtra,
+    MenuItemVariant, WaitingCustomer, CreditPaymentDetails,
+    CustomUser, OrderTableUser, OrderItemExtra,
     Pager, CampaignMenu, CampaignMenuItem,
     KDSScreen,
     Shift, ScheduledShift,
@@ -51,14 +51,14 @@ class PurchaseOrderAdmin(admin.ModelAdmin):
     autocomplete_fields = ['supplier']
 # ==========================================================
 
-# === GÜNCELLENECEK: IngredientAdmin ===
+# === GÜNCELLENEN: IngredientAdmin ===
 @admin.register(Ingredient)
 class IngredientAdmin(admin.ModelAdmin):
-    list_display = ('name', 'business', 'stock_quantity', 'unit', 'supplier', 'cost_price', 'alert_threshold')
-    list_filter = ('business', 'unit', 'supplier')
+    list_display = ('name', 'business', 'stock_quantity', 'unit', 'supplier', 'cost_price', 'alert_threshold', 'track_stock')
+    list_filter = ('business', 'unit', 'supplier', 'track_stock')
     search_fields = ('name', 'business__name', 'supplier__name')
     autocomplete_fields = ['business', 'unit', 'supplier']
-    list_editable = ('stock_quantity', 'cost_price', 'alert_threshold')
+    list_editable = ('stock_quantity', 'cost_price', 'alert_threshold', 'track_stock')
 # ======================================
 
 # === YENİ: RecipeItem için Admin sınıfı ===
@@ -644,60 +644,6 @@ class MenuItemVariantAdmin(admin.ModelAdmin):
             return format_html('<img src="{}" width="50" height="50" style="object-fit: cover;" />', obj.image.url if hasattr(obj.image, 'url') else obj.image)
         return "-"
     image_tag_preview.short_description = 'Görsel Önizleme'
-
-# ----- GÜNCELLENEN Admin Sınıfı: StockAdmin -----
-@admin.register(Stock)
-class StockAdmin(admin.ModelAdmin):
-    # Yeni alanlar list_display'e eklendi
-    list_display = ('variant_display', 'quantity', 'track_stock', 'alert_threshold', 'business_name', 'last_updated')
-    # track_stock filtresi eklendi
-    list_filter = ('variant__menu_item__business', 'track_stock', 'last_updated')
-    search_fields = ('variant__name', 'variant__menu_item__name', 'variant__menu_item__business__name')
-    readonly_fields = ('last_updated',)
-    list_select_related = ('variant', 'variant__menu_item', 'variant__menu_item__business')
-    # Yeni alanlar düzenlenebilir yapıldı
-    list_editable = ('quantity', 'track_stock', 'alert_threshold')
-
-    def variant_display(self, obj):
-        return f"{obj.variant.menu_item.name} - {obj.variant.name}"
-    variant_display.short_description = 'Ürün Varyantı'
-    variant_display.admin_order_field = 'variant__name'
-    
-    def business_name(self, obj):
-        return obj.variant.menu_item.business.name
-    business_name.short_description = 'İşletme'
-    business_name.admin_order_field = 'variant__menu_item__business__name'
-# ----- GÜNCELLEME SONU -----
-
-@admin.register(StockMovement)
-class StockMovementAdmin(admin.ModelAdmin):
-    list_display = ('variant_name_display', 'movement_type_display', 'quantity_change', 'quantity_before','quantity_after', 'user_display', 'timestamp', 'related_order_id_display')
-    list_filter = ('movement_type', 'variant__menu_item__business', 'user', 'timestamp')
-    search_fields = ('variant__name', 'variant__menu_item__name', 'user__username', 'description', 'related_order__id')
-    readonly_fields = ('quantity_before', 'quantity_after', 'timestamp', 'user', 'stock', 'variant', 'related_order')
-    date_hierarchy = 'timestamp'
-    list_per_page = 25
-    list_select_related = ('variant', 'variant__menu_item', 'user', 'related_order', 'stock')
-
-    def variant_name_display(self, obj):
-        return f"{obj.variant.menu_item.name} ({obj.variant.name})"
-    variant_name_display.short_description = 'Ürün Varyantı'
-    variant_name_display.admin_order_field = 'variant__menu_item__name'
-
-    def movement_type_display(self, obj):
-        return obj.get_movement_type_display()
-    movement_type_display.short_description = 'Hareket Tipi'
-    movement_type_display.admin_order_field = 'movement_type'
-
-    def user_display(self, obj):
-        return obj.user.username if obj.user else "-"
-    user_display.short_description = 'Kullanıcı'
-    user_display.admin_order_field = 'user__username'
-
-    def related_order_id_display(self, obj):
-        return obj.related_order.id if obj.related_order else '-'
-    related_order_id_display.short_description = 'İlişkili Sipariş ID'
-    related_order_id_display.admin_order_field = 'related_order__id'
 
 
 @admin.register(WaitingCustomer)

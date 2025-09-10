@@ -4,7 +4,8 @@ from rest_framework.permissions import BasePermission
 from .utils.order_helpers import get_user_business, PermissionKeys
 from .models import (
     KDSScreen, CustomUser, Business, ScheduledShift, MenuItem, MenuItemVariant,
-    Order, OrderItem, CampaignMenu, Stock
+    Order, OrderItem, CampaignMenu, Ingredient, UnitOfMeasure, RecipeItem, 
+    IngredientStockMovement, Supplier, PurchaseOrder, PurchaseOrderItem
 )
 from django.utils import timezone
 from datetime import timedelta
@@ -39,10 +40,9 @@ class IsBusinessOwnerAndOwnerOfObject(BasePermission):
         # For MenuItemVariant (via menu_item)
         elif isinstance(obj, MenuItemVariant) and hasattr(obj, 'menu_item') and hasattr(obj.menu_item, 'business') and obj.menu_item.business is not None:
             return obj.menu_item.business
-        # For Stock (via variant -> menu_item -> business)
-        elif isinstance(obj, Stock) and hasattr(obj, 'variant') and hasattr(obj.variant, 'menu_item') and \
-             hasattr(obj.variant.menu_item, 'business') and obj.variant.menu_item.business is not None:
-            return obj.variant.menu_item.business
+        # For Ingredient (direct business attribute)
+        elif isinstance(obj, Ingredient) and hasattr(obj, 'business') and obj.business is not None:
+            return obj.business
         # For OrderItem (via order -> business)
         elif isinstance(obj, OrderItem) and hasattr(obj, 'order') and hasattr(obj.order, 'business') and obj.order.business is not None:
             return obj.order.business
@@ -136,8 +136,8 @@ class IsStaffOfAssociatedBusiness(BasePermission):
             object_business = obj.business
         elif hasattr(obj, 'menu_item') and hasattr(obj.menu_item, 'business'):
             object_business = obj.menu_item.business
-        elif hasattr(obj, 'variant') and hasattr(obj.variant, 'menu_item') and hasattr(obj.variant.menu_item, 'business'):
-             object_business = obj.variant.menu_item.business
+        elif isinstance(obj, Ingredient) and hasattr(obj, 'business'):
+            object_business = obj.business
         elif isinstance(obj, CustomUser) and obj.user_type in ['staff', 'kitchen_staff']:
             object_business = obj.associated_business
         elif isinstance(obj, CustomUser) and obj.user_type == 'business_owner' and hasattr(obj, 'owned_business'):

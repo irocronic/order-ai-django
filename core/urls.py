@@ -20,11 +20,10 @@ from core.views import (
     OrderItemViewSet,
     WaitingCustomerList,
     WaitingCustomerDetail,
-    StockViewSet,
+    # --- SİLİNDİ: StockViewSet ve StockMovementViewSet importları kaldırıldı ---
     AccountSettingsView,
     GuestOrderCreateView,
     GuestMenuView,
-    StockMovementViewSet,
     StaffUserViewSet,
     StaffPerformanceReportView,
     AdminUserManagementViewSet,
@@ -58,8 +57,7 @@ router.register(r'orders', OrderViewSet, basename='order')
 router.register(r'payments', PaymentViewSet, basename='payment')
 router.register(r'categories', CategoryViewSet, basename='category')
 router.register(r'order_items', OrderItemViewSet, basename='orderitem')
-router.register(r'stocks', StockViewSet, basename='stock')
-router.register(r'stock-movements', StockMovementViewSet, basename='stockmovement')
+# --- SİLİNDİ: StockViewSet ve StockMovementViewSet router kayıtları kaldırıldı ---
 router.register(r'ingredients', IngredientViewSet, basename='ingredient')
 router.register(r'units-of-measure', UnitOfMeasureViewSet, basename='unitofmeasure')
 router.register(r'recipes', RecipeItemViewSet, basename='recipeitem')

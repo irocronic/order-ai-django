@@ -1,7 +1,6 @@
 # core/models.py
 
 from django.db import models
-# GÜNCELLEME: UserManager'ı import ediyoruz
 from django.contrib.auth.models import AbstractUser, UserManager
 from django.conf import settings
 import uuid
@@ -24,7 +23,6 @@ class CustomUserManager(UserManager):
         # Adminin ayrıca bir onaya ihtiyacı yoktur.
         extra_fields.setdefault("is_approved_by_admin", True)
 
-
         if extra_fields.get("is_staff") is not True:
             raise ValueError("Superuser must have is_staff=True.")
         if extra_fields.get("is_superuser") is not True:
@@ -32,7 +30,6 @@ class CustomUserManager(UserManager):
 
         return self._create_user(username, email, password, **extra_fields)
 # === YENİ KOD SONU ===
-
 
 STAFF_PERMISSION_CHOICES = [
     ('view_reports', 'Raporları Görüntüleme'),
@@ -94,7 +91,6 @@ DEFAULT_KITCHEN_NOTIFICATION_PERMISSIONS = [
     'order_item_added',
     'order_updated',
 ]
-
 
 class CustomUser(AbstractUser):
     USER_TYPE_CHOICES = (
@@ -262,30 +258,38 @@ class UnitOfMeasure(models.Model):
         return f"{self.name} ({self.abbreviation})"
 
 class Ingredient(models.Model):
-    """Stok takibi yapılacak her bir malzemeyi temsil eder."""
+    """
+    Stok takibi yapılacak her bir envanter kalemini temsil eder.
+    Bu bir hammadde (un, kıyma) veya doğrudan satılan bir ürün (Kutu Kola) olabilir.
+    """
     business = models.ForeignKey(Business, on_delete=models.CASCADE, related_name='ingredients', verbose_name="İşletme")
-    name = models.CharField(max_length=150, verbose_name="Malzeme Adı")
+    name = models.CharField(max_length=150, verbose_name="Envanter Kalemi Adı")
     unit = models.ForeignKey(UnitOfMeasure, on_delete=models.PROTECT, verbose_name="Ölçü Birimi")
     stock_quantity = models.DecimalField(max_digits=10, decimal_places=3, default=0.000, verbose_name="Stok Miktarı")
+    
+    # --- ESKI Stock modelinden taşınan alan ---
+    track_stock = models.BooleanField(
+        default=True,
+        verbose_name="Stok Takibi Aktif",
+        help_text="Bu ürünün stoğu takip edilecek mi? Pasif ise miktar ve uyarılar dikkate alınmaz."
+    )
+    # ----------------------------------------------
+    
     alert_threshold = models.DecimalField(max_digits=10, decimal_places=3, null=True, blank=True, verbose_name="Uyarı Eşiği")
     last_updated = models.DateTimeField(auto_now=True)
-    # --- YENİ ALANLAR ---
     supplier = models.ForeignKey(Supplier, on_delete=models.SET_NULL, null=True, blank=True, related_name='ingredients', verbose_name="Tedarikçi")
     cost_price = models.DecimalField(max_digits=10, decimal_places=3, null=True, blank=True, verbose_name="Birim Maliyet Fiyatı")
-    # +++++++++++++++ YENİ SATIR +++++++++++++++
-    # Bu alan, düşük stok bildirimi gönderildiğinde True olarak işaretlenecek.
     low_stock_notification_sent = models.BooleanField(default=False, verbose_name="Düşük Stok Bildirimi Gönderildi")
-    # +++++++++++++++++++++++++++++++++++++++++
-    # --------------------
     
     class Meta:
-        verbose_name = "Malzeme"
-        verbose_name_plural = "Malzemeler"
+        verbose_name = "Envanter Kalemi"
+        verbose_name_plural = "Envanter Kalemleri"
         unique_together = ('business', 'name')
         ordering = ['name']
 
     def __str__(self):
-        return f"{self.name} ({self.stock_quantity} {self.unit.abbreviation})"
+        track_status = "" if self.track_stock else " (Takip Dışı)"
+        return f"{self.name} ({self.stock_quantity} {self.unit.abbreviation}){track_status}"
 
 class PurchaseOrderItem(models.Model):
     """
@@ -519,70 +523,6 @@ class CampaignMenuItem(models.Model):
         if self.variant:
             display_name += f" ({self.variant.name})"
         return f"{self.quantity} x {display_name} (Kampanya: {self.campaign_menu.name})"
-
-class Stock(models.Model):
-    variant = models.OneToOneField(
-        MenuItemVariant,
-        on_delete=models.CASCADE,
-        related_name='stock'
-    )
-    quantity = models.PositiveIntegerField(default=0)
-    last_updated = models.DateTimeField(auto_now=True)
-    track_stock = models.BooleanField(
-        default=True,
-        verbose_name="Stok Takibi Aktif",
-        help_text="Bu ürünün stoğu takip edilecek mi? Pasif ise miktar ve uyarılar dikkate alınmaz."
-    )
-    alert_threshold = models.PositiveIntegerField(
-        null=True,
-        blank=True,
-        verbose_name="Uyarı Eşiği",
-        help_text="Stok bu sayının altına düştüğünde uyarı verilir. Boş bırakılırsa uyarı verilmez."
-    )
-
-    class Meta:
-        verbose_name = "Stok"
-        verbose_name_plural = "Stoklar"
-
-    def __str__(self):
-        track_status = "" if self.track_stock else " (Takip Dışı)"
-        return f"Stok: {self.variant} - {self.quantity}{track_status}"
-
-class StockMovement(models.Model):
-    MOVEMENT_TYPES = [
-        ('INITIAL', 'Başlangıç Stoku'),
-        ('ADDITION', 'Stok Girişi (Alım/Üretim)'),
-        ('SALE', 'Satış'),
-        ('RETURN', 'Müşteri İadesi'),
-        ('ADJUSTMENT_IN', 'Sayım Düzeltme (Fazla)'),
-        ('ADJUSTMENT_OUT', 'Sayım Düzeltme (Eksik)'),
-        ('WASTAGE', 'Zayiat/Fire'),
-        ('MANUAL_EDIT', 'Manuel Düzenleme'),
-    ]
-
-    stock = models.ForeignKey(Stock, on_delete=models.CASCADE, related_name='movements')
-    variant = models.ForeignKey(MenuItemVariant, on_delete=models.CASCADE, related_name='stock_movements')
-    movement_type = models.CharField(max_length=20, choices=MOVEMENT_TYPES)
-    quantity_change = models.IntegerField()
-    quantity_before = models.PositiveIntegerField()
-    quantity_after = models.PositiveIntegerField()
-    timestamp = models.DateTimeField(auto_now_add=True)
-    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, help_text="Bu hareketi yapan kullanıcı.")
-    description = models.TextField(blank=True, null=True)
-    related_order = models.ForeignKey('Order', on_delete=models.SET_NULL, null=True, blank=True, related_name='stock_movements_as_order')
-
-    class Meta:
-        ordering = ['-timestamp']
-        verbose_name = "Stok Hareketi"
-        verbose_name_plural = "Stok Hareketleri"
-
-    def __str__(self):
-        variant_display = "Bilinmeyen Varyant"
-        if self.variant:
-            menu_item_name = self.variant.menu_item.name if self.variant.menu_item else "Bilinmeyen Ürün"
-            variant_display = f"{menu_item_name} ({self.variant.name})"
-        timestamp_display = self.timestamp.strftime('%d/%m/%Y %H:%M') if self.timestamp else "Bilinmeyen Zaman"
-        return f"{variant_display} - {self.get_movement_type_display()}: {self.quantity_change} @ {timestamp_display}"
 
 class Pager(models.Model):
     PAGER_STATUS_CHOICES = [

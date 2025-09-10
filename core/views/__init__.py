@@ -1,4 +1,4 @@
-# core/views/__init__.py (Güncel)
+# core/views/__init__.py
 
 from .auth_views import (
     RegisterView,
@@ -11,8 +11,7 @@ from .order_views import OrderViewSet, OrderItemViewSet
 from .payment_views import PaymentViewSet
 from .report_views import ReportView, DetailedSalesReportView
 from .stock_views import (
-    StockViewSet, 
-    StockMovementViewSet, 
+    # --- SİLİNDİ ---
     IngredientViewSet, 
     UnitOfMeasureViewSet, 
     RecipeItemViewSet,
@@ -51,8 +50,7 @@ __all__ = [
     'ReportView',
     'DetailedSalesReportView',
     'StaffPerformanceReportView',
-    'StockViewSet',
-    'StockMovementViewSet',
+    # --- SİLİNDİ ---
     'IngredientViewSet',
     'UnitOfMeasureViewSet',
     'RecipeItemViewSet',

@@ -1,7 +1,7 @@
 # core/serializers/menu_serializers.py
 
 from rest_framework import serializers
-from ..models import Category, MenuItem, MenuItemVariant, Stock, Business, CampaignMenu, KDSScreen 
+from ..models import Category, MenuItem, MenuItemVariant, Business, CampaignMenu, KDSScreen 
 from .kds_serializers import KDSScreenSerializer
 
 class CategorySerializer(serializers.ModelSerializer):
@@ -55,7 +55,14 @@ class MenuItemSerializer(serializers.ModelSerializer):
     )
     image = serializers.URLField(max_length=1024, required=False, allow_null=True)
     is_campaign_bundle = serializers.BooleanField(read_only=True)
-    price = serializers.SerializerMethodField()
+    
+    # --- DEĞİŞİKLİK BAŞLANGICI: price alanı güncellendi ---
+    # Okuma için: Kampanya fiyatını gösterir.
+    price_display = serializers.SerializerMethodField()
+    # Yazma için: Reçetesiz ürün oluştururken fiyat belirtmek için kullanılır.
+    price = serializers.DecimalField(max_digits=10, decimal_places=2, write_only=True, required=False)
+    # --- DEĞİŞİKLİK SONU ---
+
     # YENİ: kdv_rate alanı eklendi. Gerekli değil (required=False) çünkü kategoriden gelebilir.
     kdv_rate = serializers.DecimalField(max_digits=5, decimal_places=2, required=False)
 
@@ -63,10 +70,13 @@ class MenuItemSerializer(serializers.ModelSerializer):
         model = MenuItem
         fields = [
             'id', 'business', 'name', 'image', 'description', 'category', 'category_id', 'variants',
-            'is_campaign_bundle', 'price', 'kdv_rate' # <-- 'kdv_rate' EKLENDİ
+            'is_campaign_bundle', 
+            'price_display', # Okuma için
+            'price',       # Yazma için
+            'kdv_rate' # <-- 'kdv_rate' EKLENDİ
         ]
 
-    def get_price(self, obj: MenuItem):
+    def get_price_display(self, obj: MenuItem):
         if obj.is_campaign_bundle:
             try:
                 if hasattr(obj, 'represented_campaign') and obj.represented_campaign:
@@ -105,35 +115,4 @@ class MenuItemSerializer(serializers.ModelSerializer):
 
         if value and user_business and value.business != user_business:
             raise serializers.ValidationError("Seçilen kategori bu işletmeye ait değil.")
-        return value
-
-
-class StockSerializer(serializers.ModelSerializer):
-    variant_name = serializers.CharField(source='variant.name', read_only=True)
-    product_name = serializers.SerializerMethodField()
-    variant = serializers.PrimaryKeyRelatedField(queryset=MenuItemVariant.objects.all())
-
-
-    class Meta:
-        model = Stock
-        fields = ['id', 'variant', 'variant_name', 'product_name', 'quantity', 'last_updated', 'track_stock', 'alert_threshold']
-        read_only_fields = ['last_updated']
-
-    def get_product_name(self, obj):
-        if obj.variant and obj.variant.menu_item:
-            return obj.variant.menu_item.name
-        return ""
-    
-    def validate_variant(self, value):
-        request = self.context.get('request')
-        user_business = None
-        if request and hasattr(request.user, 'user_type'):
-            if request.user.user_type == 'business_owner':
-                user_business = getattr(request.user, 'owned_business', None)
-            elif request.user.user_type in ['staff', 'kitchen_staff']:
-                user_business = getattr(request.user, 'associated_business', None)
-        
-        if value and user_business:
-            if value.menu_item.business != user_business:
-                raise serializers.ValidationError("Seçilen varyant bu işletmeye ait değil.")
         return value
