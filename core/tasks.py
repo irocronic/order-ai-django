@@ -1,4 +1,4 @@
-# core/tasks.py
+# core/tasks.py - GÜVENLİ VERSİYON
 
 from celery import shared_task
 from django.conf import settings
@@ -14,7 +14,7 @@ from email.mime.multipart import MIMEMultipart
 import smtplib
 from socket import timeout as SocketTimeout
 
-from .models import Order, Ingredient
+from .models import Order, Ingredient, Supplier # YENİ: Supplier modeli import edildi
 from .serializers import OrderSerializer
 import uuid
 from datetime import datetime
@@ -501,3 +501,66 @@ Teşekkürler,
         else:
             logger.error(f"[Email] ❌ Tüm retry denemeleri tükendi. Malzeme ID: {ingredient_id}")
             return {"status": "failed", "reason": "max_retries_exceeded", "ingredient_id": ingredient_id}
+
+
+# +++++++++++++++++++++ YENİ CELERY GÖREVİ +++++++++++++++++++++
+@shared_task(name="send_manual_low_stock_email")
+def send_manual_low_stock_email_task(supplier_id, ingredient_ids):
+    """
+    Belirli bir tedarikçiye, seçilen birden çok malzeme için
+    tek bir düşük stok bilgilendirme e-postası gönderir.
+    """
+    logger.info(f"[Celery Task] 📧 Manuel düşük stok e-posta bildirimi başlatılıyor. Tedarikçi ID: {supplier_id}, Malzeme ID'leri: {ingredient_ids}")
+
+    try:
+        supplier = Supplier.objects.get(id=supplier_id)
+        ingredients = Ingredient.objects.filter(id__in=ingredient_ids).select_related('unit', 'business')
+    except Supplier.DoesNotExist:
+        logger.error(f"[Email] ❌ Tedarikçi ID {supplier_id} bulunamadı.")
+        return {"status": "error", "reason": "supplier_not_found"}
+
+    if not ingredients.exists():
+        logger.warning(f"[Email] ⚠️ E-posta için malzeme bulunamadı. ID'ler: {ingredient_ids}")
+        return {"status": "skipped", "reason": "no_ingredients_found"}
+
+    if not supplier.email:
+        logger.warning(f"[Email] ⚠️ Tedarikçi '{supplier.name}' için e-posta adresi yok. Atlanıyor.")
+        return {"status": "skipped", "reason": "no_supplier_email"}
+
+    business = ingredients.first().business
+    
+    # E-posta içeriğini oluştur
+    ingredient_list_str = ""
+    for ing in ingredients:
+        stock_qty_str = f"{ing.stock_quantity:.2f}".rstrip('0').rstrip('.')
+        threshold_str = f"{ing.alert_threshold:.2f}".rstrip('0').rstrip('.') if ing.alert_threshold else "N/A"
+        ingredient_list_str += f"- {ing.name}: Mevcut Stok {stock_qty_str} {ing.unit.abbreviation} (Uyarı Eşiği: {threshold_str})\n"
+
+    subject = f"Malzeme Talebi/Düşük Stok Bildirimi - {business.name}"
+    message = f"""
+Merhaba {supplier.contact_person or supplier.name},
+
+{business.name} adlı işletmemizden aşağıdaki malzemeler için bir talep/düşük stok bildirimi gönderilmiştir:
+
+{ingredient_list_str}
+Lütfen en kısa sürede yeni bir sevkiyat planlaması için bizimle iletişime geçin.
+
+İşletme Bilgileri:
+- İşletme: {business.name}
+- Telefon: {business.phone or 'Belirtilmemiş'}
+
+Teşekkürler,
+{business.name} Yönetimi
+"""
+
+    from_email = settings.DEFAULT_FROM_EMAIL
+    recipient_list = [supplier.email]
+
+    # E-postayı gönder
+    success_async = asyncio.run(send_email_async(subject, message, from_email, recipient_list))
+    if not success_async:
+        logger.warning("[Email] ⚠️ Manuel e-posta async gönderimi başarısız, fallback deneniyor.")
+        send_email_sync_fallback(subject, message, from_email, recipient_list)
+    
+    return {"status": "success", "supplier": supplier.name}
+# ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++

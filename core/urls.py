@@ -91,6 +91,9 @@ urlpatterns = [
     # IngredientViewSet için özel action URL'leri
     path('ingredients/<int:pk>/adjust-stock/', IngredientViewSet.as_view({'post': 'adjust_stock'}), name='ingredient-adjust-stock'),
     path('ingredients/<int:pk>/history/', IngredientViewSet.as_view({'get': 'history'}), name='ingredient-history'),
+    # +++ YENİ URL +++
+    path('ingredients/send-low-stock-report/', IngredientViewSet.as_view({'post': 'send_low_stock_report'}), name='ingredient-send-low-stock-report'),
+    # ++++++++++++++
     # =====================================================================
 
     # KDS Siparişleri için URL'ler

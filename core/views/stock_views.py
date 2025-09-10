@@ -23,6 +23,7 @@ from ..serializers import (
     SupplierSerializer, PurchaseOrderSerializer
 )
 from ..utils.order_helpers import get_user_business, PermissionKeys
+from ..tasks import send_manual_low_stock_email_task # YENİ: Manuel görev import edildi
 
 logger = logging.getLogger(__name__)
 
@@ -408,6 +409,38 @@ class IngredientViewSet(viewsets.ModelViewSet):
                 {'detail': f'Tedarikçi ataması sırasında hata: {str(e)}'}, 
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
+
+    # +++++++++++++++++++++ YENİ ACTION +++++++++++++++++++++
+    @action(detail=False, methods=['post'], url_path='send-low-stock-report')
+    def send_low_stock_report(self, request):
+        """
+        Seçilen malzemeler için seçilen tedarikçiye manuel olarak
+        düşük stok e-posta bildirimi gönderir.
+        """
+        user = request.user
+        if not (user.user_type == 'business_owner' or 
+                (user.user_type == 'staff' and PermissionKeys.MANAGE_STOCK in user.staff_permissions)):
+            raise PermissionDenied("Tedarikçiye bildirim gönderme yetkiniz yok.")
+
+        supplier_id = request.data.get('supplier_id')
+        ingredient_ids = request.data.get('ingredient_ids', [])
+
+        if not supplier_id or not ingredient_ids or not isinstance(ingredient_ids, list):
+            return Response(
+                {'detail': 'supplier_id ve ingredient_ids (liste formatında) alanları zorunludur.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Celery görevini tetikle
+        send_manual_low_stock_email_task.delay(supplier_id, ingredient_ids)
+        
+        logger.info(f"User {user.username} initiated manual low stock email to supplier {supplier_id} for ingredients {ingredient_ids}")
+        
+        return Response(
+            {'detail': 'Düşük stok bildirimi e-postası başarıyla gönderim için kuyruğa alındı.'},
+            status=status.HTTP_202_ACCEPTED
+        )
+    # ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
 
 class UnitOfMeasureViewSet(viewsets.ReadOnlyModelViewSet):
