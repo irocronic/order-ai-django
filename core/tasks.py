@@ -1,4 +1,4 @@
-# core/tasks.py - GÜVENLİ VERSİYON
+# core/tasks.py
 
 from celery import shared_task
 from django.conf import settings
