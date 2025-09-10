@@ -1,4 +1,4 @@
-# manage.py
+# manage.py - Çalışan Sürüm
 
 #!/usr/bin/env python
 """Django's command-line utility for administrative tasks."""
