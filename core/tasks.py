@@ -358,7 +358,7 @@ def send_email_sync_fallback(subject, message, from_email, recipient_list, timeo
 @shared_task(bind=True, name="send_low_stock_email_to_supplier", max_retries=2, default_retry_delay=300)
 def send_low_stock_notification_email_task(self, ingredient_id):
     """
-    GÜVENLİ VERSİYON: Async + Timeout + Fallback + Retry
+    GÜVENLİ VERSİYON: Async + Timeout + Fallback + Retry + WebSocket bildirimi
     """
     logger.info(f"[Celery Task] 📧 Düşük stok e-posta bildirimi başlatılıyor. Malzeme ID: {ingredient_id}")
     
@@ -415,6 +415,30 @@ Teşekkürler,
             success = asyncio.run(send_email_async(subject, message, from_email, recipient_list, timeout=10))
             
             if success:
+                # +++++++++++++++ YENİ BÖLÜM BAŞLANGICI +++++++++++++++
+                # Bildirim bayrağını işaretle
+                ingredient.low_stock_notification_sent = True
+                ingredient.save(update_fields=['low_stock_notification_sent'])
+                logger.info(f"'{ingredient.name}' için düşük stok bildirim bayrağı True olarak işaretlendi.")
+
+                # Flutter arayüzünü anlık olarak güncellemek için WebSocket bildirimi gönder
+                try:
+                    business_room = f"business_{ingredient.business_id}"
+                    payload = {
+                        'event_type': 'ingredient_status_update',
+                        'message': f"'{ingredient.name}' için tedarikçiye düşük stok bildirimi gönderildi.",
+                        'ingredient_id': ingredient.id,
+                        'ingredient_name': ingredient.name,
+                        'low_stock_notification_sent': True,
+                        'notification_id': f"ingredient_update_{uuid.uuid4()}",
+                        'timestamp': datetime.now().isoformat()
+                    }
+                    send_socket_io_notification(business_room, 'stock_event', payload)
+                    logger.info(f"İşletme odasına ({business_room}) anlık stok durumu güncellemesi gönderildi.")
+                except Exception as e_socket:
+                    logger.error(f"Stok durumu için socket bildirimi gönderilirken hata: {e_socket}")
+                # +++++++++++++++ YENİ BÖLÜM SONU +++++++++++++++
+                
                 logger.info(f"[Email] ✅ Async e-posta başarılı: '{ingredient.name}' → {supplier.email}")
                 return {"status": "success", "method": "async", "ingredient": ingredient.name}
         
@@ -426,6 +450,30 @@ Teşekkürler,
         success = send_email_sync_fallback(subject, message, from_email, recipient_list, timeout=5)
         
         if success:
+            # +++++++++++++++ YENİ BÖLÜM BAŞLANGICI (FALLBACK İÇİN) +++++++++++++++
+            # Bildirim bayrağını işaretle
+            ingredient.low_stock_notification_sent = True
+            ingredient.save(update_fields=['low_stock_notification_sent'])
+            logger.info(f"'{ingredient.name}' için düşük stok bildirim bayrağı True olarak işaretlendi (fallback).")
+
+            # Flutter arayüzünü anlık olarak güncellemek için WebSocket bildirimi gönder
+            try:
+                business_room = f"business_{ingredient.business_id}"
+                payload = {
+                    'event_type': 'ingredient_status_update',
+                    'message': f"'{ingredient.name}' için tedarikçiye düşük stok bildirimi gönderildi.",
+                    'ingredient_id': ingredient.id,
+                    'ingredient_name': ingredient.name,
+                    'low_stock_notification_sent': True,
+                    'notification_id': f"ingredient_update_{uuid.uuid4()}",
+                    'timestamp': datetime.now().isoformat()
+                }
+                send_socket_io_notification(business_room, 'stock_event', payload)
+                logger.info(f"İşletme odasına ({business_room}) anlık stok durumu güncellemesi gönderildi (fallback).")
+            except Exception as e_socket:
+                logger.error(f"Stok durumu için socket bildirimi gönderilirken hata (fallback): {e_socket}")
+            # +++++++++++++++ YENİ BÖLÜM SONU +++++++++++++++
+            
             logger.info(f"[Email] ✅ Sync fallback e-posta başarılı: '{ingredient.name}' → {supplier.email}")
             return {"status": "success", "method": "sync_fallback", "ingredient": ingredient.name}
 
