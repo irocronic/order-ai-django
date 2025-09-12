@@ -1,4 +1,4 @@
-# makarna_project/urls.py DOSYASININ GÜNCELLENMİŞ VE EKSİKSİZ HALİ
+# makarna_project/urls.py
 
 from django.contrib import admin
 from django.urls import path, include, re_path
@@ -7,7 +7,6 @@ from core.token import CustomTokenObtainPairView
 from django.http import HttpResponse
 
 # --- EKLENMESİ GEREKEN IMPORT SATIRI ---
-# Bu satır, herkese açık site görünümünü (view) projenin ana URL'lerine tanıtır.
 from core.views.public_views import public_business_site_view
 
 # Bu importlar daha önceki dosyalarda vardı ve gereklidir.
@@ -29,13 +28,11 @@ urlpatterns = [
     path('', root_view, name='root'),
     path('admin/', admin.site.urls),
 
-    # --- 404 HATASININ ÇÖZÜMÜ OLAN EKSİK SATIR BURASI ---
-    # '/site/' ile başlayan bir link geldiğinde hangi view'in çalışacağını belirtir.
+    # === 404 HATASININ ÇÖZÜMÜ OLAN EKSİK SATIR BURASI ===
     path('site/<slug:slug>/', public_business_site_view, name='public_business_site'),
-    # --- / EKSİK SATIR SONU ---
+    # === / EKSİK SATIR SONU ===
 
     # API ve diğer URL'leriniz
-    path('api/templates/', include('templates.urls')),
     path('api/', include('core.urls')), # /api/ ile başlayan tüm istekler core/urls.py'ye yönlendirilir.
 
     # Misafir Kullanıcı URL'leri
