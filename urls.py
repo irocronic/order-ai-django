@@ -5,17 +5,16 @@ from django.urls import path, include, re_path
 from rest_framework_simplejwt.views import TokenRefreshView
 from core.token import CustomTokenObtainPairView
 from django.http import HttpResponse
-from django.conf import settings
 
 # --- EKLENMESİ GEREKEN IMPORT SATIRI ---
 from core.views.public_views import public_business_site_view
 
-# Bu importlar daha önceki dosyalarda vardı ve gereklidir.
 from core.views import (
     guest_table_view,
     guest_takeaway_view,
     GuestTakeawayOrderUpdateView
 )
+from django.conf import settings
 from django.conf.urls.static import static
 
 # Basit bir root view tanımı
@@ -24,7 +23,7 @@ def root_view(request):
         "Merhaba, bu Django projesidir! Ana dizine başarıyla ulaştınız."
     )
 
-# === DEBUG FUNCTION ===
+# === DEBUG FUNCTIONS ===
 def debug_urls_view(request):
     from django.urls import get_resolver
     resolver = get_resolver()
@@ -53,8 +52,8 @@ urlpatterns = [
     path('debug-urls/', debug_urls_view, name='debug_urls'),
     path('debug-businesses/', debug_businesses_view, name='debug_businesses'),
 
-    # API ve diğer URL'leriniz
-    path('api/', include('core.urls')), # /api/ ile başlayan tüm istekler core/urls.py'ye yönlendirilir.
+    path('api/templates/', include('templates.urls')),
+    path('api/', include('core.urls')),
 
     # Misafir Kullanıcı URL'leri
     re_path(r'^guest/tables/(?P<table_uuid>[0-9a-f-]+)/$', guest_table_view, name='guest_table_view'),
@@ -64,11 +63,8 @@ urlpatterns = [
     # JWT Kimlik Doğrulama URL'leri
     path('api/token/', CustomTokenObtainPairView.as_view(), name='token_obtain_pair'),
     path('api/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
-
-    # Abonelik URL'leri
-    path('api/subscriptions/', include('subscriptions.urls')),
 ]
 
-# Geliştirme ortamında (DEBUG=True) medya dosyalarını sunmak için gereklidir.
+# Geliştirme ortamında medya dosyalarını sunmak için
 if settings.DEBUG:
     urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
