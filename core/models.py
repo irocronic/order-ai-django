@@ -170,6 +170,28 @@ class Business(models.Model):
     phone = models.CharField(max_length=20, blank=True, null=True, verbose_name="Telefon Numarası")
     is_setup_complete = models.BooleanField(default=False, help_text="İşletme sahibi kurulum sihirbazını tamamladı mı?")
 
+    # === YENİ ALANLAR BAŞLANGICI: WEB SİTESİ ÖZELLİKLERİ ===
+    website_slug = models.SlugField(
+        max_length=120,
+        unique=True,
+        blank=True,
+        null=True,
+        verbose_name="Web Sitesi URL Adresi",
+        help_text="İşletmenin herkese açık web sitesi için benzersiz URL adresi. Boş bırakılırsa otomatik oluşturulur."
+    )
+    about_us = models.TextField(
+        blank=True,
+        verbose_name="Hakkımızda Metni",
+        help_text="Web sitesinde görünecek 'Hakkımızda' bölümü içeriği."
+    )
+    contact_details = models.JSONField(
+        default=dict,
+        blank=True,
+        verbose_name="Web Sitesi İletişim Bilgileri",
+        help_text="Web sitesinde gösterilecek e-posta, telefon, sosyal medya gibi bilgiler. JSON formatında."
+    )
+    # === YENİ ALANLAR SONU ===
+
     class Currency(models.TextChoices):
         TRY = 'TRY', _('Türk Lirası (₺)')
         USD = 'USD', _('ABD Doları ($)')
@@ -192,6 +214,19 @@ class Business(models.Model):
         verbose_name="Zaman Dilimi",
         help_text="İşletmenin bulunduğu yerel zaman dilimi."
     )
+
+    # === YENİ: Otomatik slug oluşturma için save metodunu override ediyoruz ===
+    def save(self, *args, **kwargs):
+        if not self.website_slug and self.name:
+            base_slug = slugify(self.name)
+            unique_slug = base_slug
+            counter = 1
+            # Aynı slug'a sahip başka bir işletme var mı diye kontrol et
+            while Business.objects.filter(website_slug=unique_slug).exclude(pk=self.pk).exists():
+                unique_slug = f"{base_slug}-{counter}"
+                counter += 1
+            self.website_slug = unique_slug
+        super().save(*args, **kwargs)
 
     def __str__(self):
         return self.name

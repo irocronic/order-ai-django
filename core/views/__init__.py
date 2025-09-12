@@ -35,6 +35,8 @@ from .pager_views import PagerViewSet
 from .campaign_views import CampaignMenuViewSet
 from .kds_management_views import KDSScreenViewSet
 from .schedule_views import ShiftViewSet, ScheduledShiftViewSet
+# === YENİ EKLEME: Public Views ===
+from .public_views import public_business_site_view
 
 __all__ = [
     'RegisterView',
@@ -75,4 +77,6 @@ __all__ = [
     'KDSScreenViewSet',
     'ShiftViewSet',
     'ScheduledShiftViewSet',
+    # === YENİ EKLEME: Public Views ===
+    'public_business_site_view',
 ]

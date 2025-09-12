@@ -9,8 +9,13 @@ class BusinessSerializer(serializers.ModelSerializer):
     """
     class Meta:
         model = Business
-        # === GÜNCELLEME BURADA: 'timezone' alanı fields listesine eklendi ===
-        fields = ['id', 'owner', 'name', 'address', 'phone', 'is_setup_complete', 'currency_code', 'timezone']
+        # === GÜNCELLEME BURADA: Yeni web sitesi alanları fields listesine eklendi ===
+        fields = [
+            'id', 'owner', 'name', 'address', 'phone', 'is_setup_complete', 
+            'currency_code', 'timezone',
+            'website_slug', 'about_us', 'contact_details'  # <-- YENİ ALANLAR
+        ]
+        read_only_fields = ['owner']  # Slug'ı kullanıcı değiştirebilsin diye read_only'den çıkarıyoruz
 
 
 class TableSerializer(serializers.ModelSerializer):

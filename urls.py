@@ -5,6 +5,8 @@ from django.urls import path, include
 from rest_framework_simplejwt.views import TokenRefreshView
 from core.token import CustomTokenObtainPairView  # Custom token view
 from django.http import HttpResponse
+# === YENİ IMPORT: Public view ===
+from core.views.public_views import public_business_site_view
 
 # Basit root view; isteğe göre düzenlenebilir.
 def root_view(request):
@@ -13,6 +15,10 @@ def root_view(request):
 urlpatterns = [
     path('', root_view, name='root'),
     path('admin/', admin.site.urls),
+    
+    # === YENİ WEB SİTESİ URL'Sİ BAŞLANGICI ===
+    path('site/<slug:slug>/', public_business_site_view, name='public_business_site'),
+    # === YENİ WEB SİTESİ URL'Sİ SONU ===
     
     # Mevcut API URL'leriniz
     path('api/', include('core.urls')),
