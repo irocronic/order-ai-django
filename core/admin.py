@@ -167,14 +167,15 @@ class SubscriptionInline(admin.StackedInline):
 
 @admin.register(Business)
 class BusinessAdmin(admin.ModelAdmin):
-    # GÜNCELLENDİ: 'website_slug' alanı liste görünümüne eklendi.
-    list_display = ('name', 'owner_username', 'website_slug', 'is_setup_complete', 'get_subscription_status', 'get_subscription_expires_at')
+    # GÜNCELLENDİ: list_display, yeni metotları kullanacak şekilde değiştirildi.
+    list_display = ('name', 'owner_username', 'is_setup_complete', 'get_subscription_status', 'get_subscription_expires_at')
     
-    # YENİ: Arama alanına da ekleyerek admin panelinde slug'a göre arama yapmayı kolaylaştıralım.
-    search_fields = ('name', 'owner__username', 'website_slug')
+    search_fields = ('name', 'owner__username')
     
+    # GÜNCELLEME: list_filter, yeni ilişki üzerinden sorgu yapacak şekilde değiştirildi.
     list_filter = ('owner','is_setup_complete', 'subscription__status', 'subscription__plan')
     
+    # GÜNCELLEME: İlişkili model alanları 'list_editable' içinde kullanılamaz.
     list_editable = ('is_setup_complete',)
     
     # YENİ: Oluşturduğumuz SubscriptionInline'ı buraya ekliyoruz.
@@ -182,16 +183,13 @@ class BusinessAdmin(admin.ModelAdmin):
     
     readonly_fields = ('owner',)
     
-    # GÜNCELLENDİ: 'fieldsets' içindeki 'Temel Bilgiler' bölümüne 'website_slug' eklendi.
+    # GÜNCELLENDİ: fieldsets içindeki abonelik alanları artık inline'da yönetildiği için kaldırıldı.
     fieldsets = (
         ('Temel Bilgiler', {
-            'fields': ('name', 'owner', 'website_slug', 'address', 'phone')
+            'fields': ('name', 'owner', 'address', 'phone')
         }),
         ('Uygulama Ayarları', {
             'fields': ('is_setup_complete', 'currency_code', 'timezone')
-        }),
-        ('Web Sitesi Ayarları', {
-            'fields': ('about_us', 'contact_details')
         }),
     )
 

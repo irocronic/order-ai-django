@@ -331,45 +331,6 @@ SOCKETIO_SETTINGS['cors_allowed_origins'] = CORS_ALLOWED_ORIGINS
 print("🏠 Production ortam - Memory Optimized Socket.IO ayarları kullanılıyor")
 SOCKETIO_ASYNC_MODE = 'threading'
 
-# === DEBUG LOGGING AYARLARI ===
-LOGGING = {
-    'version': 1,
-    'disable_existing_loggers': False,
-    'formatters': {
-        'verbose': {
-            'format': '{levelname} {asctime} {module} {process:d} {thread:d} {message}',
-            'style': '{',
-        },
-        'simple': {
-            'format': '{levelname} {message}',
-            'style': '{',
-        },
-    },
-    'handlers': {
-        'console': {
-            'class': 'logging.StreamHandler',
-            'formatter': 'verbose',
-        },
-        'file': {
-            'class': 'logging.FileHandler',
-            'filename': os.path.join(BASE_DIR, 'debug.log'),
-            'formatter': 'verbose',
-        },
-    },
-    'loggers': {
-        'core.views.public_views': {
-            'handlers': ['console', 'file'],
-            'level': 'INFO',
-            'propagate': True,
-        },
-        'django': {
-            'handlers': ['console'],
-            'level': 'INFO',
-            'propagate': True,
-        },
-    },
-}
-
 # --- DEBUG LOG AYARLARI ---
 print(f"🔧 Socket.IO Ayarları:")
 print(f"   - Ping Timeout: {SOCKETIO_SETTINGS['ping_timeout']}ms")
@@ -378,8 +339,3 @@ print(f"🔧 Celery Memory Optimization:")
 print(f"   - Worker Concurrency: {CELERY_WORKER_CONCURRENCY}")
 print(f"   - Max Tasks Per Child: {CELERY_WORKER_MAX_TASKS_PER_CHILD}")
 print(f"   - Max Memory Per Child: {CELERY_WORKER_MAX_MEMORY_PER_CHILD}KB")
-
-# === LOG AYARLARI DEBUG BİLGİSİ ===
-print(f"📝 Logging yapılandırıldı:")
-print(f"   - Console ve dosya logları aktif")
-print(f"   - Log dosyası: {os.path.join(BASE_DIR, 'debug.log')}")
