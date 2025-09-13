@@ -7,333 +7,297 @@
     <meta name="description" content="{{ website.website_description|default:'' }}">
     <meta name="keywords" content="{{ website.website_keywords|default:'' }}">
 
+    <!-- Bootstrap CDN (v5.3+) -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600;700&family=Playfair+Display:wght@700&display=swap" rel="stylesheet">
     <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
 
     <style>
-        /* CSS Değişkenleri (Dinamik ve Koyu Tema için güncellendi) */
         :root {
-            --primary-color: {{ website.primary_color|default:'#4A90E2' }}; /* Açık Mavi */
-            --secondary-color: {{ website.secondary_color|default:'#50E3C2' }}; /* Turkuaz */
-            --bg-dark-primary: #1a1a1a; /* Ana Koyu Arka Plan */
-            --bg-dark-secondary: #2c2c2c; /* Kartlar ve Elemanlar için */
-            --text-light: #f5f5f5; /* Ana Metin Rengi */
-            --text-muted: #a0a0a0; /* Daha Az Önemli Metinler */
-            --border-color: rgba(255, 255, 255, 0.1);
-        }
-
-        /* Temel Sayfa Stilleri */
-        * {
-            box-sizing: border-box;
-            margin: 0;
-            padding: 0;
+            --primary-color: {{ website.primary_color|default:'#4A90E2' }};
+            --secondary-color: {{ website.secondary_color|default:'#50E3C2' }};
+            --accent-color: #ffaf40;
+            --bg-dark-primary: #181818;
+            --bg-dark-secondary: #23232b;
+            --text-light: #f5f5f5;
+            --text-muted: #a0a0a0;
+            --border-color: rgba(255,255,255,0.08);
+            --glass-blur: 12px;
         }
         body {
             font-family: 'Poppins', sans-serif;
-            line-height: 1.7;
+            background: radial-gradient(ellipse at top left, var(--bg-dark-secondary) 0%, var(--bg-dark-primary) 100%);
             color: var(--text-light);
-            background-color: var(--bg-dark-primary);
-        }
-        .container {
-            max-width: 1200px;
-            margin: 0 auto;
-            padding: 0 20px;
-        }
-        section {
-            padding: 80px 0;
+            min-height: 100vh;
         }
         h1, h2, h3, h4 {
             font-family: 'Playfair Display', serif;
             color: var(--text-light);
+            letter-spacing: 1px;
         }
-        h2 {
-            font-size: 2.8rem;
-            margin-bottom: 20px;
-            text-align: center;
-        }
+        h2 { font-size: 2.7rem; margin-bottom: 20px; text-align: center;}
         .section-subtitle {
             text-align: center;
             color: var(--text-muted);
-            margin-bottom: 50px;
+            margin-bottom: 40px;
             max-width: 600px;
-            margin-left: auto;
-            margin-right: auto;
+            margin-inline: auto;
         }
-        a {
-            color: var(--primary-color);
-            text-decoration: none;
-            transition: color 0.3s ease;
-        }
-        a:hover {
-            color: var(--secondary-color);
-        }
+        a { color: var(--primary-color); text-decoration: none; transition: color 0.3s;}
+        a:hover { color: var(--secondary-color);}
 
-        /* Yükleme Animasyonu */
         #loader {
             position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: var(--bg-dark-primary);
+            inset: 0;
+            background: linear-gradient(135deg, var(--primary-color) 10%, var(--bg-dark-primary) 90%);
             display: flex;
             justify-content: center;
             align-items: center;
             z-index: 1000;
-            transition: opacity 0.5s ease;
+            transition: opacity 0.6s;
         }
         .spinner {
+            width: 70px; height: 70px;
             border: 8px solid var(--border-color);
             border-top: 8px solid var(--primary-color);
             border-radius: 50%;
-            width: 60px;
-            height: 60px;
             animation: spin 1s linear infinite;
+            box-shadow: 0 0 30px var(--primary-color);
         }
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
+        @keyframes spin { 0% { transform: rotate(0);} 100% { transform: rotate(360deg);} }
 
-        /* Header */
-        header {
-            background-color: var(--bg-dark-secondary);
-            border-bottom: 1px solid var(--border-color);
-            position: sticky;
-            top: 0;
-            z-index: 999;
-            padding: 15px 0;
+        .navbar-brand {
+            font-size: 2.1rem;
+            font-weight: 700;
+            color: var(--primary-color) !important;
+            font-family: 'Playfair Display', serif;
+            letter-spacing: 2px;
+            text-shadow: 0 2px 12px var(--primary-color);
         }
         .navbar {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
+            background: rgba(30,30,34, 0.94);
+            backdrop-filter: blur(var(--glass-blur));
+            border-bottom: 1px solid var(--border-color);
+            box-shadow: 0 2px 12px rgba(0,0,0,0.10);
         }
-        .logo {
-            font-size: 1.8rem;
-            font-weight: 700;
-            color: var(--primary-color);
-            font-family: 'Playfair Display', serif;
-        }
-        .nav-links {
-            list-style: none;
-            display: flex;
-        }
-        .nav-links li {
-            margin-left: 30px;
-        }
-        .nav-links a {
-            color: var(--text-light);
+        .navbar-nav .nav-link {
+            color: var(--text-light) !important;
             font-weight: 600;
+            border-radius: 20px;
+            margin: 0 6px;
+            transition: background 0.3s, color 0.3s;
+            padding: 8px 16px;
         }
-        .nav-links a:hover {
-            color: var(--primary-color);
+        .navbar-nav .nav-link.active, .navbar-nav .nav-link:hover {
+            background: var(--primary-color);
+            color: #fff !important;
         }
-
-        /* Hero (Hakkımızda) Bölümü */
-        #about {
-            background: var(--bg-dark-primary);
+        .container-custom {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 0 24px;
         }
+        section { padding: 80px 0; }
+        #about {background: none;}
         .hero-content {
-            display: flex;
-            align-items: center;
-            gap: 50px;
+            display: flex; align-items: center; gap: 48px;
+            backdrop-filter: blur(var(--glass-blur));
+            background: rgba(36,36,44,0.7);
+            border-radius: 18px;
+            box-shadow: 0 6px 40px rgba(0,0,0,0.12);
+            padding: 40px 32px;
         }
-        .hero-text {
-            flex: 1;
-        }
+        .hero-text { flex:1;}
         .hero-text h1 {
-            font-size: 3.8rem;
+            font-size: 3.2rem;
             margin-bottom: 20px;
-            line-height: 1.2;
+            background: linear-gradient(90deg, var(--primary-color) 30%, var(--secondary-color) 80%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
         }
-        .hero-text p {
-            font-size: 1.1rem;
-            margin-bottom: 25px;
-            color: var(--text-muted);
-        }
-        .hero-image {
-            flex: 1;
-            text-align: center;
-        }
+        .hero-text p { font-size: 1.15rem; color: var(--text-muted); margin-bottom: 22px;}
+        .hero-image { flex: 1; text-align: center;}
         .hero-image img {
-            max-width: 100%;
-            border-radius: 12px;
-            border: 2px solid var(--border-color);
+            max-width: 92%;
+            border-radius: 18px;
+            border: 3px solid var(--primary-color);
+            box-shadow: 0 8px 32px rgba(80,227,194,0.13);
+            transition: filter 0.4s;
         }
-        
-        /* Menü Bölümü */
-        #menu {
-            background-color: var(--bg-dark-secondary);
-        }
-        #menu .category-block {
-            margin-bottom: 60px;
-        }
+        .hero-image img:hover { filter: brightness(1.05) saturate(1.15);}
+        #menu {background: none;}
+        #menu .category-block {margin-bottom: 55px;}
         #menu .category-title {
             text-align: center;
-            font-size: 2.2rem;
-            margin-bottom: 40px;
+            font-size: 2.1rem;
+            margin-bottom: 32px;
             color: var(--primary-color);
+            letter-spacing: 1px;
+            text-shadow: 0 2px 12px var(--primary-color);
         }
         .menu-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-            gap: 30px;
+            grid-template-columns: repeat(auto-fit, minmax(260px,1fr));
+            gap: 26px;
         }
         .menu-item {
-            background: var(--bg-dark-primary);
-            border: 1px solid var(--border-color);
-            border-radius: 8px;
+            background: rgba(22,22,28,0.94);
+            border: 1.5px solid var(--border-color);
+            border-radius: 16px;
             overflow: hidden;
             display: flex;
             flex-direction: column;
-            transition: transform 0.3s ease, border-color 0.3s ease;
+            transition: transform 0.3s, border-color 0.3s, box-shadow 0.5s;
+            box-shadow: 0 4px 18px rgba(50,227,194,0.09);
+            position: relative;
         }
         .menu-item:hover {
-            transform: translateY(-5px);
-            border-color: var(--primary-color);
+            transform: translateY(-7px) scale(1.03);
+            border-color: var(--accent-color);
+            box-shadow: 0 8px 28px var(--primary-color);
         }
         .menu-item-image {
-            height: 220px;
-            width: 100%;
-            object-fit: cover;
+            height: 170px; width: 100%; object-fit: cover;
+            filter: brightness(0.97) saturate(1.09);
+            transition: filter 0.3s;
         }
+        .menu-item:hover .menu-item-image { filter: brightness(1.12) saturate(1.15);}
         .menu-item-content {
-            padding: 20px;
-            flex-grow: 1;
-            display: flex;
-            flex-direction: column;
+            padding: 20px; flex-grow: 1; display: flex; flex-direction: column;
         }
         .menu-item-title {
-            font-size: 1.5rem;
-            margin-bottom: 8px;
-            color: var(--text-light);
+            font-size: 1.35rem;
+            margin-bottom: 5px;
+            color: var(--accent-color);
+            font-family: 'Playfair Display', serif;
         }
         .menu-item-description {
-            font-size: 0.95rem;
+            font-size: 1rem;
             color: var(--text-muted);
             margin-bottom: 15px;
             flex-grow: 1;
         }
         .menu-item-price {
-            font-size: 1.6rem;
+            font-size: 1.25rem;
             font-weight: 700;
             color: var(--secondary-color);
             align-self: flex-end;
+            background: rgba(80,227,194,0.10);
+            padding: 4px 14px;
+            border-radius: 16px;
         }
-
-        /* İletişim Bölümü */
-        #contact {
-            background-color: var(--bg-dark-primary);
-        }
+        #contact {background: none;}
         .contact-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-            gap: 30px;
-            margin-top: 40px;
+            grid-template-columns: repeat(auto-fit, minmax(235px,1fr));
+            gap: 26px;
+            margin-top: 36px;
         }
         .contact-item {
-            background: var(--bg-dark-secondary);
-            border: 1px solid var(--border-color);
-            padding: 30px;
-            border-radius: 8px;
+            background: rgba(32,32,40,0.95);
+            border: 1.5px solid var(--border-color);
+            padding: 24px;
+            border-radius: 14px;
             text-align: center;
-            transition: background-color 0.3s ease;
+            transition: background 0.3s;
+            box-shadow: 0 4px 16px var(--primary-color);
         }
-        .contact-item:hover {
-            background-color: rgba(255, 255, 255, 0.05);
-        }
+        .contact-item:hover { background: rgba(80,227,194,0.07);}
         .contact-item .material-icons {
-            font-size: 40px;
+            font-size: 38px;
             color: var(--primary-color);
-            margin-bottom: 15px;
+            margin-bottom: 10px;
+            filter: drop-shadow(0 2px 8px var(--primary-color));
         }
         .contact-item h3 {
-            font-size: 1.5rem;
-            margin-bottom: 10px;
-            color: var(--text-light);
+            font-size: 1.25rem;
+            margin-bottom: 9px;
+            color: var(--accent-color);
         }
-        .contact-item p {
-            color: var(--text-muted);
-            white-space: pre-wrap;
-        }
-        
-        /* Harita Bölümü */
-        #map {
-             background-color: var(--bg-dark-secondary);
-        }
+        .contact-item p { color: var(--text-muted); white-space: pre-wrap; font-size: 1.03rem;}
+        #map {background: none;}
         #map .map-container {
-            width: 100%;
-            height: 450px;
-            border-radius: 12px;
+            width: 100%; height: 350px;
+            border-radius: 16px;
             overflow: hidden;
             border: 2px solid var(--border-color);
+            box-shadow: 0 4px 24px var(--primary-color);
         }
-        #map iframe {
-            width: 100%;
-            height: 100%;
-            border: 0;
-        }
-
-        /* Footer */
+        #map iframe {width:100%; height:100%; border:0;}
         footer {
-            background-color: var(--bg-dark-secondary);
+            background: rgba(30,30,34,0.95);
             border-top: 1px solid var(--border-color);
-            padding: 40px 0;
+            padding: 40px 0 24px;
             text-align: center;
+            box-shadow: 0 -2px 12px rgba(0,0,0,0.10);
         }
-        .social-links {
-            margin-bottom: 20px;
-        }
+        .social-links {margin-bottom: 18px;}
         .social-links a {
-            margin: 0 15px;
-            font-size: 1.5rem;
+            margin: 0 12px;
+            transition: transform 0.3s;
+            vertical-align: middle;
         }
+        .social-links a:hover { transform: scale(1.20) rotate(-8deg);}
+        .social-links img {width: 28px; height: 28px; vertical-align: middle;}
         .footer-text {
-            font-size: 0.9rem;
+            font-size: 1rem;
             color: var(--text-muted);
+            letter-spacing: 1px;
         }
-
-        /* Duyarlılık (Responsive) */
-        @media (max-width: 768px) {
-            .hero-content {
-                flex-direction: column;
-                text-align: center;
-            }
-            .hero-text h1 {
-                font-size: 2.8rem;
-            }
-            h2 {
-                font-size: 2rem;
-            }
-            .nav-links {
-                display: none;
-            }
+        .section-anim {
+            opacity: 0;
+            transform: translateY(40px) scale(0.98);
+            transition: opacity 0.8s, transform 0.7s;
+        }
+        .section-anim.visible {
+            opacity: 1;
+            transform: none;
+        }
+        .section-highlight {
+            box-shadow: 0 0 0 4px var(--primary-color), 0 0 18px var(--primary-color);
+            transition: box-shadow 0.4s;
+        }
+        @media (max-width: 900px) {
+            .hero-content { flex-direction: column; padding: 38px 10px;}
+            .hero-image img {max-width: 99%;}
+        }
+        @media (max-width: 600px) {
+            section { padding: 48px 0;}
+            h2 { font-size: 1.45rem;}
+            .hero-text h1 { font-size: 2.1rem;}
+            .container-custom { padding: 0 6px;}
         }
     </style>
 </head>
 <body>
-
-    <div id="loader">
-        <div class="spinner"></div>
-    </div>
-
-    <header>
-        <div class="container navbar">
-            <a href="#" id="nav-logo" class="logo">İşletme Adı</a>
-            <ul class="nav-links">
-                <li id="nav-link-about" style="display: none;"><a href="#about">Hakkımızda</a></li>
-                <li id="nav-link-menu" style="display: none;"><a href="#menu">Menü</a></li>
-                <li id="nav-link-contact" style="display: none;"><a href="#contact">İletişim</a></li>
-            </ul>
+    <div id="loader"><div class="spinner"></div></div>
+    <!-- Bootstrap Navbar -->
+    <nav class="navbar navbar-expand-lg navbar-dark sticky-top">
+      <div class="container-custom">
+        <a class="navbar-brand" href="#" id="nav-logo">İşletme Adı</a>
+        <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#mainNavbar" aria-controls="mainNavbar" aria-expanded="false" aria-label="Menüyü Aç">
+          <span class="navbar-toggler-icon"></span>
+        </button>
+        <div class="collapse navbar-collapse" id="mainNavbar">
+          <ul class="navbar-nav ms-auto mb-2 mb-lg-0">
+            <li class="nav-item" id="nav-link-about" style="display:none;">
+              <a class="nav-link" href="#about">Hakkımızda</a>
+            </li>
+            <li class="nav-item" id="nav-link-menu" style="display:none;">
+              <a class="nav-link" href="#menu">Menü</a>
+            </li>
+            <li class="nav-item" id="nav-link-contact" style="display:none;">
+              <a class="nav-link" href="#contact">İletişim</a>
+            </li>
+          </ul>
         </div>
-    </header>
-
+      </div>
+    </nav>
     <main>
-        <section id="about">
-            <div class="container hero-content">
+        <section id="about" class="section-anim">
+            <div class="container-custom hero-content">
                 <div class="hero-text">
                     <h1 id="about-title">...</h1>
                     <p id="about-description">...</p>
@@ -343,18 +307,15 @@
                 </div>
             </div>
         </section>
-
-        <section id="menu" style="display: none;">
-            <div class="container">
+        <section id="menu" class="section-anim" style="display: none;">
+            <div class="container-custom">
                 <h2>Menümüz</h2>
                 <p class="section-subtitle">Özenle hazırladığımız lezzetlerimizi keşfedin. Her damak zevkine uygun bir seçenek mutlaka var.</p>
-                <div id="menu-container">
-                </div>
+                <div id="menu-container"></div>
             </div>
         </section>
-
-        <section id="contact" style="display: none;">
-            <div class="container">
+        <section id="contact" class="section-anim" style="display: none;">
+            <div class="container-custom">
                 <h2>Bize Ulaşın</h2>
                 <p class="section-subtitle">Sorularınız, rezervasyonlarınız veya geri bildirimleriniz için bizimle iletişime geçmekten çekinmeyin.</p>
                 <div class="contact-grid">
@@ -381,35 +342,42 @@
                 </div>
             </div>
         </section>
-
-        <section id="map" style="display: none;">
-            <div class="container">
+        <section id="map" class="section-anim" style="display: none;">
+            <div class="container-custom">
                 <h2>Konumumuz</h2>
-                <div class="map-container" id="map-container-inner">
-                </div>
+                <div class="map-container" id="map-container-inner"></div>
             </div>
         </section>
     </main>
-
     <footer>
-        <div class="container">
-            <div class="social-links" id="social-links-container">
-            </div>
+        <div class="container-custom">
+            <div class="social-links" id="social-links-container"></div>
             <p class="footer-text">© <span id="footer-year"></span> <span id="footer-business-name">İşletme Adı</span>. OrderAI altyapısı ile güçlendirilmiştir.</p>
         </div>
     </footer>
-
+    <!-- Bootstrap JS (v5.3+) -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
     <script>
+        // Loader ve API Fetch
         document.addEventListener('DOMContentLoaded', () => {
             const apiUrl = '{{ api_url }}';
             const loader = document.getElementById('loader');
+            // Animasyon için sectionları topla
+            const animatedSections = document.querySelectorAll('.section-anim');
+            const appearAnim = () => {
+                animatedSections.forEach(sec => {
+                    const rect = sec.getBoundingClientRect();
+                    if (rect.top < window.innerHeight * 0.85) sec.classList.add('visible');
+                    else sec.classList.remove('visible');
+                });
+            };
+            window.addEventListener('scroll', appearAnim);
+            appearAnim();
 
             const fetchData = async () => {
                 try {
                     const response = await fetch(apiUrl);
-                    if (!response.ok) {
-                        throw new Error(`API Hatası: ${response.status}`);
-                    }
+                    if (!response.ok) throw new Error(`API Hatası: ${response.status}`);
                     const data = await response.json();
                     populatePage(data);
                 } catch (error) {
@@ -418,16 +386,14 @@
                 } finally {
                     if(loader) {
                         loader.style.opacity = '0';
-                        setTimeout(() => loader.style.display = 'none', 500);
+                        setTimeout(() => loader.style.display = 'none', 600);
                     }
                 }
             };
-
             const populatePage = (data) => {
                 const business = data.business;
                 const website = data.business.website;
                 const menu = data.menu;
-
                 document.title = website.website_title || business.name;
                 document.getElementById('nav-logo').textContent = business.name;
                 document.getElementById('footer-business-name').textContent = business.name;
@@ -443,7 +409,6 @@
                     }
                     document.getElementById('nav-link-about').style.display = 'list-item';
                 }
-
                 if (website.show_menu && menu && Object.keys(menu).length > 0) {
                     const menuContainer = document.getElementById('menu-container');
                     let menuHtml = '';
@@ -467,7 +432,6 @@
                     document.getElementById('menu').style.display = 'block';
                     document.getElementById('nav-link-menu').style.display = 'list-item';
                 }
-
                 if (website.show_contact) {
                     let hasContactInfo = false;
                     if(website.contact_phone) {
@@ -499,7 +463,6 @@
                         document.getElementById('nav-link-contact').style.display = 'list-item';
                     }
                 }
-
                 if (website.show_map && website.map_latitude && website.map_longitude) {
                     const mapContainer = document.getElementById('map-container-inner');
                     const iframe = document.createElement('iframe');
@@ -509,18 +472,39 @@
                     mapContainer.appendChild(iframe);
                     document.getElementById('map').style.display = 'block';
                 }
-
+                // Social Links
                 const socialLinksContainer = document.getElementById('social-links-container');
                 let socialHtml = '';
-                if(website.facebook_url) socialHtml += `<a href="${website.facebook_url}" target="_blank" title="Facebook"><img src="https://simpleicons.org/icons/facebook.svg" style="filter: invert(1); width: 24px;" alt="Facebook"></a>`;
-                if(website.instagram_url) socialHtml += `<a href="${website.instagram_url}" target="_blank" title="Instagram"><img src="https://simpleicons.org/icons/instagram.svg" style="filter: invert(1); width: 24px;" alt="Instagram"></a>`;
-                if(website.twitter_url) socialHtml += `<a href="${website.twitter_url}" target="_blank" title="Twitter/X"><img src="https://simpleicons.org/icons/x.svg" style="filter: invert(1); width: 24px;" alt="X"></a>`;
+                if(website.facebook_url) socialHtml += `<a href="${website.facebook_url}" target="_blank" title="Facebook"><img src="https://simpleicons.org/icons/facebook.svg" style="filter: invert(1);" alt="Facebook"></a>`;
+                if(website.instagram_url) socialHtml += `<a href="${website.instagram_url}" target="_blank" title="Instagram"><img src="https://simpleicons.org/icons/instagram.svg" style="filter: invert(1);" alt="Instagram"></a>`;
+                if(website.twitter_url) socialHtml += `<a href="${website.twitter_url}" target="_blank" title="Twitter/X"><img src="https://simpleicons.org/icons/x.svg" style="filter: invert(1);" alt="X"></a>`;
                 socialLinksContainer.innerHTML = socialHtml;
+                appearAnim();
             };
-
             const formatCurrency = (value) => {
                 return new Intl.NumberFormat('tr-TR', { style: 'currency', currency: 'TRY' }).format(value);
             };
+
+            // --- Smooth scroll & fade effect for nav links ---
+            document.querySelectorAll('.navbar-nav .nav-link').forEach(link => {
+                link.addEventListener('click', function(e) {
+                    const href = this.getAttribute('href');
+                    if (href && href.startsWith('#')) {
+                        e.preventDefault();
+                        const target = document.querySelector(href);
+                        if (target) {
+                            target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                            target.classList.add('section-highlight');
+                            setTimeout(() => target.classList.remove('section-highlight'), 700);
+                        }
+                        // Bootstrap menüyü kapat (mobilde)
+                        const navbarCollapse = document.getElementById('mainNavbar');
+                        if (navbarCollapse.classList.contains('show')) {
+                            new bootstrap.Collapse(navbarCollapse).hide();
+                        }
+                    }
+                });
+            });
 
             fetchData();
         });
