@@ -11,7 +11,6 @@ from .order_views import OrderViewSet, OrderItemViewSet
 from .payment_views import PaymentViewSet
 from .report_views import ReportView, DetailedSalesReportView
 from .stock_views import (
-    # --- SİLİNDİ ---
     IngredientViewSet, 
     UnitOfMeasureViewSet, 
     RecipeItemViewSet,
@@ -36,6 +35,15 @@ from .campaign_views import CampaignMenuViewSet
 from .kds_management_views import KDSScreenViewSet
 from .schedule_views import ShiftViewSet, ScheduledShiftViewSet
 
+# --- YENİ: BusinessWebsite için views importları ---
+from .business_website_views import (
+    BusinessWebsiteDetailView,
+    business_public_website_api,
+    business_website_preview_api,
+    business_website_view, # <-- BU SATIR EKLENDİ
+)
+# ---------------------------------------------------
+
 __all__ = [
     'RegisterView',
     'PasswordResetRequestView',
@@ -50,7 +58,6 @@ __all__ = [
     'ReportView',
     'DetailedSalesReportView',
     'StaffPerformanceReportView',
-    # --- SİLİNDİ ---
     'IngredientViewSet',
     'UnitOfMeasureViewSet',
     'RecipeItemViewSet',
@@ -75,4 +82,9 @@ __all__ = [
     'KDSScreenViewSet',
     'ShiftViewSet',
     'ScheduledShiftViewSet',
+    # --- YENİ EKLENENLER ---
+    'BusinessWebsiteDetailView',
+    'business_public_website_api',
+    'business_website_preview_api',
+    'business_website_view', # <-- BU SATIR EKLENDİ
 ]

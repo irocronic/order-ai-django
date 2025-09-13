@@ -192,9 +192,37 @@ class Business(models.Model):
         verbose_name="Zaman Dilimi",
         help_text="İşletmenin bulunduğu yerel zaman dilimi."
     )
+    
+    # === YENİ ALAN BAŞLANGICI ===
+    slug = models.SlugField(
+        max_length=100, 
+        unique=True, 
+        blank=True, 
+        verbose_name="URL Slug"
+    )
+    # === YENİ ALAN SONU ===
 
     def __str__(self):
         return self.name
+    
+    # === YENİ METOT BAŞLANGICI ===
+    def save(self, *args, **kwargs):
+        if not self.slug:
+            self.slug = slugify(self.name)
+            # Eğer aynı slug varsa unique hale getir
+            counter = 1
+            original_slug = self.slug
+            while Business.objects.filter(slug=self.slug).exists():
+                self.slug = f"{original_slug}-{counter}"
+                counter += 1
+        
+        super().save(*args, **kwargs)
+        
+        # Website objesi otomatik oluştur
+        if not hasattr(self, 'website'):
+            BusinessWebsite.objects.create(business=self)
+    # === YENİ METOT SONU ===
+
 
 # === YENİ MODELLER: Tedarikçi ve Alım Yönetimi ===
 
@@ -930,3 +958,173 @@ class NotificationSetting(models.Model):
     def __str__(self):
         status = "Aktif" if self.is_active else "Pasif"
         return f"{self.event_type} - {status}"
+
+# === YENİ MODEL BAŞLANGICI: BusinessWebsite ===
+
+class BusinessWebsite(models.Model):
+    """İşletmeye özel web sitesi bilgileri"""
+    business = models.OneToOneField(
+        'Business', 
+        on_delete=models.CASCADE, 
+        related_name='website'
+    )
+    
+    # Hakkımızda Bilgileri
+    about_title = models.CharField(
+        max_length=200, 
+        default="Hakkımızda", 
+        verbose_name="Hakkımızda Başlığı"
+    )
+    about_description = models.TextField(
+        blank=True, 
+        null=True, 
+        verbose_name="Hakkımızda Açıklaması"
+    )
+    about_image = models.URLField(
+        blank=True, 
+        null=True, 
+        verbose_name="Hakkımızda Görseli"
+    )
+    
+    # İletişim Bilgileri
+    contact_phone = models.CharField(
+        max_length=20, 
+        blank=True, 
+        null=True, 
+        verbose_name="Telefon"
+    )
+    contact_email = models.EmailField(
+        blank=True, 
+        null=True, 
+        verbose_name="E-posta"
+    )
+    contact_address = models.TextField(
+        blank=True, 
+        null=True, 
+        verbose_name="Adres"
+    )
+    contact_working_hours = models.TextField(
+        blank=True, 
+        null=True, 
+        verbose_name="Çalışma Saatleri"
+    )
+    
+    # Harita Koordinatları
+    map_latitude = models.DecimalField(
+        max_digits=10, 
+        decimal_places=8, 
+        blank=True, 
+        null=True, 
+        verbose_name="Enlem"
+    )
+    map_longitude = models.DecimalField(
+        max_digits=11, 
+        decimal_places=8, 
+        blank=True, 
+        null=True, 
+        verbose_name="Boylam"
+    )
+    map_zoom_level = models.IntegerField(
+        default=15, 
+        verbose_name="Harita Zoom Seviyesi"
+    )
+    
+    # SEO ve Görünüm
+    website_title = models.CharField(
+        max_length=200, 
+        blank=True, 
+        null=True, 
+        verbose_name="Web Sitesi Başlığı"
+    )
+    website_description = models.TextField(
+        blank=True, 
+        null=True, 
+        verbose_name="Web Sitesi Açıklaması"
+    )
+    website_keywords = models.CharField(
+        max_length=500, 
+        blank=True, 
+        null=True, 
+        verbose_name="Anahtar Kelimeler"
+    )
+    
+    # Sosyal Medya
+    facebook_url = models.URLField(
+        blank=True, 
+        null=True, 
+        verbose_name="Facebook URL"
+    )
+    instagram_url = models.URLField(
+        blank=True, 
+        null=True, 
+        verbose_name="Instagram URL"
+    )
+    twitter_url = models.URLField(
+        blank=True, 
+        null=True, 
+        verbose_name="Twitter URL"
+    )
+    
+    # Tema ve Özelleştirme
+    primary_color = models.CharField(
+        max_length=7, 
+        default="#3B82F6", 
+        verbose_name="Ana Renk"
+    )
+    secondary_color = models.CharField(
+        max_length=7, 
+        default="#10B981", 
+        verbose_name="İkincil Renk"
+    )
+    
+    # Durum Bilgileri
+    is_active = models.BooleanField(
+        default=True, 
+        verbose_name="Aktif mi?"
+    )
+    show_menu = models.BooleanField(
+        default=True, 
+        verbose_name="Menüyü Göster"
+    )
+    show_contact = models.BooleanField(
+        default=True, 
+        verbose_name="İletişim Bilgilerini Göster"
+    )
+    show_map = models.BooleanField(
+        default=True, 
+        verbose_name="Haritayı Göster"
+    )
+    
+    # Zaman Damgaları
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        verbose_name = "İşletme Web Sitesi"
+        verbose_name_plural = "İşletme Web Siteleri"
+        db_table = 'core_business_website'
+    
+    def __str__(self):
+        return f"{self.business.name} - Web Sitesi"
+    
+    @property
+    def website_url(self):
+        """Web sitesi URL'ini döndürür"""
+        return f"/website/{self.business.slug}/"
+    
+    @property
+    def has_location(self):
+        """Konum bilgisi var mı?"""
+        return self.map_latitude is not None and self.map_longitude is not None
+    
+    def save(self, *args, **kwargs):
+        # İlk kayıt sırasında varsayılan değerleri ayarla
+        if not self.website_title:
+            self.website_title = f"{self.business.name} - Resmi Web Sitesi"
+        
+        if not self.website_description:
+            self.website_description = f"{self.business.name} restoranının resmi web sitesi. Menümüzü inceleyin ve bizimle iletişime geçin."
+        
+        super().save(*args, **kwargs)
+
+# === YENİ MODEL SONU ===

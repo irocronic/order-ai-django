@@ -1,5 +1,3 @@
-# core/urls.py
-
 from django.urls import path, include, re_path
 from rest_framework.routers import DefaultRouter
 from django.conf import settings
@@ -20,7 +18,6 @@ from core.views import (
     OrderItemViewSet,
     WaitingCustomerList,
     WaitingCustomerDetail,
-    # --- SİLİNDİ: StockViewSet ve StockMovementViewSet importları kaldırıldı ---
     AccountSettingsView,
     GuestOrderCreateView,
     GuestMenuView,
@@ -39,11 +36,18 @@ from core.views import (
     IngredientViewSet,
     UnitOfMeasureViewSet,
     RecipeItemViewSet,
-    # === YENİ: Alım Yönetimi için ViewSet'ler import edildi ===
     SupplierViewSet,
     PurchaseOrderViewSet,
-    # =========================================================
 )
+
+# --- YENİ: Business Website Views için importlar ---
+from core.views.business_website_views import (
+    BusinessWebsiteDetailView,
+    business_website_preview_api,
+    business_public_website_api,
+    business_website_view,
+)
+# ---------------------------------------------------
 
 from subscriptions.views import VerifyPurchaseView
 
@@ -57,7 +61,6 @@ router.register(r'orders', OrderViewSet, basename='order')
 router.register(r'payments', PaymentViewSet, basename='payment')
 router.register(r'categories', CategoryViewSet, basename='category')
 router.register(r'order_items', OrderItemViewSet, basename='orderitem')
-# --- SİLİNDİ: StockViewSet ve StockMovementViewSet router kayıtları kaldırıldı ---
 router.register(r'ingredients', IngredientViewSet, basename='ingredient')
 router.register(r'units-of-measure', UnitOfMeasureViewSet, basename='unitofmeasure')
 router.register(r'recipes', RecipeItemViewSet, basename='recipeitem')
@@ -67,39 +70,32 @@ router.register(r'campaigns', CampaignMenuViewSet, basename='campaignmenu')
 router.register(r'kds-screens', KDSScreenViewSet, basename='kdsscreen')
 router.register(r'shifts', ShiftViewSet, basename='shift')
 router.register(r'schedule', ScheduledShiftViewSet, basename='scheduledshift')
-
-# === YENİ: Alım Yönetimi için router kayıtları eklendi ===
 router.register(r'suppliers', SupplierViewSet, basename='supplier')
 router.register(r'purchase-orders', PurchaseOrderViewSet, basename='purchaseorder')
-# =========================================================
 
 # YÖNETİCİ API'leri için ayrı bir DefaultRouter
 admin_router = DefaultRouter()
 admin_router.register(r'manage-users', AdminUserManagementViewSet, basename='admin-manage-user')
 admin_router.register(r'notification-settings', NotificationSettingViewSet, basename='admin-notification-setting')
 
+app_name = 'core'
 
-# URL'leri tanımla
 urlpatterns = [
     # Router tarafından oluşturulan API URL'leri
     path('', include(router.urls)),
     path('admin-panel/', include(admin_router.urls)),
 
-    # ==================== YENİ EKLENEN/GÜNCELLENEN BÖLÜM ====================
     # IngredientViewSet için özel action URL'leri
     path('ingredients/<int:pk>/adjust-stock/', IngredientViewSet.as_view({'post': 'adjust_stock'}), name='ingredient-adjust-stock'),
     path('ingredients/<int:pk>/history/', IngredientViewSet.as_view({'get': 'history'}), name='ingredient-history'),
-    # +++ YENİ URL +++
     path('ingredients/send-low-stock-report/', IngredientViewSet.as_view({'post': 'send_low_stock_report'}), name='ingredient-send-low-stock-report'),
-    # ++++++++++++++
-    # =====================================================================
 
     # KDS Siparişleri için URL'ler
     re_path(r'^kds-orders/(?P<kds_slug>[-\w]+)/$', KDSOrderViewSet.as_view({'get': 'list'}), name='kdsorder-list'),
     re_path(r'^kds-orders/(?P<kds_slug>[-\w]+)/(?P<pk>\d+)/$', KDSOrderViewSet.as_view({'get': 'retrieve'}), name='kdsorder-detail'),
     re_path(r'^kds-orders/(?P<kds_slug>[-\w]+)/(?P<pk>\d+)/start-preparation/$', KDSOrderViewSet.as_view({'post': 'start_preparation'}), name='kdsorder-start-preparation'),
     re_path(r'^kds-orders/(?P<kds_slug>[-\w]+)/(?P<pk>\d+)/mark-ready-for-pickup/$', KDSOrderViewSet.as_view({'post': 'mark_ready_for_pickup'}), name='kdsorder-mark-ready'),
-    
+
     # OrderItem için özel action URL'leri
     path('order_items/<int:pk>/start-preparing/', OrderItemViewSet.as_view({'post': 'start_preparing_item'}), name='orderitem-start-preparing'),
     path('order_items/<int:pk>/mark-ready/', OrderItemViewSet.as_view({'post': 'mark_item_ready'}), name='orderitem-mark-ready'),
@@ -109,13 +105,13 @@ urlpatterns = [
     path('reports/general/', ReportView.as_view(), name='report_general'),
     path('reports/detailed-sales/', DetailedSalesReportView.as_view(), name='detailed_sales_report'),
     path('reports/staff-performance/', StaffPerformanceReportView.as_view(), name='staff_performance_report'),
-    
+
     # Kimlik Doğrulama ve Hesap Yönetimi
     path('register/', RegisterView.as_view(), name='register'),
     path('account/', AccountSettingsView.as_view(), name='account_settings'),
     path('password-reset/request/', PasswordResetRequestView.as_view(), name='password_reset_request'),
     path('password-reset/confirm-code/', PasswordResetCodeConfirmView.as_view(), name='password_reset_code_confirm'),
-    
+
     # Abonelik URL'si
     path('subscriptions/verify-purchase/', VerifyPurchaseView.as_view(), name='verify_purchase'),
 
@@ -126,6 +122,16 @@ urlpatterns = [
     # Misafir API'leri
     re_path(r'^guest/menu/(?P<table_uuid>[0-9a-f-]+)/$', GuestMenuView.as_view(), name='guest_menu_api'),
     re_path(r'^guest/orders/(?P<table_uuid>[0-9a-f-]+)/$', GuestOrderCreateView.as_view(), name='guest_order_create_api'),
+
+    # ======================= YENİ EKLENEN BÖLÜM ==========================
+    # İşletme Web Sitesi API'leri
+    path('api/business/website/', BusinessWebsiteDetailView.as_view(), name='business-website-detail'),
+    path('api/business/website/preview/', business_website_preview_api, name='business-website-preview'),
+    path('api/public/business/<slug:business_slug>/', business_public_website_api, name='business-public-website'),
+
+    # Web Sitesi Template URL'leri (herkese açık sayfa)
+    path('website/<slug:business_slug>/', business_website_view, name='business-website'),
+    # =====================================================================
 ]
 
 # Geliştirme ortamında medya dosyalarını sunmak için

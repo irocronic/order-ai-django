@@ -1,5 +1,3 @@
-# core/serializers/__init__.py
-
 from .user_serializers import (
     RegisterSerializer,
     AccountSettingsSerializer,
@@ -36,20 +34,15 @@ from .order_serializers import (
 from .waiting_customer_serializers import (
     WaitingCustomerSerializer,
 )
-# ================== GÜNCELLEME BURADA ==================
 from .stock_serializers import (
-    # --- SİLİNDİ ---
     IngredientSerializer, 
     UnitOfMeasureSerializer,
     RecipeItemSerializer,
     IngredientStockMovementSerializer,
-    # === YENİ: Alım Yönetimi Serializer'ları eklendi ===
     SupplierSerializer,
     PurchaseOrderItemSerializer,
     PurchaseOrderSerializer,
-    # =================================================
 )
-# =======================================================
 from .report_serializers import (
     StaffPerformanceSerializer,
     DetailedSaleItemSerializer,
@@ -70,6 +63,13 @@ from .schedule_serializers import (
     ScheduledShiftSerializer,
 )
 
+# --- YENİ: Business Website Serializer'ları import et ---
+from .business_website_serializers import (
+    BusinessWebsiteSerializer,
+    BusinessWebsiteUpdateSerializer,
+    BusinessPublicSerializer,
+)
+# -------------------------------------------------------
 
 __all__ = [
     'RegisterSerializer',
@@ -84,18 +84,13 @@ __all__ = [
     'CategorySerializer',
     'MenuItemVariantSerializer',
     'MenuItemSerializer',
-    # ================== GÜNCELLEME BURADA ==================
-    # --- SİLİNDİ ---
     'IngredientSerializer', 
     'UnitOfMeasureSerializer',
     'RecipeItemSerializer',
     'IngredientStockMovementSerializer',
-    # === YENİ: Alım Yönetimi Serializer'ları __all__ listesine eklendi ===
     'SupplierSerializer',
     'PurchaseOrderItemSerializer',
     'PurchaseOrderSerializer',
-    # ===================================================================
-    # =======================================================
     'PaymentSerializer',
     'CreditPaymentDetailsSerializer',
     'OrderItemExtraSerializer',
@@ -117,4 +112,8 @@ __all__ = [
     'KDSScreenSerializer',
     'ShiftSerializer',
     'ScheduledShiftSerializer',
+    # --- YENİ EKLENENLER ---
+    'BusinessWebsiteSerializer',
+    'BusinessWebsiteUpdateSerializer',
+    'BusinessPublicSerializer',
 ]

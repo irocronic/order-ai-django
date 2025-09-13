@@ -18,7 +18,7 @@ from .models import (
     STAFF_PERMISSION_CHOICES, NOTIFICATION_EVENT_TYPES,
     # === YENİ: UnitOfMeasure ve Ingredient modelleri import edildi ===
     UnitOfMeasure, Ingredient, RecipeItem, IngredientStockMovement,
-    Supplier, PurchaseOrder, PurchaseOrderItem # YENİ EKLENENLER
+    Supplier, PurchaseOrder, BusinessWebsite, PurchaseOrderItem #
     # =============================================================
 )
 
@@ -781,3 +781,39 @@ class CampaignMenuItemAdmin(admin.ModelAdmin):
     def variant_display(self, obj):
         return obj.variant.name if obj.variant else "-"
     variant_display.short_description = "Varyant"
+
+
+@admin.register(BusinessWebsite)
+class BusinessWebsiteAdmin(admin.ModelAdmin):
+    list_display = ['business', 'is_active', 'show_menu', 'show_contact', 'show_map', 'created_at']
+    list_filter = ['is_active', 'show_menu', 'show_contact', 'show_map', 'created_at']
+    search_fields = ['business__name', 'website_title']
+    readonly_fields = ['created_at', 'updated_at']
+    
+    fieldsets = (
+        ('Temel Bilgiler', {
+            'fields': ('business', 'is_active')
+        }),
+        ('Hakkımızda', {
+            'fields': ('about_title', 'about_description', 'about_image')
+        }),
+        ('İletişim', {
+            'fields': ('contact_phone', 'contact_email', 'contact_address', 'contact_working_hours')
+        }),
+        ('Harita', {
+            'fields': ('map_latitude', 'map_longitude', 'map_zoom_level')
+        }),
+        ('SEO', {
+            'fields': ('website_title', 'website_description', 'website_keywords')
+        }),
+        ('Sosyal Medya', {
+            'fields': ('facebook_url', 'instagram_url', 'twitter_url')
+        }),
+        ('Görünüm', {
+            'fields': ('primary_color', 'secondary_color', 'show_menu', 'show_contact', 'show_map')
+        }),
+        ('Zaman Damgaları', {
+            'fields': ('created_at', 'updated_at'),
+            'classes': ('collapse',)
+        })
+    )
