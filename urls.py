@@ -1,4 +1,4 @@
-# makarna_project/urls.py - Güncellenmiş ve Doğru Sürüm
+# makarna_project/urls.py DOSYASININ DOĞRU VE TAM HALİ
 
 from django.contrib import admin
 from django.urls import path, include, re_path
@@ -27,11 +27,11 @@ urlpatterns = [
     path('', root_view, name='root'),
     path('admin/', admin.site.urls),
 
-    # === GÜNCELLEME: İŞLETME WEB SİTESİ URL'İ BURAYA TAŞINDI ===
+    # === İŞLETME WEB SİTESİ URL'İ DOĞRU YERDE ===
     # Kullanıcıların göreceği web sitesi linki (örn: /website/isletme-adi/)
     # Bu linkin /api/ altında olmaması gerekir.
     path('website/<slug:business_slug>/', business_website_view, name='business-website'),
-    # === GÜNCELLEME SONU ===
+    # ===============================================
 
     # API ile ilgili tüm linkler /api/ ön ekiyle başlar
     path('api/templates/', include('templates.urls')),

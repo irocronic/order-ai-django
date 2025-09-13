@@ -1,4 +1,4 @@
-# core/urls.py DOSYASININ DOĞRU VE TAM HALİ
+# core/urls.py
 
 from django.urls import path, include, re_path
 from rest_framework.routers import DefaultRouter
@@ -42,12 +42,14 @@ from core.views import (
     PurchaseOrderViewSet,
 )
 
-# Business Website API Views için importlar
+# --- YENİ: Business Website Views için importlar ---
 from core.views.business_website_views import (
     BusinessWebsiteDetailView,
     business_website_preview_api,
     business_public_website_api,
+    business_website_view,
 )
+# ---------------------------------------------------
 
 from subscriptions.views import VerifyPurchaseView
 
@@ -123,10 +125,15 @@ urlpatterns = [
     re_path(r'^guest/menu/(?P<table_uuid>[0-9a-f-]+)/$', GuestMenuView.as_view(), name='guest_menu_api'),
     re_path(r'^guest/orders/(?P<table_uuid>[0-9a-f-]+)/$', GuestOrderCreateView.as_view(), name='guest_order_create_api'),
 
-    # İşletme Web Sitesi ile ilgili SADECE API URL'leri
+    # ======================= YENİ EKLENEN BÖLÜM ==========================
+    # İşletme Web Sitesi API'leri
     path('business/website/', BusinessWebsiteDetailView.as_view(), name='business-website-detail'),
     path('business/website/preview/', business_website_preview_api, name='business-website-preview'),
     path('public/business/<slug:business_slug>/', business_public_website_api, name='business-public-website'),
+
+    # Web Sitesi Template URL'leri (herkese açık sayfa)
+    path('website/<slug:business_slug>/', business_website_view, name='business-website'),
+    # =====================================================================
 ]
 
 # Geliştirme ortamında medya dosyalarını sunmak için
