@@ -4,7 +4,9 @@ from rest_framework import generics, status, permissions
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 from django.shortcuts import get_object_or_404, render
-from django.http import Http4O4
+# === YAZIM HATASI BURADA DÜZELTİLDİ ===
+from django.http import Http404
+# ====================================
 from ..models import Business, BusinessWebsite, MenuItem, Category
 from ..serializers.business_website_serializers import (
     BusinessWebsiteSerializer, 
@@ -112,9 +114,7 @@ def business_website_view(request, business_slug):
             'api_url': f'/api/public/business/{business_slug}/'
         }
         
-        # === DÜZELTME BURADA YAPILDI ===
-        # Django'ya şablonun 'core' uygulamasının 'templates' klasörü içindeki
-        # 'core' alt klasöründe olduğunu belirtiyoruz.
+        # === BİR ÖNCEKİ SORUNDA DÜZELTİLEN ŞABLON YOLU ===
         return render(request, 'core/business_website.html', context)
         
     except Exception as e:
