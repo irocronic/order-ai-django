@@ -1,4 +1,4 @@
-# core/urls.py DOSYASININ DOĞRU VE TAM HALİ
+# core/urls.py DOSYASININ OLMASI GEREKEN TAM HALİ
 
 from django.urls import path, include, re_path
 from rest_framework.routers import DefaultRouter

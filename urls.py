@@ -1,4 +1,4 @@
-# makarna_project/urls.py DOSYASININ DOĞRU VE TAM HALİ
+# makarna_project/urls.py DOSYASININ OLMASI GEREKEN TAM HALİ
 
 from django.contrib import admin
 from django.urls import path, include, re_path
