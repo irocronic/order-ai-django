@@ -13,14 +13,15 @@
     <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
 
     <style>
-        /* CSS Değişkenleri (Django'dan gelen renklerle dinamik olarak ayarlanacak) */
+        /* CSS Değişkenleri (Dinamik ve Koyu Tema için güncellendi) */
         :root {
-            --primary-color: {{ website.primary_color|default:'#3B82F6' }};
-            --secondary-color: {{ website.secondary_color|default:'#10B981' }};
-            --text-dark: #333;
-            --text-light: #f8f9fa;
-            --bg-light: #f8f9fa;
-            --bg-dark: #212529;
+            --primary-color: {{ website.primary_color|default:'#4A90E2' }}; /* Açık Mavi */
+            --secondary-color: {{ website.secondary_color|default:'#50E3C2' }}; /* Turkuaz */
+            --bg-dark-primary: #1a1a1a; /* Ana Koyu Arka Plan */
+            --bg-dark-secondary: #2c2c2c; /* Kartlar ve Elemanlar için */
+            --text-light: #f5f5f5; /* Ana Metin Rengi */
+            --text-muted: #a0a0a0; /* Daha Az Önemli Metinler */
+            --border-color: rgba(255, 255, 255, 0.1);
         }
 
         /* Temel Sayfa Stilleri */
@@ -31,10 +32,9 @@
         }
         body {
             font-family: 'Poppins', sans-serif;
-            line-height: 1.6;
-            color: var(--text-dark);
-            background-color: var(--bg-light);
-            transition: background-color 0.3s, color 0.3s;
+            line-height: 1.7;
+            color: var(--text-light);
+            background-color: var(--bg-dark-primary);
         }
         .container {
             max-width: 1200px;
@@ -42,24 +42,32 @@
             padding: 0 20px;
         }
         section {
-            padding: 60px 0;
+            padding: 80px 0;
         }
-        h1, h2, h3 {
+        h1, h2, h3, h4 {
             font-family: 'Playfair Display', serif;
-            color: var(--text-dark);
+            color: var(--text-light);
         }
         h2 {
-            font-size: 2.5rem;
+            font-size: 2.8rem;
             margin-bottom: 20px;
             text-align: center;
         }
         .section-subtitle {
             text-align: center;
-            color: #777;
-            margin-bottom: 40px;
+            color: var(--text-muted);
+            margin-bottom: 50px;
             max-width: 600px;
             margin-left: auto;
             margin-right: auto;
+        }
+        a {
+            color: var(--primary-color);
+            text-decoration: none;
+            transition: color 0.3s ease;
+        }
+        a:hover {
+            color: var(--secondary-color);
         }
 
         /* Yükleme Animasyonu */
@@ -69,7 +77,7 @@
             left: 0;
             width: 100%;
             height: 100%;
-            background: #fff;
+            background: var(--bg-dark-primary);
             display: flex;
             justify-content: center;
             align-items: center;
@@ -77,7 +85,7 @@
             transition: opacity 0.5s ease;
         }
         .spinner {
-            border: 8px solid #f3f3f3;
+            border: 8px solid var(--border-color);
             border-top: 8px solid var(--primary-color);
             border-radius: 50%;
             width: 60px;
@@ -91,8 +99,8 @@
 
         /* Header */
         header {
-            background-color: #fff;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            background-color: var(--bg-dark-secondary);
+            border-bottom: 1px solid var(--border-color);
             position: sticky;
             top: 0;
             z-index: 999;
@@ -107,7 +115,6 @@
             font-size: 1.8rem;
             font-weight: 700;
             color: var(--primary-color);
-            text-decoration: none;
             font-family: 'Playfair Display', serif;
         }
         .nav-links {
@@ -115,13 +122,11 @@
             display: flex;
         }
         .nav-links li {
-            margin-left: 25px;
+            margin-left: 30px;
         }
         .nav-links a {
-            text-decoration: none;
-            color: var(--text-dark);
+            color: var(--text-light);
             font-weight: 600;
-            transition: color 0.3s ease;
         }
         .nav-links a:hover {
             color: var(--primary-color);
@@ -129,24 +134,25 @@
 
         /* Hero (Hakkımızda) Bölümü */
         #about {
-            background: #fff;
+            background: var(--bg-dark-primary);
         }
         .hero-content {
             display: flex;
             align-items: center;
-            gap: 40px;
+            gap: 50px;
         }
         .hero-text {
             flex: 1;
         }
         .hero-text h1 {
-            font-size: 3.5rem;
-            margin-bottom: 15px;
+            font-size: 3.8rem;
+            margin-bottom: 20px;
+            line-height: 1.2;
         }
         .hero-text p {
             font-size: 1.1rem;
-            margin-bottom: 20px;
-            color: #555;
+            margin-bottom: 25px;
+            color: var(--text-muted);
         }
         .hero-image {
             flex: 1;
@@ -155,17 +161,20 @@
         .hero-image img {
             max-width: 100%;
             border-radius: 12px;
-            box-shadow: 0 10px 20px rgba(0,0,0,0.1);
+            border: 2px solid var(--border-color);
         }
         
         /* Menü Bölümü */
+        #menu {
+            background-color: var(--bg-dark-secondary);
+        }
         #menu .category-block {
-            margin-bottom: 50px;
+            margin-bottom: 60px;
         }
         #menu .category-title {
             text-align: center;
-            font-size: 2rem;
-            margin-bottom: 30px;
+            font-size: 2.2rem;
+            margin-bottom: 40px;
             color: var(--primary-color);
         }
         .menu-grid {
@@ -174,20 +183,20 @@
             gap: 30px;
         }
         .menu-item {
-            background: #fff;
+            background: var(--bg-dark-primary);
+            border: 1px solid var(--border-color);
             border-radius: 8px;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.08);
             overflow: hidden;
             display: flex;
             flex-direction: column;
-            transition: transform 0.3s ease, box-shadow 0.3s ease;
+            transition: transform 0.3s ease, border-color 0.3s ease;
         }
         .menu-item:hover {
             transform: translateY(-5px);
-            box-shadow: 0 8px 25px rgba(0,0,0,0.12);
+            border-color: var(--primary-color);
         }
         .menu-item-image {
-            height: 200px;
+            height: 220px;
             width: 100%;
             object-fit: cover;
         }
@@ -198,18 +207,18 @@
             flex-direction: column;
         }
         .menu-item-title {
-            font-size: 1.4rem;
+            font-size: 1.5rem;
             margin-bottom: 8px;
-            color: var(--text-dark);
+            color: var(--text-light);
         }
         .menu-item-description {
             font-size: 0.95rem;
-            color: #666;
+            color: var(--text-muted);
             margin-bottom: 15px;
             flex-grow: 1;
         }
         .menu-item-price {
-            font-size: 1.5rem;
+            font-size: 1.6rem;
             font-weight: 700;
             color: var(--secondary-color);
             align-self: flex-end;
@@ -217,11 +226,7 @@
 
         /* İletişim Bölümü */
         #contact {
-            background-color: var(--bg-dark);
-            color: var(--text-light);
-        }
-        #contact h2 {
-            color: var(--text-light);
+            background-color: var(--bg-dark-primary);
         }
         .contact-grid {
             display: grid;
@@ -230,10 +235,15 @@
             margin-top: 40px;
         }
         .contact-item {
-            background: rgba(255, 255, 255, 0.05);
-            padding: 25px;
+            background: var(--bg-dark-secondary);
+            border: 1px solid var(--border-color);
+            padding: 30px;
             border-radius: 8px;
             text-align: center;
+            transition: background-color 0.3s ease;
+        }
+        .contact-item:hover {
+            background-color: rgba(255, 255, 255, 0.05);
         }
         .contact-item .material-icons {
             font-size: 40px;
@@ -241,27 +251,25 @@
             margin-bottom: 15px;
         }
         .contact-item h3 {
-            font-size: 1.4rem;
+            font-size: 1.5rem;
             margin-bottom: 10px;
             color: var(--text-light);
         }
         .contact-item p {
-            color: #ccc;
+            color: var(--text-muted);
             white-space: pre-wrap;
         }
-        .contact-item a {
-            color: var(--primary-color);
-            text-decoration: none;
-        }
-
+        
         /* Harita Bölümü */
+        #map {
+             background-color: var(--bg-dark-secondary);
+        }
         #map .map-container {
             width: 100%;
             height: 450px;
             border-radius: 12px;
             overflow: hidden;
-            border: 3px solid #fff;
-            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+            border: 2px solid var(--border-color);
         }
         #map iframe {
             width: 100%;
@@ -271,8 +279,8 @@
 
         /* Footer */
         footer {
-            background-color: var(--bg-dark);
-            color: var(--text-light);
+            background-color: var(--bg-dark-secondary);
+            border-top: 1px solid var(--border-color);
             padding: 40px 0;
             text-align: center;
         }
@@ -281,23 +289,18 @@
         }
         .social-links a {
             margin: 0 15px;
-            text-decoration: none;
-            color: var(--text-light);
             font-size: 1.5rem;
-            transition: color 0.3s ease;
-        }
-        .social-links a:hover {
-            color: var(--primary-color);
         }
         .footer-text {
             font-size: 0.9rem;
-            color: #aaa;
+            color: var(--text-muted);
         }
 
         /* Duyarlılık (Responsive) */
         @media (max-width: 768px) {
             .hero-content {
                 flex-direction: column;
+                text-align: center;
             }
             .hero-text h1 {
                 font-size: 2.8rem;
@@ -306,7 +309,7 @@
                 font-size: 2rem;
             }
             .nav-links {
-                display: none; /* Basitlik için mobil menü gizlendi */
+                display: none;
             }
         }
     </style>
@@ -336,7 +339,7 @@
                     <p id="about-description">...</p>
                 </div>
                 <div class="hero-image">
-                    <img id="about-image" src="" alt="Hakkımızda görseli">
+                    <img id="about-image" src="" alt="Hakkımızda görseli" style="display:none;">
                 </div>
             </div>
         </section>
@@ -344,16 +347,16 @@
         <section id="menu" style="display: none;">
             <div class="container">
                 <h2>Menümüz</h2>
-                <p class="section-subtitle">Lezzetlerimizi keşfedin. Her damak zevkine uygun bir seçenek mutlaka var.</p>
+                <p class="section-subtitle">Özenle hazırladığımız lezzetlerimizi keşfedin. Her damak zevkine uygun bir seçenek mutlaka var.</p>
                 <div id="menu-container">
-                    </div>
+                </div>
             </div>
         </section>
 
         <section id="contact" style="display: none;">
             <div class="container">
                 <h2>Bize Ulaşın</h2>
-                <p class="section-subtitle">Sorularınız, rezervasyonlarınız veya geri bildirimleriniz için bizimle iletişime geçin.</p>
+                <p class="section-subtitle">Sorularınız, rezervasyonlarınız veya geri bildirimleriniz için bizimle iletişime geçmekten çekinmeyin.</p>
                 <div class="contact-grid">
                     <div class="contact-item" id="contact-phone-item" style="display: none;">
                         <i class="material-icons">phone</i>
@@ -383,7 +386,7 @@
             <div class="container">
                 <h2>Konumumuz</h2>
                 <div class="map-container" id="map-container-inner">
-                    </div>
+                </div>
             </div>
         </section>
     </main>
@@ -391,8 +394,8 @@
     <footer>
         <div class="container">
             <div class="social-links" id="social-links-container">
-                </div>
-            <p class="footer-text">&copy; <span id="footer-year"></span> <span id="footer-business-name">İşletme Adı</span>. Tüm hakları saklıdır.</p>
+            </div>
+            <p class="footer-text">© <span id="footer-year"></span> <span id="footer-business-name">İşletme Adı</span>. OrderAI altyapısı ile güçlendirilmiştir.</p>
         </div>
     </footer>
 
@@ -401,7 +404,6 @@
             const apiUrl = '{{ api_url }}';
             const loader = document.getElementById('loader');
 
-            // API'den veriyi çek ve sayfayı doldur
             const fetchData = async () => {
                 try {
                     const response = await fetch(apiUrl);
@@ -409,15 +411,11 @@
                         throw new Error(`API Hatası: ${response.status}`);
                     }
                     const data = await response.json();
-                    
-                    // Veri geldikten sonra sayfayı doldur
                     populatePage(data);
-
                 } catch (error) {
                     console.error("Veri alınırken hata oluştu:", error);
-                    document.body.innerHTML = '<h1>Web sitesi yüklenirken bir hata oluştu.</h1>';
+                    document.body.innerHTML = '<h1 style="color:white; text-align:center; padding: 50px;">Web sitesi yüklenirken bir hata oluştu.</h1>';
                 } finally {
-                    // Yükleme animasyonunu kaldır
                     if(loader) {
                         loader.style.opacity = '0';
                         setTimeout(() => loader.style.display = 'none', 500);
@@ -430,33 +428,27 @@
                 const website = data.business.website;
                 const menu = data.menu;
 
-                // SEO ve Genel Bilgiler
                 document.title = website.website_title || business.name;
                 document.getElementById('nav-logo').textContent = business.name;
                 document.getElementById('footer-business-name').textContent = business.name;
                 document.getElementById('footer-year').textContent = new Date().getFullYear();
 
-                // Hakkımızda Bölümü
                 if (website.about_title && website.about_description) {
                     document.getElementById('about-title').textContent = website.about_title;
                     document.getElementById('about-description').textContent = website.about_description;
                     if (website.about_image) {
-                        document.getElementById('about-image').src = website.about_image;
-                    } else {
-                        document.getElementById('about-image').style.display = 'none';
+                        const aboutImg = document.getElementById('about-image');
+                        aboutImg.src = website.about_image;
+                        aboutImg.style.display = 'block';
                     }
                     document.getElementById('nav-link-about').style.display = 'list-item';
                 }
 
-                // Menü Bölümü
                 if (website.show_menu && menu && Object.keys(menu).length > 0) {
                     const menuContainer = document.getElementById('menu-container');
                     let menuHtml = '';
-
                     for (const category in menu) {
-                        menuHtml += `<div class="category-block">`;
-                        menuHtml += `<h3 class="category-title">${category}</h3>`;
-                        menuHtml += `<div class="menu-grid">`;
+                        menuHtml += `<div class="category-block"><h3 class="category-title">${category}</h3><div class="menu-grid">`;
                         menu[category].forEach(item => {
                             menuHtml += `
                                 <div class="menu-item">
@@ -476,18 +468,19 @@
                     document.getElementById('nav-link-menu').style.display = 'list-item';
                 }
 
-                // İletişim Bölümü
                 if (website.show_contact) {
                     let hasContactInfo = false;
                     if(website.contact_phone) {
-                        document.getElementById('contact-phone').textContent = website.contact_phone;
-                        document.getElementById('contact-phone').href = `tel:${website.contact_phone}`;
+                        const el = document.getElementById('contact-phone');
+                        el.textContent = website.contact_phone;
+                        el.href = `tel:${website.contact_phone}`;
                         document.getElementById('contact-phone-item').style.display = 'block';
                         hasContactInfo = true;
                     }
                     if(website.contact_email) {
-                        document.getElementById('contact-email').textContent = website.contact_email;
-                        document.getElementById('contact-email').href = `mailto:${website.contact_email}`;
+                        const el = document.getElementById('contact-email');
+                        el.textContent = website.contact_email;
+                        el.href = `mailto:${website.contact_email}`;
                         document.getElementById('contact-email-item').style.display = 'block';
                         hasContactInfo = true;
                     }
@@ -501,35 +494,31 @@
                         document.getElementById('contact-hours-item').style.display = 'block';
                         hasContactInfo = true;
                     }
-
                     if(hasContactInfo) {
                         document.getElementById('contact').style.display = 'block';
                         document.getElementById('nav-link-contact').style.display = 'list-item';
                     }
                 }
 
-                // Harita Bölümü
                 if (website.show_map && website.map_latitude && website.map_longitude) {
                     const mapContainer = document.getElementById('map-container-inner');
                     const iframe = document.createElement('iframe');
                     iframe.loading = 'lazy';
                     iframe.allowFullscreen = true;
-                    iframe.src = `https://maps.google.com/maps?q=${website.map_latitude},${website.map_longitude}&hl=es;z=${website.map_zoom_level || 15}&output=embed`;
+                    iframe.src = `https://maps.google.com/maps?q=${website.map_latitude},${website.map_longitude}&hl=tr&z=${website.map_zoom_level || 15}&output=embed`;
                     mapContainer.appendChild(iframe);
                     document.getElementById('map').style.display = 'block';
                 }
 
-                // Sosyal Medya Linkleri
                 const socialLinksContainer = document.getElementById('social-links-container');
                 let socialHtml = '';
-                if(website.facebook_url) socialHtml += `<a href="${website.facebook_url}" target="_blank" title="Facebook">FB</a>`; // İkonları sonradan ekleyebilirsiniz
-                if(website.instagram_url) socialHtml += `<a href="${website.instagram_url}" target="_blank" title="Instagram">IG</a>`;
-                if(website.twitter_url) socialHtml += `<a href="${website.twitter_url}" target="_blank" title="Twitter/X">X</a>`;
+                if(website.facebook_url) socialHtml += `<a href="${website.facebook_url}" target="_blank" title="Facebook"><img src="https://simpleicons.org/icons/facebook.svg" style="filter: invert(1); width: 24px;" alt="Facebook"></a>`;
+                if(website.instagram_url) socialHtml += `<a href="${website.instagram_url}" target="_blank" title="Instagram"><img src="https://simpleicons.org/icons/instagram.svg" style="filter: invert(1); width: 24px;" alt="Instagram"></a>`;
+                if(website.twitter_url) socialHtml += `<a href="${website.twitter_url}" target="_blank" title="Twitter/X"><img src="https://simpleicons.org/icons/x.svg" style="filter: invert(1); width: 24px;" alt="X"></a>`;
                 socialLinksContainer.innerHTML = socialHtml;
             };
 
             const formatCurrency = (value) => {
-                 // Para birimi Django context'inden gelebilir ama basitlik için TRY varsayalım
                 return new Intl.NumberFormat('tr-TR', { style: 'currency', currency: 'TRY' }).format(value);
             };
 
