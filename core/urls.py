@@ -1,3 +1,5 @@
+# core/urls.py
+
 from django.urls import path, include, re_path
 from rest_framework.routers import DefaultRouter
 from django.conf import settings
@@ -125,9 +127,9 @@ urlpatterns = [
 
     # ======================= YENİ EKLENEN BÖLÜM ==========================
     # İşletme Web Sitesi API'leri
-    path('api/business/website/', BusinessWebsiteDetailView.as_view(), name='business-website-detail'),
-    path('api/business/website/preview/', business_website_preview_api, name='business-website-preview'),
-    path('api/public/business/<slug:business_slug>/', business_public_website_api, name='business-public-website'),
+    path('business/website/', BusinessWebsiteDetailView.as_view(), name='business-website-detail'),
+    path('business/website/preview/', business_website_preview_api, name='business-website-preview'),
+    path('public/business/<slug:business_slug>/', business_public_website_api, name='business-public-website'),
 
     # Web Sitesi Template URL'leri (herkese açık sayfa)
     path('website/<slug:business_slug>/', business_website_view, name='business-website'),
