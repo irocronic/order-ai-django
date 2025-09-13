@@ -4,9 +4,6 @@ from django.contrib import admin
 from django.urls import path, include, re_path
 from rest_framework_simplejwt.views import TokenRefreshView
 from core.token import CustomTokenObtainPairView
-from django.http import HttpResponse  # <-- Bu import eksikti
-from django.conf import settings 
-from django.conf.urls.static import static
 
 # Gerekli view fonksiyonlarını 'core' uygulamasından import ediyoruz
 from core.views import (
