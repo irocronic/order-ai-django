@@ -1,12 +1,7 @@
-# makarna_project/urls.py DOSYASININ OLMASI GEREKEN TAM HALİ
-
 from django.contrib import admin
 from django.urls import path, include, re_path
 from rest_framework_simplejwt.views import TokenRefreshView
 from core.token import CustomTokenObtainPairView
-from django.conf import settings
-from django.conf.urls.static import static
-from django.http import HttpResponse
 
 # Gerekli view fonksiyonlarını 'core' uygulamasından import ediyoruz
 from core.views import (
@@ -48,6 +43,6 @@ urlpatterns = [
     path('api/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
 ]
 
-# Geliştirme ortamında (DEBUG=True) medya dosyalarını sunmak için
+# Geliştirme ortamında medya dosyalarını sunmak için
 if settings.DEBUG:
     urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

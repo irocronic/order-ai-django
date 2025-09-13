@@ -1,5 +1,7 @@
 # core/urls.py DOSYASININ OLMASI GEREKEN TAM HALİ
 
+# core/urls.py
+
 from django.urls import path, include, re_path
 from rest_framework.routers import DefaultRouter
 from django.conf import settings
@@ -47,6 +49,7 @@ from core.views.business_website_views import (
     BusinessWebsiteDetailView,
     business_website_preview_api,
     business_public_website_api,
+    business_website_view # Bu import eklendi
 )
 
 from subscriptions.views import VerifyPurchaseView
@@ -127,6 +130,9 @@ urlpatterns = [
     path('business/website/', BusinessWebsiteDetailView.as_view(), name='business-website-detail'),
     path('business/website/preview/', business_website_preview_api, name='business-website-preview'),
     path('public/business/<slug:business_slug>/', business_public_website_api, name='business-public-website'),
+    
+    # YENİ: İşletme Web Sitesi için Template View URL'i buraya DEĞİL ana urls.py'ye eklenmeli
+    # path('website/<slug:business_slug>/', business_website_view, name='business-website'),
 ]
 
 # Geliştirme ortamında medya dosyalarını sunmak için
