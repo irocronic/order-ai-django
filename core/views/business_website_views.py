@@ -13,7 +13,9 @@ from ..serializers.business_website_serializers import (
 )
 
 class BusinessWebsiteDetailView(generics.RetrieveUpdateAPIView):
-    """İşletme sahibinin kendi web sitesi ayarları (görüntüle/güncelle)"""
+    """
+    İşletme sahibinin kendi web sitesi ayarları (görüntüle/güncelle)
+    """
     permission_classes = [permissions.IsAuthenticated]
 
     def get_object(self):
@@ -32,7 +34,9 @@ class BusinessWebsiteDetailView(generics.RetrieveUpdateAPIView):
 @api_view(['GET'])
 @permission_classes([permissions.AllowAny])
 def business_public_website_api(request, business_slug):
-    """Herkese açık işletme web sitesi API'si (JSON)"""
+    """
+    Herkese açık işletme web sitesi API'si (JSON)
+    """
     try:
         business = get_object_or_404(Business.objects.select_related('website'), slug=business_slug)
         if not hasattr(business, 'website') or not business.website.is_active:
@@ -73,7 +77,9 @@ def business_public_website_api(request, business_slug):
 @api_view(['GET'])
 @permission_classes([permissions.IsAuthenticated])
 def business_website_preview_api(request):
-    """İşletme sahibinin kendi web sitesi önizlemesi için"""
+    """
+    İşletme sahibinin kendi web sitesi önizlemesi için
+    """
     try:
         business = Business.objects.get(owner=request.user)
         website, _ = BusinessWebsite.objects.get_or_create(business=business)
@@ -106,9 +112,8 @@ def business_website_view(request, business_slug):
             'api_url': f'/api/public/business/{business_slug}/'
         }
         
-        # /makarna_project/core/templates/core/business_website.html konumundaki şablonu kullanıyoruz
-        # Django otomatik olarak INSTALLED_APPS içindeki 'core' uygulamasının templates dizinini tarıyor
-        return render(request, 'core/business_website.html', context)
+        # Doğru şablon yolu: templates/business_website.html
+        return render(request, 'business_website.html', context)
         
     except Exception as e:
         raise Http404("Web sitesi yüklenirken hata oluştu")
