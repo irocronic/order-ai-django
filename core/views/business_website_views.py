@@ -3,20 +3,17 @@
 from rest_framework import generics, status, permissions
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
-from django.shortcuts import get_object_or_404, render # render import edildi
+from django.shortcuts import get_object_or_404, render
 from django.http import Http404
-from ..models import Business, BusinessWebsite, MenuItem, Category # Modeller doğru şekilde import edildi
+from ..models import Business, BusinessWebsite, MenuItem, Category
 from ..serializers.business_website_serializers import (
     BusinessWebsiteSerializer, 
     BusinessWebsiteUpdateSerializer,
     BusinessPublicSerializer
 )
-# YENİ: MenuCategory ve MenuItem'ı API view içinden import etmeye gerek yok, yukarıda zaten var.
 
 class BusinessWebsiteDetailView(generics.RetrieveUpdateAPIView):
-    """
-    İşletme sahibinin kendi web sitesi ayarları (görüntüle/güncelle)
-    """
+    """İşletme sahibinin kendi web sitesi ayarları (görüntüle/güncelle)"""
     permission_classes = [permissions.IsAuthenticated]
 
     def get_object(self):
@@ -35,17 +32,14 @@ class BusinessWebsiteDetailView(generics.RetrieveUpdateAPIView):
 @api_view(['GET'])
 @permission_classes([permissions.AllowAny])
 def business_public_website_api(request, business_slug):
-    """
-    Herkese açık işletme web sitesi API'si (JSON)
-    """
+    """Herkese açık işletme web sitesi API'si (JSON)"""
     try:
         business = get_object_or_404(Business.objects.select_related('website'), slug=business_slug)
         if not hasattr(business, 'website') or not business.website.is_active:
             return Response({'error': 'Web sitesi bulunamadı veya aktif değil'}, status=status.HTTP_404_NOT_FOUND)
         
-        # MenuCategory diye bir model yok, Category kullanılmalı
         categories = Category.objects.filter(business=business, parent=None).order_by('name')
-        menu_items = MenuItem.objects.filter(business=business, is_active=True).select_related('category') # Sadece aktif ürünleri göster
+        menu_items = MenuItem.objects.filter(business=business, is_active=True).select_related('category')
 
         business_serializer = BusinessPublicSerializer(business)
         menu_data = {}
@@ -79,9 +73,7 @@ def business_public_website_api(request, business_slug):
 @api_view(['GET'])
 @permission_classes([permissions.IsAuthenticated])
 def business_website_preview_api(request):
-    """
-    İşletme sahibinin kendi web sitesi önizlemesi için
-    """
+    """İşletme sahibinin kendi web sitesi önizlemesi için"""
     try:
         business = Business.objects.get(owner=request.user)
         website, _ = BusinessWebsite.objects.get_or_create(business=business)
@@ -96,8 +88,6 @@ def business_website_preview_api(request):
     except Business.DoesNotExist:
         return Response({'error': 'İşletme bulunamadı'}, status=status.HTTP_404_NOT_FOUND)
 
-
-# +++++++++++++++++++++ YENİ EKLENEN BÖLÜM (TAŞINAN KOD) +++++++++++++++++++++
 def business_website_view(request, business_slug):
     """İşletme web sitesi template view"""
     try:
@@ -113,12 +103,12 @@ def business_website_view(request, business_slug):
         context = {
             'business': business,
             'website': business.website,
-            'api_url': f'/api/public/business/{business_slug}/' # URL'i dinamik olarak verdik
+            'api_url': f'/api/public/business/{business_slug}/'
         }
         
+        # /makarna_project/core/templates/core/business_website.html konumundaki şablonu kullanıyoruz
+        # Django otomatik olarak INSTALLED_APPS içindeki 'core' uygulamasının templates dizinini tarıyor
         return render(request, 'core/business_website.html', context)
         
     except Exception as e:
-        # Hata loglama eklenebilir
         raise Http404("Web sitesi yüklenirken hata oluştu")
-# +++++++++++++++++++++ YENİ EKLENEN BÖLÜM SONU +++++++++++++++++++++
