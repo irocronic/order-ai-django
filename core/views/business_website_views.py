@@ -115,7 +115,7 @@ def business_website_view(request, business_slug):
         }
         
         # === BİR ÖNCEKİ SORUNDA DÜZELTİLEN ŞABLON YOLU ===
-        return render(request, 'core/business_website.html', context)
+        return render(request, 'business_website.html', context) # <-- Düzeltilmiş satır
         
     except Exception as e:
         raise Http404("Web sitesi yüklenirken hata oluştu")
