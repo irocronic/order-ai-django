@@ -68,13 +68,21 @@
         }
         @keyframes spin { 0% { transform: rotate(0);} 100% { transform: rotate(360deg);} }
 
+        /* Minimalist Navbar Brand */
         .navbar-brand {
-            font-size: 2.1rem;
-            font-weight: 700;
-            color: var(--primary-color) !important;
+            font-size: 1.5rem;
             font-family: 'Playfair Display', serif;
-            letter-spacing: 2px;
-            text-shadow: 0 2px 12px var(--primary-color);
+            font-weight: 500;
+            color: var(--primary-color) !important;
+            letter-spacing: 1px;
+            text-shadow: none;
+            opacity: 0.88;
+            background: none;
+            transition: color 0.2s, opacity 0.2s;
+        }
+        .navbar-brand:hover {
+            opacity: 1;
+            color: var(--secondary-color) !important;
         }
         .navbar {
             background: rgba(30,30,34, 0.94);
