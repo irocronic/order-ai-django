@@ -396,7 +396,7 @@
         </section>
         <section id="reservation" class="section-anim" style="display: none;">
             <div class="container-custom">
-                <div class="reservation-form-block">
+                <div class="reservation-form-block" id="reservation-form-block">
                     <div class="reservation-form-title">Rezervasyon Yap</div>
                     <div class="reservation-form-desc">Size ve sevdiklerinize en iyi hizmeti sunmak için rezervasyon talebinizi iletebilirsiniz.</div>
                     <div id="reservation-form-alert" class="reservation-form-alert alert"></div>
@@ -639,6 +639,7 @@
                     event.preventDefault();
                     const form = event.target;
                     const alertBox = document.getElementById('reservation-form-alert');
+                    const reservationFormBlock = document.getElementById('reservation-form-block');
                     // Backend'in beklediği alan isimleriyle veri gönder
                     const data = {
                         table: form.elements['table'].value,
@@ -660,10 +661,17 @@
                         });
                         const result = await response.json();
                         if (response.ok) {
+                            // Formu gizle, alert mesajını göster
+                            form.reset();
+                            form.style.display = 'none';
+                            // Başlık ve açıklamayı da isteğe bağlı olarak gizleyebilirsiniz
+                            const title = reservationFormBlock.querySelector('.reservation-form-title');
+                            const desc = reservationFormBlock.querySelector('.reservation-form-desc');
+                            if (title) title.style.display = 'none';
+                            if (desc) desc.style.display = 'none';
                             alertBox.textContent = 'Rezervasyon talebiniz alındı! Onay için sizinle iletişime geçilecektir.';
                             alertBox.className = 'reservation-form-alert alert alert-success';
                             alertBox.style.display = 'block';
-                            form.reset();
                         } else {
                             let errorMessage = 'Bir hata oluştu.';
                             if (typeof result === 'object' && result !== null) {
