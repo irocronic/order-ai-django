@@ -276,7 +276,7 @@
             display: none;
             margin-bottom: 16px;
         }
-        /* Sosyal medya ikonları tek satırda ve ortalanmış */
+        /* Sosyal medya ikonları */
         .footer .social-links {
             display: flex;
             justify-content: center;
@@ -455,14 +455,12 @@
             <p class="footer-text">© <span id="footer-year"></span> <span id="footer-business-name">İşletme Adı</span>. OrderAI altyapısı ile güçlendirilmiştir.</p>
         </div>
     </footer>
-    <!-- Bootstrap JS (v5.3+) -->
+    <!-- Bootstrap JS -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
     <script>
-        // Loader ve API Fetch
         document.addEventListener('DOMContentLoaded', () => {
             const apiUrl = '{{ api_url }}';
             const loader = document.getElementById('loader');
-            // Animasyon için sectionları topla
             const animatedSections = document.querySelectorAll('.section-anim');
             const appearAnim = () => {
                 animatedSections.forEach(sec => {
@@ -514,6 +512,7 @@
                     }
                     document.getElementById('nav-link-about').style.display = 'list-item';
                 }
+
                 if (website.show_menu && menu && Object.keys(menu).length > 0) {
                     const menuContainer = document.getElementById('menu-container');
                     let menuHtml = '';
@@ -537,6 +536,7 @@
                     document.getElementById('menu').style.display = 'block';
                     document.getElementById('nav-link-menu').style.display = 'list-item';
                 }
+
                 if (website.show_contact) {
                     let hasContactInfo = false;
                     if(website.contact_phone) {
@@ -568,11 +568,11 @@
                         document.getElementById('nav-link-contact').style.display = 'list-item';
                     }
                 }
+
                 if (website.show_reservation !== false) {
                     document.getElementById('reservation').style.display = 'block';
                     document.getElementById('nav-link-reservation').style.display = 'list-item';
 
-                    // Masa seçimi dropdown'u doldur
                     const tableSelect = document.getElementById('reservation-table');
                     tableSelect.innerHTML = '<option value="" disabled selected>Lütfen bir masa seçin...</option>';
                     if (tables.length > 0) {
@@ -588,6 +588,7 @@
                         tableSelect.querySelector('option').textContent = 'Uygun masa bulunamadı.';
                     }
                 }
+
                 if (website.show_map && website.map_latitude && website.map_longitude) {
                     const mapContainer = document.getElementById('map-container-inner');
                     const iframe = document.createElement('iframe');
@@ -597,7 +598,7 @@
                     mapContainer.appendChild(iframe);
                     document.getElementById('map').style.display = 'block';
                 }
-                // Sosyal medya ikonları
+
                 const socialLinksContainer = document.getElementById('social-links-container');
                 let socialHtml = '';
                 if(website.facebook_url) socialHtml += `<a href="${website.facebook_url}" target="_blank" title="Facebook"><img src="https://simpleicons.org/icons/facebook.svg" alt="Facebook"></a>`;
@@ -611,7 +612,6 @@
                 return new Intl.NumberFormat('tr-TR', { style: 'currency', currency: 'TRY' }).format(value);
             };
 
-            // --- Smooth scroll & fade effect for nav links ---
             document.querySelectorAll('.navbar-nav .nav-link').forEach(link => {
                 link.addEventListener('click', function(e) {
                     const href = this.getAttribute('href');
@@ -619,38 +619,4 @@
                         e.preventDefault();
                         const target = document.querySelector(href);
                         if (target) {
-                            target.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                            target.classList.add('section-highlight');
-                            setTimeout(() => target.classList.remove('section-highlight'), 700);
-                        }
-                        // Bootstrap menüyü kapat (mobilde)
-                        const navbarCollapse = document.getElementById('mainNavbar');
-                        if (navbarCollapse.classList.contains('show')) {
-                            new bootstrap.Collapse(navbarCollapse).hide();
-                        }
-                    }
-                });
-            });
-
-            // Rezervasyon formu: submit işlemi
-            const reservationForm = document.getElementById('reservation-form');
-            if (reservationForm) {
-                reservationForm.addEventListener('submit', async function(event) {
-                    event.preventDefault();
-                    const form = event.target;
-                    const alertBox = document.getElementById('reservation-form-alert');
-                    // Backend'in beklediği alan isimleriyle veri gönder
-                    const data = {
-                        table: form.elements['table'].value,
-                        customer_name: form.elements['name'].value,
-                        customer_phone: form.elements['phone'].value,
-                        customer_email: form.elements['email'].value,
-                        reservation_time: form.elements['date'].value + 'T' + form.elements['time'].value,
-                        party_size: form.elements['persons'].value,
-                        notes: form.elements['note'].value,
-                    };
-                    try {
-                        const response = await fetch(`/api/public/business/{{ business.slug }}/reservations/`, {
-                            method: 'POST',
-                            headers: {
-                               
+                
