@@ -51,7 +51,7 @@ def guest_table_view(request, table_uuid):
         active_order_data = OrderSerializer(active_order, context={'request': request}).data
 
     try:
-        guest_order_api_url = reverse('guest_order_create_api', kwargs={'table_uuid': table.uuid})
+        guest_order_api_url = reverse('core:guest_order_create_api', kwargs={'table_uuid': table.uuid})
     except Exception as e:
         logger.error(f"Hata: guest_order_create_api URL'si oluşturulamadı - {e}")
         guest_order_api_url = '#'
