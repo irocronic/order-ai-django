@@ -1,4 +1,4 @@
-# core/serializers/reservation_serializers.py (YENİ DOSYA)
+# core/serializers/reservation_serializers.py
 
 from rest_framework import serializers
 from django.utils import timezone
