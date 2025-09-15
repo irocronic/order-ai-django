@@ -13,6 +13,7 @@ from collections import Counter
 from decimal import Decimal
 from rest_framework.exceptions import ValidationError
 
+# === DEĞİŞİKLİK BURADA: Artık sinyal yerine doğrudan Celery task'ini import ediyoruz ===
 from ..tasks import send_order_update_task
 
 from makarna_project.asgi import sio
@@ -69,7 +70,7 @@ def add_item_to_guest_order(order: Order, item_data_dict: dict, is_awaiting_staf
         try:
             campaign = menu_item_instance.represented_campaign
             if campaign and campaign.is_active:
-                from django.utils import timezone
+                from django.utils import timezone # Fonksiyon içinde import
                 now_date = timezone.now().date()
                 if (campaign.start_date and campaign.start_date > now_date) or \
                    (campaign.end_date and campaign.end_date < now_date):
@@ -202,6 +203,7 @@ class GuestOrderCreateView(generics.GenericAPIView):
                 response_status_code = status.HTTP_201_CREATED
 
         if final_order_to_return:
+            # === DEĞİŞİKLİK BURADA: Celery task'i doğrudan çağrılıyor ===
             is_newly_created = response_status_code == status.HTTP_201_CREATED
             event_type = 'guest_order_pending_approval'
             message = f"Masa {table_instance.table_number} için yeni misafir siparişi onay bekliyor." if is_newly_created else f"Masa {table_instance.table_number} siparişine ürün eklendi, onay bekliyor."
@@ -253,11 +255,10 @@ class GuestMenuView(generics.ListAPIView):
         active_order_data = None
         if active_order:
             active_order_data = OrderSerializer(active_order, context=self.get_serializer_context()).data
-            
-        # === DÜZELTME BURADA: 'represented_campaign' ilişkisi eklendi ===
+
         menu_items_qs = MenuItem.objects.filter(business=business, is_active=True).prefetch_related(
-            Prefetch('variants', queryset=MenuItemVariant.objects.select_related('stock'))
-        ).select_related('category', 'category__parent', 'represented_campaign')
+            'variants'
+        ).select_related('category', 'category__parent')
 
         categories_qs = Category.objects.filter(business=business).prefetch_related('subcategories')
 
@@ -353,6 +354,7 @@ class GuestTakeawayOrderUpdateView(generics.GenericAPIView):
                 order_to_update.status = Order.STATUS_PENDING_APPROVAL
                 order_to_update.save(update_fields=['status'])
 
+            # === DEĞİŞİKLİK BURADA: Celery task'i doğrudan çağrılıyor ===
             event_type = 'existing_order_needs_reapproval'
             message = f"Paket sipariş #{order_to_update.id} güncellendi ve yeniden onay bekliyor."
             transaction.on_commit(

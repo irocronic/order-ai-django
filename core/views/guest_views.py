@@ -51,8 +51,7 @@ def guest_table_view(request, table_uuid):
         active_order_data = OrderSerializer(active_order, context={'request': request}).data
 
     try:
-        # === DÜZELTME BURADA: URL'ye 'core:' isim alanı eklendi ===
-        guest_order_api_url = reverse('core:guest_order_create_api', kwargs={'table_uuid': table.uuid})
+        guest_order_api_url = reverse('guest_order_create_api', kwargs={'table_uuid': table.uuid})
     except Exception as e:
         logger.error(f"Hata: guest_order_create_api URL'si oluşturulamadı - {e}")
         guest_order_api_url = '#'
@@ -62,6 +61,7 @@ def guest_table_view(request, table_uuid):
         'table': table,
         'business': business,
         'categories_from_django_view': categories,
+        # --- DEĞİŞİKLİK: json.dumps kaldırıldı ---
         'all_menu_items_data_json': all_menu_items_data,
         'guest_order_api_url': guest_order_api_url,
         'csrf_token': request.COOKIES.get('csrftoken', ''),
@@ -92,10 +92,11 @@ def guest_takeaway_view(request, order_uuid):
         all_menu_items_data = MenuItemSerializer(menu_items_qs, many=True, context={'request': request}).data
         active_order_data = OrderSerializer(order, context={'request': request}).data
         
+        # Kategorileri serialize et
         categories_data = CategorySerializer(categories_qs, many=True, context={'request': request}).data
         
         try:
-            guest_order_api_url = reverse('core:guest_takeaway_order_update_api', kwargs={'order_uuid': order.uuid})
+            guest_order_api_url = reverse('guest_takeaway_order_update_api', kwargs={'order_uuid': order.uuid})
         except Exception as e:
             logger.error(f"Hata: guest_takeaway_order_update_api URL'si oluşturulamadı - {e}")
             guest_order_api_url = '#'
@@ -104,6 +105,7 @@ def guest_takeaway_view(request, order_uuid):
             'view_type': 'takeaway',
             'order': order,
             'business': business,
+            # --- DEĞİŞİKLİK: json.dumps kaldırıldı ---
             'all_menu_items_data_json': all_menu_items_data,
             'categories_data_json': categories_data,
             'guest_order_api_url': guest_order_api_url,
