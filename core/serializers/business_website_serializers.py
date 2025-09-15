@@ -2,6 +2,9 @@ from rest_framework import serializers
 from ..models import Business, BusinessWebsite
 
 class BusinessWebsiteSerializer(serializers.ModelSerializer):
+    """
+    İşletme web sitesi ayarlarını okumak için kullanılır.
+    """
     website_url = serializers.ReadOnlyField()
     has_location = serializers.ReadOnlyField()
 
@@ -31,6 +34,8 @@ class BusinessWebsiteSerializer(serializers.ModelSerializer):
             'show_menu',
             'show_contact',
             'show_map',
+            'allow_reservations',      # <-- GÜNCELLENDİ
+            'allow_online_ordering',   # <-- GÜNCELLENDİ
             'website_url',
             'has_location',
             'created_at',
@@ -39,6 +44,9 @@ class BusinessWebsiteSerializer(serializers.ModelSerializer):
         read_only_fields = ['website_url', 'has_location', 'created_at', 'updated_at']
 
 class BusinessWebsiteUpdateSerializer(serializers.ModelSerializer):
+    """
+    İşletme sahibinin web sitesi ayarlarını güncellemesi için kullanılır.
+    """
     class Meta:
         model = BusinessWebsite
         fields = [
@@ -62,7 +70,9 @@ class BusinessWebsiteUpdateSerializer(serializers.ModelSerializer):
             'secondary_color',
             'show_menu',
             'show_contact',
-            'show_map'
+            'show_map',
+            'allow_reservations',      # <-- GÜNCELLENDİ
+            'allow_online_ordering'    # <-- GÜNCELLENDİ
         ]
 
     def validate(self, data):
@@ -75,6 +85,9 @@ class BusinessWebsiteUpdateSerializer(serializers.ModelSerializer):
         return data
 
 class BusinessPublicSerializer(serializers.ModelSerializer):
+    """
+    Herkese açık web sitesi API'sinde temel işletme bilgilerini döndürmek için kullanılır.
+    """
     website = BusinessWebsiteSerializer(read_only=True)
 
     class Meta:

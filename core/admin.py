@@ -795,8 +795,24 @@ class CampaignMenuItemAdmin(admin.ModelAdmin):
 
 @admin.register(BusinessWebsite)
 class BusinessWebsiteAdmin(admin.ModelAdmin):
-    list_display = ['business', 'is_active', 'show_menu', 'show_contact', 'show_map', 'created_at']
-    list_filter = ['is_active', 'show_menu', 'show_contact', 'show_map', 'created_at']
+    # list_display'e yeni alanlar eklendi
+    list_display = [
+        'business', 
+        'is_active', 
+        'allow_reservations',      # <-- YENİ EKLENDİ
+        'allow_online_ordering',   # <-- YENİ EKLENDİ
+        'show_menu', 
+        'show_contact', 
+        'show_map', 
+        'created_at'
+    ]
+    # list_editable ile liste ekranından hızlıca değişiklik yapılabilir
+    list_editable = [
+        'is_active', 
+        'allow_reservations',      # <-- YENİ EKLENDİ
+        'allow_online_ordering'    # <-- YENİ EKLENDİ
+    ]
+    list_filter = ['is_active', 'allow_reservations', 'allow_online_ordering', 'show_menu', 'show_contact', 'show_map', 'created_at']
     search_fields = ['business__name', 'website_title']
     readonly_fields = ['created_at', 'updated_at']
     
@@ -819,8 +835,17 @@ class BusinessWebsiteAdmin(admin.ModelAdmin):
         ('Sosyal Medya', {
             'fields': ('facebook_url', 'instagram_url', 'twitter_url')
         }),
-        ('Görünüm', {
-            'fields': ('primary_color', 'secondary_color', 'show_menu', 'show_contact', 'show_map')
+        # 'Görünüm' fieldset'ine yeni alanlar eklendi
+        ('Görünüm ve Özellikler', {
+            'fields': (
+                'primary_color', 
+                'secondary_color', 
+                'show_menu', 
+                'show_contact', 
+                'show_map',
+                'allow_reservations',      # <-- YENİ EKLENDİ
+                'allow_online_ordering'    # <-- YENİ EKLENDİ
+            )
         }),
         ('Zaman Damgaları', {
             'fields': ('created_at', 'updated_at'),
