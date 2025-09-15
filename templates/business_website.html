@@ -272,6 +272,10 @@
             color: var(--text-muted);
             margin-bottom: 22px;
         }
+        .reservation-form-alert {
+            display: none;
+            margin-bottom: 16px;
+        }
         @media (max-width: 900px) {
             .hero-content { flex-direction: column; padding: 38px 10px;}
             .hero-image img {max-width: 99%;}
@@ -364,6 +368,7 @@
                 <div class="reservation-form-block">
                     <div class="reservation-form-title">Rezervasyon Yap</div>
                     <div class="reservation-form-desc">Size ve sevdiklerinize en iyi hizmeti sunmak için rezervasyon talebinizi iletebilirsiniz.</div>
+                    <div id="reservation-form-alert" class="reservation-form-alert alert"></div>
                     <form id="reservation-form" autocomplete="off">
                         <div class="mb-3">
                             <label for="reservation-name" class="form-label reservation-form-label">Adınız Soyadınız</label>
@@ -388,6 +393,12 @@
                         <div class="mb-3">
                             <label for="reservation-persons" class="form-label reservation-form-label">Kişi Sayısı</label>
                             <input type="number" class="form-control" id="reservation-persons" name="persons" required min="1" max="30">
+                        </div>
+                        <div class="mb-3">
+                            <label for="reservation-table" class="form-label reservation-form-label">Masa Seçimi</label>
+                            <select class="form-select" id="reservation-table" name="table" required>
+                                <option value="" disabled selected>Lütfen bir masa seçin...</option>
+                            </select>
                         </div>
                         <div class="mb-3">
                             <label for="reservation-note" class="form-label reservation-form-label">Notunuz (isteğe bağlı)</label>
@@ -430,11 +441,15 @@
             window.addEventListener('scroll', appearAnim);
             appearAnim();
 
+            // Masa dropdown için tablo listesi
+            let tables = [];
+
             const fetchData = async () => {
                 try {
                     const response = await fetch(apiUrl);
                     if (!response.ok) throw new Error(`API Hatası: ${response.status}`);
                     const data = await response.json();
+                    tables = data.tables || []; // Masalar burada tutuluyor
                     populatePage(data);
                 } catch (error) {
                     console.error("Veri alınırken hata oluştu:", error);
@@ -446,10 +461,12 @@
                     }
                 }
             };
+
             const populatePage = (data) => {
                 const business = data.business;
                 const website = data.business.website;
                 const menu = data.menu;
+
                 document.title = website.website_title || business.name;
                 document.getElementById('nav-logo').textContent = business.name;
                 document.getElementById('footer-business-name').textContent = business.name;
@@ -522,6 +539,22 @@
                 if (website.show_reservation !== false) {
                     document.getElementById('reservation').style.display = 'block';
                     document.getElementById('nav-link-reservation').style.display = 'list-item';
+
+                    // MASA SEÇİMİ DROPDOWN'u doldur
+                    const tableSelect = document.getElementById('reservation-table');
+                    tableSelect.innerHTML = '<option value="" disabled selected>Lütfen bir masa seçin...</option>';
+                    if (tables.length > 0) {
+                        tables.forEach(table => {
+                            const option = document.createElement('option');
+                            option.value = table.id;
+                            option.textContent = `Masa ${table.table_number}`;
+                            tableSelect.appendChild(option);
+                        });
+                        tableSelect.disabled = false;
+                    } else {
+                        tableSelect.disabled = true;
+                        tableSelect.querySelector('option').textContent = 'Uygun masa bulunamadı.';
+                    }
                 }
                 if (website.show_map && website.map_latitude && website.map_longitude) {
                     const mapContainer = document.getElementById('map-container-inner');
@@ -541,6 +574,7 @@
                 socialLinksContainer.innerHTML = socialHtml;
                 appearAnim();
             };
+
             const formatCurrency = (value) => {
                 return new Intl.NumberFormat('tr-TR', { style: 'currency', currency: 'TRY' }).format(value);
             };
@@ -572,8 +606,18 @@
                 reservationForm.addEventListener('submit', async function(event) {
                     event.preventDefault();
                     const form = event.target;
-                    const formData = new FormData(form);
-                    const data = Object.fromEntries(formData.entries());
+                    const alertBox = document.getElementById('reservation-form-alert');
+                    // Form verilerini topla
+                    const data = {
+                        name: form.elements['name'].value,
+                        phone: form.elements['phone'].value,
+                        email: form.elements['email'].value,
+                        date: form.elements['date'].value,
+                        time: form.elements['time'].value,
+                        persons: form.elements['persons'].value,
+                        table: form.elements['table'].value,
+                        note: form.elements['note'].value,
+                    };
                     try {
                         const response = await fetch(`/api/public/business/{{ business.slug }}/reservations/`, {
                             method: 'POST',
@@ -585,13 +629,23 @@
                         });
                         const result = await response.json();
                         if (response.ok) {
-                            alert('Rezervasyon talebiniz alındı! Onay için sizinle iletişime geçilecektir.');
+                            alertBox.textContent = 'Rezervasyon talebiniz alındı! Onay için sizinle iletişime geçilecektir.';
+                            alertBox.className = 'reservation-form-alert alert alert-success';
+                            alertBox.style.display = 'block';
                             form.reset();
                         } else {
-                            alert('Hata: ' + (result.detail || JSON.stringify(result)));
+                            let errorMessage = 'Bir hata oluştu.';
+                            if (typeof result === 'object' && result !== null) {
+                                errorMessage = Object.values(result).flat().join(' ');
+                            }
+                            alertBox.textContent = 'Hata: ' + errorMessage;
+                            alertBox.className = 'reservation-form-alert alert alert-danger';
+                            alertBox.style.display = 'block';
                         }
                     } catch (err) {
-                        alert('Rezervasyon gönderilirken bir hata oluştu.');
+                        alertBox.textContent = 'Rezervasyon gönderilirken bir hata oluştu.';
+                        alertBox.className = 'reservation-form-alert alert alert-danger';
+                        alertBox.style.display = 'block';
                     }
                 });
             }
