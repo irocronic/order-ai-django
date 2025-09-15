@@ -7,7 +7,6 @@
     <meta name="description" content="{{ website.website_description|default:'' }}">
     <meta name="keywords" content="{{ website.website_keywords|default:'' }}">
 
-    <!-- Bootstrap CDN (v5.3+) -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -324,7 +323,6 @@
 </head>
 <body>
     <div id="loader"><div class="spinner"></div></div>
-    <!-- Bootstrap Navbar -->
     <nav class="navbar navbar-expand-lg navbar-dark sticky-top">
       <div class="container-custom">
         <a class="navbar-brand" href="#" id="nav-logo">İşletme Adı</a>
@@ -455,7 +453,6 @@
             <p class="footer-text">© <span id="footer-year"></span> <span id="footer-business-name">İşletme Adı</span>. OrderAI altyapısı ile güçlendirilmiştir.</p>
         </div>
     </footer>
-    <!-- Bootstrap JS -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
     <script>
         document.addEventListener('DOMContentLoaded', () => {
@@ -569,6 +566,8 @@
                     }
                 }
 
+                // ================== DÜZELTİLMİŞ KOD BLOĞU BAŞLANGICI ==================
+                // Hatalı `website.show_reservation` yerine `website.allow_reservations` kullanılıyor.
                 if (website.allow_reservations === true) {
                     document.getElementById('reservation').style.display = 'block';
                     document.getElementById('nav-link-reservation').style.display = 'list-item';
@@ -588,6 +587,7 @@
                         tableSelect.querySelector('option').textContent = 'Uygun masa bulunamadı.';
                     }
                 }
+                // ================== DÜZELTİLMİŞ KOD BLOĞU SONU ==================
 
                 if (website.show_map && website.map_latitude && website.map_longitude) {
                     const mapContainer = document.getElementById('map-container-inner');
