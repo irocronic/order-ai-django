@@ -1,5 +1,3 @@
-<!-- makarna_project\core\templates\core\guest_menu.html -->
-
 <!DOCTYPE html>
 <html lang="tr">
 <head>
@@ -23,6 +21,8 @@
         .category-button:hover:not(.active) { background-color: #eff6ff; }
         .product-card { transition: transform 0.2s ease, box-shadow 0.2s ease; cursor: pointer; }
         .product-card:hover { transform: translateY(-3px); box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
+        .product-card.flash { animation: flash-bg 0.5s ease; }
+        @keyframes flash-bg { 0% { background-color: #dcfce7; } 100% { background-color: #ffffff; } }
         #active-order-section { border-top: 2px dashed #60a5fa; margin-top: 2rem; padding-top: 1.5rem; }
         #guest-order-status-container { position: sticky; top: 0; left: 0; right: 0; z-index: 1000; text-align: center; pointer-events: none; }
         .status-message { display: inline-block; padding: 10px 20px; color: white; border-radius: 0 0 8px 8px; margin-top:0; box-shadow: 0 2px 5px rgba(0,0,0,0.2); font-weight: bold; pointer-events: all; }
@@ -60,7 +60,9 @@
             <button class="category-button active px-4 py-2 bg-white text-gray-700 rounded-full shadow text-sm font-medium" data-category-id="all">Tümü</button>
         </div>
 
-        <div id="menu-items-container" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6"></div>
+        <div id="menu-items-container" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+            <p id="loading-message" class="text-gray-500 text-center col-span-full">Menü Yükleniyor...</p>
+        </div>
 
         <div id="cart-section" class="mt-12 bg-white p-6 rounded-lg shadow-lg sticky bottom-4 border border-gray-200">
             <h3 class="text-2xl font-semibold mb-4 text-gray-800 flex items-center justify-between">
@@ -94,13 +96,17 @@
             </button>
         </div>
     </div>
-
+    
+    {{ all_menu_items_data_json|json_script:"all-menu-items-data" }}
+    {{ active_order_data_json|json_script:"active-order-data" }}
+    {% comment %} Bu değişikliği backend'de de yapmanız gerekecek. Şimdilik geçici bir çözümle devam edelim. {% endcomment %}
     {{ guest_order_api_url|json_script:"guest-order-api-url-data" }}
     {{ csrf_token|json_script:"csrf-token-data" }}
 
     <script>
-        console.log("Guest Menu Script V6 (Kampanya Fiyat Düzeltmesi) Başladı.");
+        console.log("Guest Menu Script v7 (Optimized - No Fetch) Başladı.");
 
+        // --- Global Değişkenler ---
         let menuDataGlobal = {};
         let categoriesGlobal = [];
         let newCart = [];
@@ -108,6 +114,7 @@
         const csrfToken = JSON.parse(document.getElementById('csrf-token-data')?.textContent || '""');
         const tableUuid = document.getElementById('table-uuid-data')?.dataset.uuid;
         
+        // --- Element Referansları ---
         const menuContainerEl = document.getElementById('menu-items-container');
         const newCartItemsContainerEl = document.getElementById('cart-items');
         const newCartTotalElementEl = document.getElementById('cart-total');
@@ -126,6 +133,7 @@
         const activeOrderItemsContainerEl = document.getElementById('active-order-items');
         const activeOrderTotalElementEl = document.getElementById('active-order-total');
 
+        // --- Yardımcı Fonksiyonlar (Aynı kalabilir) ---
         function displayStatusMessage(message, type = 'info') {
             if (!guestOrderStatusContainerEl) return;
             let className = 'status-info';
@@ -139,35 +147,9 @@
                 }
             }, 7000);
         }
-
-        async function fetchMenuAndActiveOrder() {
-            if (!tableUuid) {
-                console.error("KRİTİK HATA: Masa UUID bulunamadı!");
-                if (menuContainerEl) menuContainerEl.innerHTML = '<p class="text-red-500 text-center col-span-full">Masa bilgisi eksik, menü yüklenemiyor.</p>';
-                return;
-            }
-            const menuApiUrl = `/api/guest/menu/${tableUuid}/`;
-            try {
-                const response = await fetch(menuApiUrl);
-                if (!response.ok) throw new Error(`API Hatası (${response.status})`);
-                const data = await response.json();
-                
-                menuDataGlobal = data.menu_items?.reduce((acc, item) => {
-                    if (item?.id != null) acc[item.id] = item;
-                    return acc;
-                }, {}) ?? {};
-
-                categoriesGlobal = data.categories ?? [];
-                displayCategoryFilters(categoriesGlobal);
-                displayActiveOrder(data.active_order);
-                filterMenuItems();
-            } catch (e) {
-                const errorMsg = `Menü yüklenemedi: ${e.message || e.toString()}`;
-                console.error("DEBUG: Menü alınırken hata:", e);
-                if (menuContainerEl) menuContainerEl.innerHTML = `<p class="text-red-500 text-center col-span-full">${errorMsg}</p>`;
-                displayStatusMessage(errorMsg, 'error');
-            }
-        }
+        
+        // Diğer tüm fonksiyonlar (displayCategoryFilters, displayActiveOrder, filterMenuItems, createMenuItemCard, openVariantModal, closeModal, addToNewCart, removeFromNewCart, updateNewCartDisplay, submitNewOrderItems)
+        // önceki dosyanızdaki gibi kalabilir. Aşağıya tam hallerini ekliyorum.
 
         function displayCategoryFilters(categories) {
             if (!categoryFiltersContainerEl) return;
@@ -195,9 +177,13 @@
                 extrasText = extrasText ? `<br><span class="text-xs text-blue-600">Ekstralar: ${extrasText}</span>` : '';
                 const itemElement = document.createElement('div');
                 itemElement.className = 'py-2 flex justify-between items-start text-sm';
+                
+                // item.variant.name olarak erişim sağlanmalı
+                const variantName = item.variant ? `(${item.variant.name})` : '';
+
                 itemElement.innerHTML = `
                     <div class="flex-grow pr-2">
-                        <span class="font-medium text-gray-800">${item.menu_item?.name ?? 'Ürün'} ${item.variant_name ? `(${item.variant_name})` : ''} x ${item.quantity}</span>
+                        <span class="font-medium text-gray-800">${item.menu_item?.name ?? 'Ürün'} ${variantName} x ${item.quantity}</span>
                         ${extrasText}
                     </div>
                     <span class="font-semibold text-gray-700 whitespace-nowrap">${lineTotal.toFixed(2)} TL</span>`;
@@ -214,6 +200,9 @@
 
         function filterMenuItems(categoryId = 'all') {
             if (!menuContainerEl) return;
+            const loadingMsg = document.getElementById('loading-message');
+            if (loadingMsg) loadingMsg.style.display = 'none';
+            
             menuContainerEl.innerHTML = '';
             const itemsToDisplay = categoryId === 'all'
                 ? Object.values(menuDataGlobal)
@@ -249,8 +238,9 @@
             content.className = 'p-4 flex flex-col flex-grow';
 
             let displayPrice = 'Fiyat Yok';
-            if (item.is_campaign_bundle && item.price != null) {
-                displayPrice = `${parseFloat(item.price).toFixed(2)} TL`;
+            // Kampanya fiyatını göstermek için price_display alanını kullanıyoruz
+            if (item.is_campaign_bundle && item.price_display != null) {
+                displayPrice = `${parseFloat(item.price_display).toFixed(2)} TL`;
             } else {
                 const firstNormalVariant = item.variants?.find(v => v && !v.is_extra);
                 if (firstNormalVariant?.price != null) {
@@ -273,7 +263,7 @@
                     addToNewCart(item.id, null, [], null);
                 }
             };
-            content.querySelector('.add-to-cart-btn').onclick = (e) => { e.stopPropagation(); actionOnClick(); };
+            content.querySelector('.add-to-cart-btn').onclick = (e) => { e.stopPropagation(); actionOnClick(); card.classList.add('flash'); setTimeout(() => card.classList.remove('flash'), 500); };
             card.onclick = actionOnClick;
             return card;
         }
@@ -325,21 +315,15 @@
             let unitPrice = 0;
 
             if (item.is_campaign_bundle) {
-                // Kampanya ürünü ise:
-                unitPrice = parseFloat(item.price);
-                mainVariant = null; // Kampanya ürününün kendi varyantı olmaz
-                extras = []; // Kampanya ürününün ekstrası olmaz
+                unitPrice = parseFloat(item.price_display);
             } else {
-                // Normal ürün ise:
                 if (selectedVariantId !== null && item.variants) {
                     mainVariant = item.variants.find(v => v.id === selectedVariantId && !v.is_extra);
                 } else if (item.variants?.some(v => v && !v.is_extra) && selectedVariantId === null) {
                     alert(`Lütfen '${item.name}' için bir ana seçenek belirtin.`);
                     return;
                 }
-
                 extras = selectedExtraIds.map(extraId => item.variants?.find(v => v.id === extraId && v.is_extra)).filter(v => v != null);
-                
                 unitPrice = parseFloat(mainVariant?.price || 0);
                 extras.forEach(extra => { unitPrice += parseFloat(extra.price); });
             }
@@ -359,7 +343,7 @@
                     variantName: mainVariant?.name, 
                     price: unitPrice, 
                     quantity: 1, 
-                    extras: extras.map(e => ({ variant: e.id, variantName: e.name, price: parseFloat(e.price), quantity: 1 })), // 'variantId' yerine 'variant'
+                    extras: extras.map(e => ({ variant: e.id, quantity: 1 })), // API'nin beklediği format
                     notes 
                 });
             }
@@ -383,7 +367,7 @@
             else {
                 emptyNewCartMessageEl.style.display = 'none';
                 newCart.forEach(item => {
-                    const extrasText = item.extras?.length > 0 ? `<br><span class="text-xs text-gray-500">Ekstralar: ${item.extras.map(e => e.variantName).join(', ')}</span>` : '';
+                    const extrasText = item.extras?.length > 0 ? `<br><span class="text-xs text-gray-500">Ekstralar: ${item.extras.map(e => menuDataGlobal[item.itemId].variants.find(v=>v.id===e.variant)?.name).join(', ')}</span>` : '';
                     const notesText = item.notes ? `<br><span class="text-xs text-blue-500">Not: ${item.notes}</span>` : '';
                     const itemElement = document.createElement('div');
                     itemElement.className = 'cart-item flex justify-between items-center py-3 text-sm';
@@ -406,10 +390,8 @@
             const orderDataPayload = {
                 order_items_data: newCart.map(item => ({
                     menu_item_id: item.itemId,
-                    // Kampanya ürünleri için variant_id'yi null, normal ürünler için variantId'yi gönder
                     variant_id: item.variantId, 
                     quantity: item.quantity,
-                    // Kampanya ürünleri için extras boş liste olmalı
                     extras: item.extras 
                 })),
             };
@@ -429,18 +411,8 @@
                     displayStatusMessage(successMsg, responseData.status === 'pending_approval' ? 'warning' : 'success');
                 } else {
                     let errorMsgText = `Ürünler eklenemedi (${response.status}).`;
-                    if (responseData && responseData.detail) {
-                        errorMsgText = responseData.detail;
-                    } else if (responseData && Object.keys(responseData).length > 0) {
-                        const firstKey = Object.keys(responseData)[0];
-                        if (Array.isArray(responseData[firstKey]) && responseData[firstKey].length > 0) {
-                            errorMsgText = `${firstKey}: ${responseData[firstKey][0]}`;
-                        } else if (typeof responseData[firstKey] === 'string') {
-                            errorMsgText = `${firstKey}: ${responseData[firstKey]}`;
-                        } else {
-                            errorMsgText = JSON.stringify(responseData);
-                        }
-                    }
+                    if (responseData && responseData.detail) { errorMsgText = responseData.detail; } 
+                    else if (responseData) { errorMsgText = JSON.stringify(responseData); }
                     displayStatusMessage(errorMsgText, 'error');
                 }
             } catch (error) {
@@ -454,9 +426,41 @@
             }
         }
 
+        // --- Ana Başlatma Bloğu ---
         document.addEventListener('DOMContentLoaded', () => {
-            fetchMenuAndActiveOrder();
-            updateNewCartDisplay();
+            // 1. Gereksiz API çağrısı yapan fonksiyonu kaldırıyoruz.
+            // fetchMenuAndActiveOrder(); // Bu satır SİLİNDİ.
+
+            // 2. DOMContentLoaded içinde veriyi doğrudan json_script'lerden okuyoruz.
+            try {
+                // Backend'den gelen verileri parse et
+                const menuDataJson = JSON.parse(document.getElementById('all-menu-items-data')?.textContent || '[]');
+                const activeOrderJson = JSON.parse(document.getElementById('active-order-data')?.textContent || 'null');
+                
+                // Kategori verisini geçici olarak menuData'dan türetelim (backend'de düzeltilene kadar)
+                const allCategories = menuDataJson.map(item => item.category).filter(Boolean);
+                const uniqueCategories = Array.from(new Map(allCategories.map(item => [item['id'], item])).values());
+                categoriesGlobal = uniqueCategories;
+                
+                menuDataGlobal = menuDataJson.reduce((acc, item) => {
+                    if (item?.id != null) acc[item.id] = item;
+                    return acc;
+                }, {});
+                
+                // Veri okunduktan sonra arayüzü çiz
+                displayCategoryFilters(categoriesGlobal);
+                displayActiveOrder(activeOrderJson);
+                filterMenuItems();
+                updateNewCartDisplay();
+
+            } catch(e) {
+                console.error("Başlangıç verisi okunurken veya işlenirken hata:", e);
+                const errorMsg = "Menü yüklenemedi: Sayfa verileri okunamadı.";
+                if (menuContainerEl) menuContainerEl.innerHTML = `<p class="text-red-500 text-center col-span-full">${errorMsg}</p>`;
+                displayStatusMessage(errorMsg, "error");
+            }
+            
+            // --- Olay Dinleyicileri ---
             if (categoryFiltersContainerEl) categoryFiltersContainerEl.addEventListener('click', (e) => {
                 const btn = e.target.closest('button.category-button');
                 if (btn?.dataset.categoryId) filterMenuItems(btn.dataset.categoryId);
@@ -464,6 +468,7 @@
             if (submitNewOrderButtonEl) submitNewOrderButtonEl.addEventListener('click', submitNewOrderItems);
             if (variantModalEl) window.onclick = (e) => { if (e.target == variantModalEl) closeModal(); }
 
+            // --- Socket.IO Bağlantısı ---
             if (tableUuid) {
                 const socket = io(`${window.location.protocol}//${window.location.host}`, { path: '/socket.io/', transports: ['websocket', 'polling'] });
                 socket.on('connect', () => {
@@ -472,10 +477,13 @@
                 });
                 socket.on('order_update_for_guest_table', (data) => {
                     console.log('Misafir için sipariş güncellemesi:', data);
-                    if (data?.order_id) {
-                        let msgType = (data.status === 'approved') ? 'success' : ((data.status === 'rejected') ? 'error' : 'warning');
-                        displayStatusMessage(data.message || 'Sipariş durumu güncellendi.', msgType);
-                        fetchMenuAndActiveOrder();
+                    // Sayfayı yeniden yüklemek yerine, sadece veriyi güncelleyelim.
+                    if (data?.updated_order_data) {
+                         displayActiveOrder(data.updated_order_data);
+                    }
+                    if (data?.message) {
+                        let msgType = (data.event_type?.includes('approved') || data.event_type?.includes('delivered')) ? 'success' : ((data.event_type?.includes('rejected')) ? 'error' : 'warning');
+                        displayStatusMessage(data.message, msgType);
                     }
                 });
             }
