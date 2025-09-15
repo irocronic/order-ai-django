@@ -619,4 +619,70 @@
                         e.preventDefault();
                         const target = document.querySelector(href);
                         if (target) {
-                
+                            target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                            target.classList.add('section-highlight');
+                            setTimeout(() => target.classList.remove('section-highlight'), 700);
+                        }
+                        // Bootstrap menüyü kapat (mobilde)
+                        const navbarCollapse = document.getElementById('mainNavbar');
+                        if (navbarCollapse.classList.contains('show')) {
+                            new bootstrap.Collapse(navbarCollapse).hide();
+                        }
+                    }
+                });
+            });
+
+            // Rezervasyon formu: submit işlemi
+            const reservationForm = document.getElementById('reservation-form');
+            if (reservationForm) {
+                reservationForm.addEventListener('submit', async function(event) {
+                    event.preventDefault();
+                    const form = event.target;
+                    const alertBox = document.getElementById('reservation-form-alert');
+                    // Backend'in beklediği alan isimleriyle veri gönder
+                    const data = {
+                        table: form.elements['table'].value,
+                        customer_name: form.elements['name'].value,
+                        customer_phone: form.elements['phone'].value,
+                        customer_email: form.elements['email'].value,
+                        reservation_time: form.elements['date'].value + 'T' + form.elements['time'].value,
+                        party_size: form.elements['persons'].value,
+                        notes: form.elements['note'].value,
+                    };
+                    try {
+                        const response = await fetch(`/api/public/business/{{ business.slug }}/reservations/`, {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'X-CSRFToken': '{{ csrf_token }}'
+                            },
+                            body: JSON.stringify(data)
+                        });
+                        const result = await response.json();
+                        if (response.ok) {
+                            alertBox.textContent = 'Rezervasyon talebiniz alındı! Onay için sizinle iletişime geçilecektir.';
+                            alertBox.className = 'reservation-form-alert alert alert-success';
+                            alertBox.style.display = 'block';
+                            form.reset();
+                        } else {
+                            let errorMessage = 'Bir hata oluştu.';
+                            if (typeof result === 'object' && result !== null) {
+                                errorMessage = Object.values(result).flat().join(' ');
+                            }
+                            alertBox.textContent = 'Hata: ' + errorMessage;
+                            alertBox.className = 'reservation-form-alert alert alert-danger';
+                            alertBox.style.display = 'block';
+                        }
+                    } catch (err) {
+                        alertBox.textContent = 'Rezervasyon gönderilirken bir hata oluştu.';
+                        alertBox.className = 'reservation-form-alert alert alert-danger';
+                        alertBox.style.display = 'block';
+                    }
+                });
+            }
+
+            fetchData();
+        });
+    </script>
+</body>
+</html>
