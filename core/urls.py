@@ -1,5 +1,3 @@
-# core/urls.py DOSYASININ OLMASI GEREKEN TAM HALİ
-
 # core/urls.py
 
 from django.urls import path, include, re_path
@@ -42,6 +40,9 @@ from core.views import (
     RecipeItemViewSet,
     SupplierViewSet,
     PurchaseOrderViewSet,
+    # === YENİ: Rezervasyon View'ları import edildi ===
+    ReservationViewSet,
+    PublicReservationCreateView,
 )
 
 # Business Website API Views için importlar
@@ -49,7 +50,7 @@ from core.views.business_website_views import (
     BusinessWebsiteDetailView,
     business_website_preview_api,
     business_public_website_api,
-    business_website_view # Bu import eklendi
+    business_website_view 
 )
 
 from subscriptions.views import VerifyPurchaseView
@@ -75,6 +76,9 @@ router.register(r'shifts', ShiftViewSet, basename='shift')
 router.register(r'schedule', ScheduledShiftViewSet, basename='scheduledshift')
 router.register(r'suppliers', SupplierViewSet, basename='supplier')
 router.register(r'purchase-orders', PurchaseOrderViewSet, basename='purchaseorder')
+# === YENİ: ReservationViewSet router'a eklendi ===
+router.register(r'reservations', ReservationViewSet, basename='reservation')
+
 
 # YÖNETİCİ API'leri için ayrı bir DefaultRouter
 admin_router = DefaultRouter()
@@ -131,8 +135,8 @@ urlpatterns = [
     path('business/website/preview/', business_website_preview_api, name='business-website-preview'),
     path('public/business/<slug:business_slug>/', business_public_website_api, name='business-public-website'),
     
-    # YENİ: İşletme Web Sitesi için Template View URL'i buraya DEĞİL ana urls.py'ye eklenmeli
-    # path('website/<slug:business_slug>/', business_website_view, name='business-website'),
+    # === YENİ: Herkese Açık Rezervasyon URL'i ===
+    path('public/business/<slug:business_slug>/reservations/', PublicReservationCreateView.as_view(), name='public-reservation-create'),
 ]
 
 # Geliştirme ortamında medya dosyalarını sunmak için

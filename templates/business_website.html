@@ -47,7 +47,6 @@
         }
         a { color: var(--primary-color); text-decoration: none; transition: color 0.3s;}
         a:hover { color: var(--secondary-color);}
-
         #loader {
             position: fixed;
             inset: 0;
@@ -67,8 +66,6 @@
             box-shadow: 0 0 30px var(--primary-color);
         }
         @keyframes spin { 0% { transform: rotate(0);} 100% { transform: rotate(360deg);} }
-
-        /* Minimalist Navbar Brand */
         .navbar-brand {
             font-size: 1.5rem;
             font-family: 'Playfair Display', serif;
@@ -234,38 +231,46 @@
             box-shadow: 0 4px 24px var(--primary-color);
         }
         #map iframe {width:100%; height:100%; border:0;}
-        footer {
-            background: rgba(30,30,34,0.95);
-            border-top: 1px solid var(--border-color);
-            padding: 40px 0 24px;
+        /* Rezervasyon */
+        #reservation {background: none;}
+        .reservation-form-block {
+            background: rgba(22,22,28,0.94);
+            border: 1.5px solid var(--border-color);
+            border-radius: 16px;
+            box-shadow: 0 4px 18px rgba(50,227,194,0.09);
+            padding: 32px;
+            max-width: 500px;
+            margin: 0 auto;
+        }
+        .reservation-form-label {
+            font-weight: 600;
+            color: var(--text-light);
+        }
+        .reservation-form-btn {
+            background: var(--primary-color);
+            color: #fff;
+            font-weight: 600;
+            border-radius: 12px;
+            border: none;
+            padding: 12px 28px;
+            font-size: 1.15rem;
+            transition: background .3s;
+        }
+        .reservation-form-btn:hover {
+            background: var(--secondary-color);
+            color: #fff;
+        }
+        .reservation-form-title {
+            color: var(--accent-color);
+            font-size: 2rem;
             text-align: center;
-            box-shadow: 0 -2px 12px rgba(0,0,0,0.10);
+            font-family: 'Playfair Display', serif;
+            margin-bottom: 18px;
         }
-        .social-links {margin-bottom: 18px;}
-        .social-links a {
-            margin: 0 12px;
-            transition: transform 0.3s;
-            vertical-align: middle;
-        }
-        .social-links a:hover { transform: scale(1.20) rotate(-8deg);}
-        .social-links img {width: 28px; height: 28px; vertical-align: middle;}
-        .footer-text {
-            font-size: 1rem;
+        .reservation-form-desc {
+            text-align: center;
             color: var(--text-muted);
-            letter-spacing: 1px;
-        }
-        .section-anim {
-            opacity: 0;
-            transform: translateY(40px) scale(0.98);
-            transition: opacity 0.8s, transform 0.7s;
-        }
-        .section-anim.visible {
-            opacity: 1;
-            transform: none;
-        }
-        .section-highlight {
-            box-shadow: 0 0 0 4px var(--primary-color), 0 0 18px var(--primary-color);
-            transition: box-shadow 0.4s;
+            margin-bottom: 22px;
         }
         @media (max-width: 900px) {
             .hero-content { flex-direction: column; padding: 38px 10px;}
@@ -276,6 +281,7 @@
             h2 { font-size: 1.45rem;}
             .hero-text h1 { font-size: 2.1rem;}
             .container-custom { padding: 0 6px;}
+            .reservation-form-block {padding: 16px;}
         }
     </style>
 </head>
@@ -298,6 +304,9 @@
             </li>
             <li class="nav-item" id="nav-link-contact" style="display:none;">
               <a class="nav-link" href="#contact">İletişim</a>
+            </li>
+            <li class="nav-item" id="nav-link-reservation" style="display:none;">
+              <a class="nav-link" href="#reservation">Rezervasyon</a>
             </li>
           </ul>
         </div>
@@ -347,6 +356,45 @@
                         <h3>Çalışma Saatleri</h3>
                         <p id="contact-working-hours">...</p>
                     </div>
+                </div>
+            </div>
+        </section>
+        <section id="reservation" class="section-anim" style="display: none;">
+            <div class="container-custom">
+                <div class="reservation-form-block">
+                    <div class="reservation-form-title">Rezervasyon Yap</div>
+                    <div class="reservation-form-desc">Size ve sevdiklerinize en iyi hizmeti sunmak için rezervasyon talebinizi iletebilirsiniz.</div>
+                    <form id="reservation-form" autocomplete="off">
+                        <div class="mb-3">
+                            <label for="reservation-name" class="form-label reservation-form-label">Adınız Soyadınız</label>
+                            <input type="text" class="form-control" id="reservation-name" name="name" required maxlength="60">
+                        </div>
+                        <div class="mb-3">
+                            <label for="reservation-phone" class="form-label reservation-form-label">Telefon Numaranız</label>
+                            <input type="tel" class="form-control" id="reservation-phone" name="phone" required maxlength="20">
+                        </div>
+                        <div class="mb-3">
+                            <label for="reservation-email" class="form-label reservation-form-label">E-posta Adresiniz</label>
+                            <input type="email" class="form-control" id="reservation-email" name="email" maxlength="60">
+                        </div>
+                        <div class="mb-3">
+                            <label for="reservation-date" class="form-label reservation-form-label">Tarih</label>
+                            <input type="date" class="form-control" id="reservation-date" name="date" required>
+                        </div>
+                        <div class="mb-3">
+                            <label for="reservation-time" class="form-label reservation-form-label">Saat</label>
+                            <input type="time" class="form-control" id="reservation-time" name="time" required>
+                        </div>
+                        <div class="mb-3">
+                            <label for="reservation-persons" class="form-label reservation-form-label">Kişi Sayısı</label>
+                            <input type="number" class="form-control" id="reservation-persons" name="persons" required min="1" max="30">
+                        </div>
+                        <div class="mb-3">
+                            <label for="reservation-note" class="form-label reservation-form-label">Notunuz (isteğe bağlı)</label>
+                            <textarea class="form-control" id="reservation-note" name="note" rows="2" maxlength="200"></textarea>
+                        </div>
+                        <button type="submit" class="reservation-form-btn w-100">Rezervasyon Gönder</button>
+                    </form>
                 </div>
             </div>
         </section>
@@ -471,6 +519,10 @@
                         document.getElementById('nav-link-contact').style.display = 'list-item';
                     }
                 }
+                if (website.show_reservation !== false) {
+                    document.getElementById('reservation').style.display = 'block';
+                    document.getElementById('nav-link-reservation').style.display = 'list-item';
+                }
                 if (website.show_map && website.map_latitude && website.map_longitude) {
                     const mapContainer = document.getElementById('map-container-inner');
                     const iframe = document.createElement('iframe');
@@ -513,6 +565,36 @@
                     }
                 });
             });
+
+            // Rezervasyon formu: submit işlemi
+            const reservationForm = document.getElementById('reservation-form');
+            if (reservationForm) {
+                reservationForm.addEventListener('submit', async function(event) {
+                    event.preventDefault();
+                    const form = event.target;
+                    const formData = new FormData(form);
+                    const data = Object.fromEntries(formData.entries());
+                    try {
+                        const response = await fetch(`/api/public/business/{{ business.slug }}/reservations/`, {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'X-CSRFToken': '{{ csrf_token }}'
+                            },
+                            body: JSON.stringify(data)
+                        });
+                        const result = await response.json();
+                        if (response.ok) {
+                            alert('Rezervasyon talebiniz alındı! Onay için sizinle iletişime geçilecektir.');
+                            form.reset();
+                        } else {
+                            alert('Hata: ' + (result.detail || JSON.stringify(result)));
+                        }
+                    } catch (err) {
+                        alert('Rezervasyon gönderilirken bir hata oluştu.');
+                    }
+                });
+            }
 
             fetchData();
         });

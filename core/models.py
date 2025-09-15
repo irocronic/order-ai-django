@@ -75,6 +75,8 @@ NOTIFICATION_EVENT_TYPES = [
     ('waiting_customer_seated', 'Bekleyen Müşteri Oturtuldu'),
     ('stock_adjusted', 'Stok Ayarlandı/Güncellendi'),
     ('pager_status_updated', 'Çağrı Cihazı Durumu Güncellendi'),
+    # === YENİ OLAY TÜRÜ ===
+    ('reservation_pending_approval', 'Yeni Rezervasyon Onay Bekliyor'),
 ]
 
 DEFAULT_BUSINESS_OWNER_NOTIFICATION_PERMISSIONS = [key for key, desc in NOTIFICATION_EVENT_TYPES]
@@ -1095,6 +1097,17 @@ class BusinessWebsite(models.Model):
         verbose_name="Haritayı Göster"
     )
     
+    # === YENİ ALANLAR BAŞLANGICI ===
+    allow_reservations = models.BooleanField(
+        default=False, 
+        verbose_name="Online Rezervasyona İzin Ver"
+    )
+    allow_online_ordering = models.BooleanField(
+        default=False, 
+        verbose_name="Online Siparişe İzin Ver"
+    )
+    # === YENİ ALANLAR SONU ===
+    
     # Zaman Damgaları
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -1126,5 +1139,44 @@ class BusinessWebsite(models.Model):
             self.website_description = f"{self.business.name} restoranının resmi web sitesi. Menümüzü inceleyin ve bizimle iletişime geçin."
         
         super().save(*args, **kwargs)
+
+# === YENİ MODEL SONU ===
+
+# === YENİ MODEL BAŞLANGICI: Reservation ===
+
+class Reservation(models.Model):
+    """
+    Müşterilerin online olarak yaptığı masa rezervasyonlarını temsil eder.
+    """
+    class Status(models.TextChoices):
+        PENDING = 'pending', _('Onay Bekliyor')
+        CONFIRMED = 'confirmed', _('Onaylandı')
+        CANCELLED = 'cancelled', _('İptal Edildi')
+        SEATED = 'seated', _('Oturdu') # Müşteri geldi ve masaya yerleşti
+
+    business = models.ForeignKey(Business, on_delete=models.CASCADE, related_name='reservations', verbose_name="İşletme")
+    table = models.ForeignKey(Table, on_delete=models.CASCADE, related_name='reservations', verbose_name="Masa")
+    
+    customer_name = models.CharField(max_length=150, verbose_name="Müşteri Adı Soyadı")
+    customer_phone = models.CharField(max_length=20, verbose_name="Müşteri Telefon")
+    customer_email = models.EmailField(blank=True, null=True, verbose_name="Müşteri E-posta")
+    
+    reservation_time = models.DateTimeField(verbose_name="Rezervasyon Tarihi ve Saati")
+    party_size = models.PositiveIntegerField(verbose_name="Kişi Sayısı")
+    notes = models.TextField(blank=True, null=True, verbose_name="Özel Notlar")
+    
+    status = models.CharField(max_length=20, choices=Status.choices, default=Status.PENDING, verbose_name="Durum")
+    
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Rezervasyon"
+        verbose_name_plural = "Rezervasyonlar"
+        ordering = ['-reservation_time']
+        unique_together = ('table', 'reservation_time') # Aynı masaya aynı anda tek rezervasyon
+
+    def __str__(self):
+        return f"Rez. #{self.id}: {self.customer_name} - Masa {self.table.table_number} ({self.reservation_time.strftime('%d.%m %H:%M')})"
 
 # === YENİ MODEL SONU ===

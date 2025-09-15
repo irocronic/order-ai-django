@@ -1,5 +1,3 @@
-# core/admin.py
-
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 from django.utils.html import format_html
@@ -8,6 +6,7 @@ from django.db import models
 # --- YENİ: Subscription modeli buraya import edildi ---
 from subscriptions.models import Subscription
 
+# === GÜNCELLEME: Hatalı import düzeltildi ve Reservation eklendi ===
 from .models import (
     Business, Table, MenuItem, Order, OrderItem, Payment, Category,
     MenuItemVariant, WaitingCustomer, CreditPaymentDetails,
@@ -16,11 +15,22 @@ from .models import (
     KDSScreen,
     Shift, ScheduledShift,
     STAFF_PERMISSION_CHOICES, NOTIFICATION_EVENT_TYPES,
-    # === YENİ: UnitOfMeasure ve Ingredient modelleri import edildi ===
     UnitOfMeasure, Ingredient, RecipeItem, IngredientStockMovement,
-    Supplier, PurchaseOrder, BusinessWebsite, PurchaseOrderItem #
-    # =============================================================
+    Supplier, PurchaseOrder, BusinessWebsite, PurchaseOrderItem,
+    Reservation  # Hata buradaydı, düzeltildi.
 )
+# =============================================================
+
+# === YENİ: Reservation için Admin sınıfı eklendi ===
+@admin.register(Reservation)
+class ReservationAdmin(admin.ModelAdmin):
+    list_display = ('id', 'business', 'table', 'customer_name', 'reservation_time', 'party_size', 'status')
+    list_filter = ('status', 'business', 'reservation_time')
+    search_fields = ('id', 'customer_name', 'customer_phone', 'table__table_number', 'business__name')
+    list_editable = ('status',)
+    autocomplete_fields = ('business', 'table')
+    date_hierarchy = 'reservation_time'
+# =====================================================
 
 # === YENİ: UnitOfMeasure için Admin sınıfı eklendi ===
 @admin.register(UnitOfMeasure)
