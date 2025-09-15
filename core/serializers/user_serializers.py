@@ -52,8 +52,8 @@ class RegisterSerializer(serializers.ModelSerializer):
             if not hasattr(user, 'owned_business'):
                 Business.objects.create(
                     owner=user, 
-                    name=f"{validated_data['username']}'s Business (Onay Bekliyor)", 
-                    address="Default Address (Onay Bekliyor)"
+                    name=f"{validated_data['username']}",
+                    address="Lütfen Adresi Güncelleyin"
                 )
         
         if user.user_type in ['customer', 'business_owner'] and not user.is_approved_by_admin:
