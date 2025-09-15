@@ -276,6 +276,38 @@
             display: none;
             margin-bottom: 16px;
         }
+        /* Sosyal medya ikonları tek satırda ve ortalanmış */
+        .footer .social-links {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 32px;
+            margin-bottom: 10px;
+        }
+        .footer .social-links a {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 38px;
+            height: 38px;
+            border-radius: 50%;
+            background: rgba(255,255,255,0.05);
+            transition: background 0.2s;
+        }
+        .footer .social-links a:hover {
+            background: var(--primary-color);
+        }
+        .footer .social-links img {
+            width: 24px;
+            height: 24px;
+            filter: invert(1);
+        }
+        .footer-text {
+            text-align: center;
+            color: var(--text-muted);
+            margin-bottom: 0;
+            font-size: 1rem;
+        }
         @media (max-width: 900px) {
             .hero-content { flex-direction: column; padding: 38px 10px;}
             .hero-image img {max-width: 99%;}
@@ -286,6 +318,7 @@
             .hero-text h1 { font-size: 2.1rem;}
             .container-custom { padding: 0 6px;}
             .reservation-form-block {padding: 16px;}
+            .footer .social-links { gap: 16px; }
         }
     </style>
 </head>
@@ -416,7 +449,7 @@
             </div>
         </section>
     </main>
-    <footer>
+    <footer class="footer">
         <div class="container-custom">
             <div class="social-links" id="social-links-container"></div>
             <p class="footer-text">© <span id="footer-year"></span> <span id="footer-business-name">İşletme Adı</span>. OrderAI altyapısı ile güçlendirilmiştir.</p>
@@ -441,7 +474,6 @@
             window.addEventListener('scroll', appearAnim);
             appearAnim();
 
-            // Masa dropdown için tablo listesi
             let tables = [];
 
             const fetchData = async () => {
@@ -449,7 +481,7 @@
                     const response = await fetch(apiUrl);
                     if (!response.ok) throw new Error(`API Hatası: ${response.status}`);
                     const data = await response.json();
-                    tables = data.tables || []; // Masalar burada tutuluyor
+                    tables = data.tables || [];
                     populatePage(data);
                 } catch (error) {
                     console.error("Veri alınırken hata oluştu:", error);
@@ -540,7 +572,7 @@
                     document.getElementById('reservation').style.display = 'block';
                     document.getElementById('nav-link-reservation').style.display = 'list-item';
 
-                    // MASA SEÇİMİ DROPDOWN'u doldur
+                    // Masa seçimi dropdown'u doldur
                     const tableSelect = document.getElementById('reservation-table');
                     tableSelect.innerHTML = '<option value="" disabled selected>Lütfen bir masa seçin...</option>';
                     if (tables.length > 0) {
@@ -565,12 +597,12 @@
                     mapContainer.appendChild(iframe);
                     document.getElementById('map').style.display = 'block';
                 }
-                // Social Links
+                // Sosyal medya ikonları
                 const socialLinksContainer = document.getElementById('social-links-container');
                 let socialHtml = '';
-                if(website.facebook_url) socialHtml += `<a href="${website.facebook_url}" target="_blank" title="Facebook"><img src="https://simpleicons.org/icons/facebook.svg" style="filter: invert(1);" alt="Facebook"></a>`;
-                if(website.instagram_url) socialHtml += `<a href="${website.instagram_url}" target="_blank" title="Instagram"><img src="https://simpleicons.org/icons/instagram.svg" style="filter: invert(1);" alt="Instagram"></a>`;
-                if(website.twitter_url) socialHtml += `<a href="${website.twitter_url}" target="_blank" title="Twitter/X"><img src="https://simpleicons.org/icons/x.svg" style="filter: invert(1);" alt="X"></a>`;
+                if(website.facebook_url) socialHtml += `<a href="${website.facebook_url}" target="_blank" title="Facebook"><img src="https://simpleicons.org/icons/facebook.svg" alt="Facebook"></a>`;
+                if(website.instagram_url) socialHtml += `<a href="${website.instagram_url}" target="_blank" title="Instagram"><img src="https://simpleicons.org/icons/instagram.svg" alt="Instagram"></a>`;
+                if(website.twitter_url) socialHtml += `<a href="${website.twitter_url}" target="_blank" title="Twitter/X"><img src="https://simpleicons.org/icons/x.svg" alt="X"></a>`;
                 socialLinksContainer.innerHTML = socialHtml;
                 appearAnim();
             };
@@ -607,16 +639,15 @@
                     event.preventDefault();
                     const form = event.target;
                     const alertBox = document.getElementById('reservation-form-alert');
-                    // Form verilerini topla
+                    // Backend'in beklediği alan isimleriyle veri gönder
                     const data = {
-                        name: form.elements['name'].value,
-                        phone: form.elements['phone'].value,
-                        email: form.elements['email'].value,
-                        date: form.elements['date'].value,
-                        time: form.elements['time'].value,
-                        persons: form.elements['persons'].value,
                         table: form.elements['table'].value,
-                        note: form.elements['note'].value,
+                        customer_name: form.elements['name'].value,
+                        customer_phone: form.elements['phone'].value,
+                        customer_email: form.elements['email'].value,
+                        reservation_time: form.elements['date'].value + 'T' + form.elements['time'].value,
+                        party_size: form.elements['persons'].value,
+                        notes: form.elements['note'].value,
                     };
                     try {
                         const response = await fetch(`/api/public/business/{{ business.slug }}/reservations/`, {
