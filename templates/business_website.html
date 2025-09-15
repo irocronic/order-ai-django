@@ -653,36 +653,4 @@
                         const response = await fetch(`/api/public/business/{{ business.slug }}/reservations/`, {
                             method: 'POST',
                             headers: {
-                                'Content-Type': 'application/json',
-                                'X-CSRFToken': '{{ csrf_token }}'
-                            },
-                            body: JSON.stringify(data)
-                        });
-                        const result = await response.json();
-                        if (response.ok) {
-                            alertBox.textContent = 'Rezervasyon talebiniz alındı! Onay için sizinle iletişime geçilecektir.';
-                            alertBox.className = 'reservation-form-alert alert alert-success';
-                            alertBox.style.display = 'block';
-                            form.reset();
-                        } else {
-                            let errorMessage = 'Bir hata oluştu.';
-                            if (typeof result === 'object' && result !== null) {
-                                errorMessage = Object.values(result).flat().join(' ');
-                            }
-                            alertBox.textContent = 'Hata: ' + errorMessage;
-                            alertBox.className = 'reservation-form-alert alert alert-danger';
-                            alertBox.style.display = 'block';
-                        }
-                    } catch (err) {
-                        alertBox.textContent = 'Rezervasyon gönderilirken bir hata oluştu.';
-                        alertBox.className = 'reservation-form-alert alert alert-danger';
-                        alertBox.style.display = 'block';
-                    }
-                });
-            }
-
-            fetchData();
-        });
-    </script>
-</body>
-</html>
+                               
