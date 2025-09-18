@@ -123,17 +123,29 @@ class TableViewSet(LimitCheckMixin, viewsets.ModelViewSet):
         if not isinstance(tables_data, list):
             raise ValidationError({'detail': 'İstek gövdesi bir liste olmalıdır.'})
 
-        table_ids = [item.get('id') for item in tables_data]
-        tables_to_update = Table.objects.filter(id__in=table_ids, business=user_business)
+        # incoming id'leri set haline getir
+        incoming_ids = {item.get('id') for item in tables_data if item.get('id') is not None}
+        if not incoming_ids:
+            return Response({'detail': 'İstek içinde güncellenecek geçerli id bulunamadı.'}, status=status.HTTP_400_BAD_REQUEST)
 
-        if len(table_ids) != tables_to_update.count():
-            raise PermissionDenied("Bazı masalar bulunamadı veya işletmenize ait değil.")
+        tables_to_update = Table.objects.filter(id__in=incoming_ids, business=user_business)
+
+        existing_ids = set(tables_to_update.values_list('id', flat=True))
+        missing_ids = list(incoming_ids - existing_ids)
+        if missing_ids:
+            # Daha açıklayıcı geri dönüş: eksik id'leri de döndürüyoruz.
+            return Response({
+                'detail': 'Bazı masalar bulunamadı veya işletmenize ait değil.',
+                'missing_ids': missing_ids
+            }, status=status.HTTP_403_FORBIDDEN)
             
         layout = user_business.layout
 
         with transaction.atomic():
+            id_to_table = {t.id: t for t in tables_to_update}
             for data in tables_data:
-                table = next((t for t in tables_to_update if t.id == data.get('id')), None)
+                table_id = data.get('id')
+                table = id_to_table.get(table_id)
                 if table:
                     table.pos_x = data.get('pos_x')
                     table.pos_y = data.get('pos_y')
@@ -142,7 +154,6 @@ class TableViewSet(LimitCheckMixin, viewsets.ModelViewSet):
                     table.save(update_fields=['pos_x', 'pos_y', 'rotation', 'layout'])
 
         return Response({'status': 'success', 'message': f'{len(tables_data)} masanın pozisyonu güncellendi.'}, status=status.HTTP_200_OK)
-    # +++ METOT EKLEME SONU +++
 
     def perform_update(self, serializer):
         user = self.request.user
