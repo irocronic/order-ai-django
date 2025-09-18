@@ -9,8 +9,8 @@ from django.db import transaction
 from rest_framework.exceptions import PermissionDenied, ValidationError
 
 from ..mixins import LimitCheckMixin
-from ..models import Business, Table, BusinessLayout # BusinessLayout import edildi
-from ..serializers import BusinessSerializer, TableSerializer, BusinessLayoutSerializer # BusinessLayoutSerializer import edildi
+from ..models import Business, Table, BusinessLayout
+from ..serializers import BusinessSerializer, TableSerializer, BusinessLayoutSerializer
 from ..utils.order_helpers import get_user_business, PermissionKeys
 
 
@@ -26,45 +26,33 @@ class BusinessViewSet(viewsets.ModelViewSet):
         user = self.request.user
         if user.is_authenticated:
             if user.user_type == 'business_owner':
-                # İşletme sahibinin kendi işletmesini döndür
                 try:
-                    # user.owned_business direkt erişimdir ve RelatedObjectDoesNotExist fırlatabilir.
-                    # Business.objects.filter(owner=user) daha güvenlidir.
                     return Business.objects.filter(owner=user)
-                except Business.DoesNotExist: # Bu aslında filter ile yakalanmaz, boş queryset döner.
+                except Business.DoesNotExist:
                     return Business.objects.none()
-            elif user.is_staff or user.is_superuser: # Admin veya Django staff kullanıcıları tümünü görebilir
+            elif user.is_staff or user.is_superuser:
                 return Business.objects.all()
-        # Diğer kimliği doğrulanmış kullanıcı tipleri (customer, staff olmayan personel) için boş queryset
         return Business.objects.none()
 
     def perform_create(self, serializer):
-        # Yeni işletme oluşturulurken sahibi otomatik olarak istek yapan kullanıcı olmalı
-        # ve user_type 'business_owner' olmalı.
         if self.request.user.user_type == 'business_owner':
-            # Bir işletme sahibinin sadece bir işletmesi olabilir (OneToOneField)
             if hasattr(self.request.user, 'owned_business') and self.request.user.owned_business is not None:
                 raise ValidationError({"detail": "Bu kullanıcıya ait zaten bir işletme mevcut."})
-            serializer.save(owner=self.request.user, is_setup_complete=False) # Yeni işletme için kurulum tamamlanmadı
+            serializer.save(owner=self.request.user, is_setup_complete=False)
         else:
             raise PermissionDenied({"detail": "Sadece işletme sahipleri yeni işletme oluşturabilir."})
 
     @action(detail=True, methods=['post'], url_path='complete-setup', permission_classes=[IsAuthenticated])
     def complete_setup(self, request, pk=None):
-        """
-        İşletme sahibinin kurulum sihirbazını tamamladığını işaretler.
-        """
         business = self.get_object()
-        
         if business.owner != request.user:
             return Response({"detail": "Bu işlem için yetkiniz yok. Sadece işletme sahibi bu işlemi yapabilir."}, status=status.HTTP_403_FORBIDDEN)
-        
         if business.is_setup_complete:
             return Response({"detail": "İşletme kurulumu zaten tamamlanmış."}, status=status.HTTP_400_BAD_REQUEST)
 
         business.is_setup_complete = True
         business.save(update_fields=['is_setup_complete'])
-        serializer = self.get_serializer(business) # Güncellenmiş işletme bilgisini döndür
+        serializer = self.get_serializer(business)
         return Response({"detail": "İşletme kurulumu başarıyla tamamlandı.", "business": serializer.data}, status=status.HTTP_200_OK)
 
     def perform_update(self, serializer):
@@ -86,7 +74,6 @@ class TableViewSet(LimitCheckMixin, viewsets.ModelViewSet):
     serializer_class = TableSerializer
     permission_classes = [IsAuthenticated]
 
-    # Mixin için gerekli alanlar
     limit_resource_name = "Masa"
     limit_field_name = "max_tables"
 
@@ -138,14 +125,13 @@ class TableViewSet(LimitCheckMixin, viewsets.ModelViewSet):
                     table.pos_x = data.get('pos_x')
                     table.pos_y = data.get('pos_y')
                     table.rotation = data.get('rotation', 0.0)
-                    table.layout = layout # Masayı yerleşim planına ata
+                    table.layout = layout
                     table.save(update_fields=['pos_x', 'pos_y', 'rotation', 'layout'])
 
         return Response({'status': 'success', 'message': f'{len(tables_data)} masanın pozisyonu güncellendi.'}, status=status.HTTP_200_OK)
 
-# === DEĞİŞİKLİK BURADA BAŞLIYOR ===
 class BusinessLayoutViewSet(viewsets.GenericViewSet, 
-                              mixins.ListModelMixin, # Listelemeyi (GET /api/layouts/) etkinleştir
+                              mixins.ListModelMixin,
                               mixins.RetrieveModelMixin, 
                               mixins.UpdateModelMixin):
     """
@@ -166,9 +152,6 @@ class BusinessLayoutViewSet(viewsets.GenericViewSet,
         Bu metot, /api/layouts/{pk}/ gibi detay görünümleri için kullanılır.
         """
         queryset = self.get_queryset()
-        # get_object_or_404, queryset'ten tek bir nesne bekler. 
-        # get() ise, birden fazla nesne varsa veya hiç yoksa hata fırlatır.
-        # OneToOne ilişki için bu güvenlidir.
         obj = get_object_or_404(queryset) 
         self.check_object_permissions(self.request, obj)
         return obj
@@ -182,12 +165,7 @@ class BusinessLayoutViewSet(viewsets.GenericViewSet,
         if not user_business:
              return Response({"detail": "Yetkili bir işletmeniz bulunmuyor."}, status=status.HTTP_403_FORBIDDEN)
         
-        # Sinyalin oluşturması beklenir, ancak yoksa diye get_or_create ile garantiye alıyoruz.
         instance, created = BusinessLayout.objects.get_or_create(business=user_business)
-        if created:
-            # İsteğe bağlı: Anında oluşturulduysa log tutabilirsiniz.
-            pass
-
+        
         serializer = self.get_serializer(instance)
         return Response(serializer.data)
-# === DEĞİŞİKLİK BURADA BİTİYOR ===
