@@ -42,7 +42,7 @@ from core.views import (
     PurchaseOrderViewSet,
     ReservationViewSet,
     PublicReservationCreateView,
-    BusinessLayoutViewSet, # BU SATIRIN OLDUĞUNDAN EMİN OLUN
+    BusinessLayoutViewSet, # YENİ IMPORT
 )
 
 # Business Website API Views için importlar
@@ -50,7 +50,7 @@ from core.views.business_website_views import (
     BusinessWebsiteDetailView,
     business_website_preview_api,
     business_public_website_api,
-    business_website_view
+    business_website_view 
 )
 
 from subscriptions.views import VerifyPurchaseView
@@ -77,8 +77,7 @@ router.register(r'schedule', ScheduledShiftViewSet, basename='scheduledshift')
 router.register(r'suppliers', SupplierViewSet, basename='supplier')
 router.register(r'purchase-orders', PurchaseOrderViewSet, basename='purchaseorder')
 router.register(r'reservations', ReservationViewSet, basename='reservation')
-# GÜNCELLEME: BusinessLayoutViewSet router'a kaydedildi
-router.register(r'layouts', BusinessLayoutViewSet, basename='layout')
+router.register(r'layouts', BusinessLayoutViewSet, basename='layout') # YENİ KAYIT
 
 
 # YÖNETİCİ API'leri için ayrı bir DefaultRouter
@@ -98,7 +97,7 @@ urlpatterns = [
     path('ingredients/<int:pk>/history/', IngredientViewSet.as_view({'get': 'history'}), name='ingredient-history'),
     path('ingredients/send-low-stock-report/', IngredientViewSet.as_view({'post': 'send_low_stock_report'}), name='ingredient-send-low-stock-report'),
     
-    # GÜNCELLEME: TableViewSet için özel action URL'i (Bu satır önemli)
+    # TableViewSet için özel action URL'i
     path('tables/bulk-update-positions/', TableViewSet.as_view({'post': 'bulk_update_positions'}), name='table-bulk-update-positions'),
 
     # KDS Siparişleri için URL'ler
