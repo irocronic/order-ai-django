@@ -79,6 +79,7 @@ router.register(r'purchase-orders', PurchaseOrderViewSet, basename='purchaseorde
 router.register(r'reservations', ReservationViewSet, basename='reservation')
 router.register(r'layouts', BusinessLayoutViewSet, basename='layout') # YENİ KAYIT
 
+
 # YÖNETİCİ API'leri için ayrı bir DefaultRouter
 admin_router = DefaultRouter()
 admin_router.register(r'manage-users', AdminUserManagementViewSet, basename='admin-manage-user')
@@ -97,8 +98,7 @@ urlpatterns = [
     path('ingredients/send-low-stock-report/', IngredientViewSet.as_view({'post': 'send_low_stock_report'}), name='ingredient-send-low-stock-report'),
     
     # TableViewSet için özel action URL'i
-    # ---- SİLİNDİ ----
-    # path('tables/bulk-update-positions/', TableViewSet.as_view({'post': 'bulk_update_positions'}), name='table-bulk-update-positions'),
+    path('tables/bulk-update-positions/', TableViewSet.as_view({'post': 'bulk_update_positions'}), name='table-bulk-update-positions'),
 
     # KDS Siparişleri için URL'ler
     re_path(r'^kds-orders/(?P<kds_slug>[-\w]+)/$', KDSOrderViewSet.as_view({'get': 'list'}), name='kdsorder-list'),
