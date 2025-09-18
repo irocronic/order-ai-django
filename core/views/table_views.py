@@ -1,18 +1,23 @@
 # core/views/table_views.py
 
+# core/views/table_views.py
+
 from rest_framework import viewsets, status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from django.db.models import Max
+# Gerekli importlar eklendi
+from django.db import transaction
+from ..utils.order_helpers import get_user_business
 
 # Gerekli importlar
 from subscriptions.models import Subscription, Plan
 from ..mixins import LimitCheckMixin
 from ..models import Table, Business
 from ..serializers import TableSerializer
-from ..utils.order_helpers import get_user_business, PermissionKeys
+from ..utils.order_helpers import PermissionKeys
 
 
 class TableViewSet(LimitCheckMixin, viewsets.ModelViewSet):
@@ -103,7 +108,42 @@ class TableViewSet(LimitCheckMixin, viewsets.ModelViewSet):
         serializer = self.get_serializer(created_tables, many=True)
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
-    # perform_update ve perform_destroy metotlarında değişiklik yok, aynı kalabilirler.
+    # +++ YENİ EKLENEN METOT +++
+    @action(detail=False, methods=['post'], url_path='bulk-update-positions')
+    def bulk_update_positions(self, request, *args, **kwargs):
+        """
+        Birden çok masanın pozisyonunu tek bir istekte günceller.
+        Request body: [{'id': 1, 'pos_x': 100.5, 'pos_y': 50.0, 'rotation': 90.0}, ...]
+        """
+        user_business = get_user_business(request.user)
+        if not user_business:
+            raise PermissionDenied("Bu işlem için yetkili bir işletmeniz bulunmuyor.")
+
+        tables_data = request.data
+        if not isinstance(tables_data, list):
+            raise ValidationError({'detail': 'İstek gövdesi bir liste olmalıdır.'})
+
+        table_ids = [item.get('id') for item in tables_data]
+        tables_to_update = Table.objects.filter(id__in=table_ids, business=user_business)
+
+        if len(table_ids) != tables_to_update.count():
+            raise PermissionDenied("Bazı masalar bulunamadı veya işletmenize ait değil.")
+            
+        layout = user_business.layout
+
+        with transaction.atomic():
+            for data in tables_data:
+                table = next((t for t in tables_to_update if t.id == data.get('id')), None)
+                if table:
+                    table.pos_x = data.get('pos_x')
+                    table.pos_y = data.get('pos_y')
+                    table.rotation = data.get('rotation', 0.0)
+                    table.layout = layout
+                    table.save(update_fields=['pos_x', 'pos_y', 'rotation', 'layout'])
+
+        return Response({'status': 'success', 'message': f'{len(tables_data)} masanın pozisyonu güncellendi.'}, status=status.HTTP_200_OK)
+    # +++ METOT EKLEME SONU +++
+
     def perform_update(self, serializer):
         user = self.request.user
         instance = serializer.instance

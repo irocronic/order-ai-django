@@ -66,69 +66,10 @@ class BusinessViewSet(viewsets.ModelViewSet):
             raise PermissionDenied({"detail": "Bu işletmeyi silme yetkiniz yok."})
         instance.delete()
 
-class TableViewSet(LimitCheckMixin, viewsets.ModelViewSet):
-    """
-    Masaları yönetir. Giriş yapanın işletmesine ait tabloları döndürür.
-    Yeni masa oluştururken abonelik limitlerini kontrol eder.
-    """
-    serializer_class = TableSerializer
-    permission_classes = [IsAuthenticated]
-
-    limit_resource_name = "Masa"
-    limit_field_name = "max_tables"
-
-    def get_queryset(self):
-        user = self.request.user
-        user_business = get_user_business(user)
-
-        if not user_business:
-            return Table.objects.none()
-
-        if user.user_type == 'business_owner':
-            return Table.objects.filter(business=user_business)
-        
-        elif user.user_type == 'staff':
-            if PermissionKeys.TAKE_ORDERS in user.staff_permissions or \
-               PermissionKeys.MANAGE_TABLES in user.staff_permissions:
-                return Table.objects.filter(business=user_business)
-            else:
-                return Table.objects.none()
-        
-        return Table.objects.none()
-
-    @action(detail=False, methods=['post'], url_path='bulk-update-positions')
-    def bulk_update_positions(self, request, *args, **kwargs):
-        """
-        Birden çok masanın pozisyonunu tek bir istekte günceller.
-        Request body: [{'id': 1, 'pos_x': 100.5, 'pos_y': 50.0, 'rotation': 90.0}, ...]
-        """
-        user_business = get_user_business(request.user)
-        if not user_business:
-            raise PermissionDenied("Bu işlem için yetkili bir işletmeniz bulunmuyor.")
-
-        tables_data = request.data
-        if not isinstance(tables_data, list):
-            raise ValidationError({'detail': 'İstek gövdesi bir liste olmalıdır.'})
-
-        table_ids = [item.get('id') for item in tables_data]
-        tables_to_update = Table.objects.filter(id__in=table_ids, business=user_business)
-
-        if len(table_ids) != tables_to_update.count():
-            raise PermissionDenied("Bazı masalar bulunamadı veya işletmenize ait değil.")
-            
-        layout = user_business.layout
-
-        with transaction.atomic():
-            for data in tables_data:
-                table = next((t for t in tables_to_update if t.id == data.get('id')), None)
-                if table:
-                    table.pos_x = data.get('pos_x')
-                    table.pos_y = data.get('pos_y')
-                    table.rotation = data.get('rotation', 0.0)
-                    table.layout = layout
-                    table.save(update_fields=['pos_x', 'pos_y', 'rotation', 'layout'])
-
-        return Response({'status': 'success', 'message': f'{len(tables_data)} masanın pozisyonu güncellendi.'}, status=status.HTTP_200_OK)
+# --- BU BÖLÜM TAMAMEN SİLİNDİ ---
+# class TableViewSet(LimitCheckMixin, viewsets.ModelViewSet):
+#    ...
+# --- SİLME SONU ---
 
 class BusinessLayoutViewSet(viewsets.GenericViewSet, 
                               mixins.ListModelMixin,
