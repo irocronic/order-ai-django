@@ -9,7 +9,7 @@ from django.db import transaction
 from rest_framework.exceptions import PermissionDenied, ValidationError
 
 from ..mixins import LimitCheckMixin
-from ..models import Business, Table, BusinessLayout
+from ..models import Business, Table, BusinessLayout, LayoutElement
 from ..serializers import BusinessSerializer, TableSerializer, BusinessLayoutSerializer, LayoutElementSerializer
 from ..utils.order_helpers import get_user_business, PermissionKeys
 
@@ -66,10 +66,6 @@ class BusinessViewSet(viewsets.ModelViewSet):
             raise PermissionDenied({"detail": "Bu işletmeyi silme yetkiniz yok."})
         instance.delete()
 
-# --- BU BÖLÜM TAMAMEN SİLİNDİ ---
-# class TableViewSet(LimitCheckMixin, viewsets.ModelViewSet):
-#    ...
-# --- SİLME SONU ---
 
 class BusinessLayoutViewSet(viewsets.GenericViewSet, 
                               mixins.ListModelMixin,
@@ -88,20 +84,12 @@ class BusinessLayoutViewSet(viewsets.GenericViewSet,
         return BusinessLayout.objects.none()
 
     def get_object(self):
-        """
-        İşletme sahibinin tek olan yerleşim planını getirir.
-        Bu metot, /api/layouts/{pk}/ gibi detay görünümleri için kullanılır.
-        """
         queryset = self.get_queryset()
         obj = get_object_or_404(queryset) 
         self.check_object_permissions(self.request, obj)
         return obj
 
     def list(self, request, *args, **kwargs):
-        """
-        GET /api/layouts/ isteğini karşılar. 
-        Liste yerine, kullanıcıya ait tek bir yerleşim planı nesnesi döndürür.
-        """
         user_business = get_user_business(request.user)
         if not user_business:
              return Response({"detail": "Yetkili bir işletmeniz bulunmuyor."}, status=status.HTTP_403_FORBIDDEN)
@@ -110,7 +98,6 @@ class BusinessLayoutViewSet(viewsets.GenericViewSet,
         
         serializer = self.get_serializer(instance)
         return Response(serializer.data)
-
 
 
 class LayoutElementViewSet(viewsets.ModelViewSet):
@@ -135,9 +122,6 @@ class LayoutElementViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=['post'], url_path='bulk-update')
     @transaction.atomic
     def bulk_update(self, request, *args, **kwargs):
-        """
-        Tüm yerleşim planı öğelerini tek seferde günceller, ekler veya siler.
-        """
         user_business = get_user_business(request.user)
         if not (user_business and hasattr(user_business, 'layout')):
             raise PermissionDenied("Bu işlem için geçerli bir yerleşim planı bulunamadı.")
@@ -151,27 +135,25 @@ class LayoutElementViewSet(viewsets.ModelViewSet):
         existing_element_ids = set(self.get_queryset().values_list('id', flat=True))
         incoming_element_ids = {item.get('id') for item in elements_data if item.get('id') is not None}
 
-        # Silinecek öğeler
         ids_to_delete = existing_element_ids - incoming_element_ids
         if ids_to_delete:
             LayoutElement.objects.filter(id__in=ids_to_delete).delete()
 
-        # Güncellenecek veya eklenecek öğeler
-        created_elements = []
         for element_data in elements_data:
             element_id = element_data.get('id')
             if element_id in existing_element_ids:
-                # Güncelle
                 instance = LayoutElement.objects.get(id=element_id)
                 serializer = self.get_serializer(instance, data=element_data, partial=True)
                 serializer.is_valid(raise_exception=True)
                 serializer.save()
             else:
-                # Yeni oluştur
                 serializer = self.get_serializer(data=element_data)
                 serializer.is_valid(raise_exception=True)
-                # perform_create'in layout ataması için
                 self.perform_create(serializer)
-                created_elements.append(serializer.data)
 
-        return Response(status=status.HTTP_200_OK)
+        # HATA DÜZELTMESİ: İşlem bittikten sonra layout'a ait tüm elemanların
+        # güncel listesini serializer'dan geçirerek geri döndürüyoruz.
+        # Bu, Flutter tarafının yeni ID'leri almasını ve state'ini senkronize etmesini sağlar.
+        updated_queryset = self.get_queryset()
+        response_serializer = self.get_serializer(updated_queryset, many=True)
+        return Response(response_serializer.data, status=status.HTTP_200_OK)
