@@ -42,7 +42,8 @@ from core.views import (
     PurchaseOrderViewSet,
     ReservationViewSet,
     PublicReservationCreateView,
-    BusinessLayoutViewSet, # YENİ IMPORT
+    BusinessLayoutViewSet,
+    LayoutElementViewSet,  # <-- EKSİK OLAN IMPORT BURAYA EKLENDİ
 )
 
 # Business Website API Views için importlar
@@ -50,7 +51,7 @@ from core.views.business_website_views import (
     BusinessWebsiteDetailView,
     business_website_preview_api,
     business_public_website_api,
-    business_website_view 
+    business_website_view
 )
 
 from subscriptions.views import VerifyPurchaseView
@@ -77,7 +78,8 @@ router.register(r'schedule', ScheduledShiftViewSet, basename='scheduledshift')
 router.register(r'suppliers', SupplierViewSet, basename='supplier')
 router.register(r'purchase-orders', PurchaseOrderViewSet, basename='purchaseorder')
 router.register(r'reservations', ReservationViewSet, basename='reservation')
-router.register(r'layouts', BusinessLayoutViewSet, basename='layout') # YENİ KAYIT
+router.register(r'layouts', BusinessLayoutViewSet, basename='layout')
+router.register(r'layout-elements', LayoutElementViewSet, basename='layoutelement')
 
 
 # YÖNETİCİ API'leri için ayrı bir DefaultRouter
@@ -144,4 +146,7 @@ urlpatterns = [
 
 # Geliştirme ortamında medya dosyalarını sunmak için
 if settings.DEBUG:
+    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
+
+
     urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

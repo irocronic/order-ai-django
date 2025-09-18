@@ -1,7 +1,7 @@
 # core/serializers/business_serializers.py
 
 from rest_framework import serializers
-from ..models import Business, Table, BusinessLayout
+from ..models import Business, Table, BusinessLayout, LayoutElement
 
 class BusinessSerializer(serializers.ModelSerializer):
     """
@@ -23,20 +23,39 @@ class TableSerializer(serializers.ModelSerializer):
         read_only_fields = ['uuid', 'business'] # layout ve business genellikle otomatik atanır
 
 
+
+
+
+
+# === YENİ SERIALIZER BAŞLANGICI ===
+class LayoutElementSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = LayoutElement
+        fields = [
+            'id', 'layout', 'element_type', 'pos_x', 'pos_y',
+            'width', 'height', 'rotation', 'style_properties'
+        ]
+        read_only_fields = ['layout']
+# === YENİ SERIALIZER SONU ===
+
+
+
+
+
 # === DEĞİŞİKLİK BURADA BAŞLIYOR ===
 
 class BusinessLayoutSerializer(serializers.ModelSerializer):
     """
-    İşletme yerleşim planını ve üzerindeki masaları serileştirir.
-    Artık işletmeye ait TÜM masaları getirecek şekilde güncellendi.
+    İşletme yerleşim planını, üzerindeki masaları ve dekoratif öğeleri serileştirir.
     """
-    # Mevcut 'tables_on_layout' alanını, tüm masaları getirecek özel bir metotla değiştiriyoruz.
-    # Flutter tarafında değişiklik yapmamak için alan adını aynı tutuyoruz.
     tables_on_layout = serializers.SerializerMethodField()
+    # === YENİ ALAN EKLENDİ ===
+    elements = LayoutElementSerializer(many=True, read_only=True)
 
     class Meta:
         model = BusinessLayout
-        fields = ['id', 'business', 'width', 'height', 'background_image_url', 'updated_at', 'tables_on_layout']
+        # === 'elements' ALANI LİSTEYE EKLENDİ ===
+        fields = ['id', 'business', 'width', 'height', 'background_image_url', 'updated_at', 'tables_on_layout', 'elements']
         read_only_fields = ['business', 'updated_at']
 
     def get_tables_on_layout(self, obj: BusinessLayout):

@@ -385,6 +385,46 @@ class BusinessLayout(models.Model):
 
 
 
+class LayoutElement(models.Model):
+    """
+    İşletme yerleşim planındaki metin, şekil gibi dekoratif öğeleri temsil eder.
+    """
+    ELEMENT_TYPE_CHOICES = (
+        ('text', 'Metin Etiketi'),
+        ('shape', 'Şekil'),
+    )
+
+    SHAPE_TYPE_CHOICES = (
+        ('rectangle', 'Dikdörtgen'),
+        ('ellipse', 'Elips/Daire'),
+        ('line', 'Çizgi'),
+    )
+
+    layout = models.ForeignKey(BusinessLayout, on_delete=models.CASCADE, related_name='elements')
+    element_type = models.CharField(max_length=10, choices=ELEMENT_TYPE_CHOICES, default='text')
+    
+    # Konum ve Boyutlandırma
+    pos_x = models.FloatField(default=50.0)
+    pos_y = models.FloatField(default=50.0)
+    width = models.FloatField(default=150.0)
+    height = models.FloatField(default=40.0)
+    rotation = models.FloatField(default=0.0, help_text="Dönme açısı (derece)")
+
+    # İçerik ve Stil
+    style_properties = models.JSONField(default=dict, help_text="Öğenin stil özelliklerini içeren JSON. Örn: {'content': 'Deniz Tarafı', 'fontSize': 16, 'color': '#FFFFFF', 'shapeType': 'rectangle'}")
+
+    class Meta:
+        verbose_name = "Yerleşim Planı Öğesi"
+        verbose_name_plural = "Yerleşim Planı Öğeleri"
+        ordering = ['id']
+
+    def __str__(self):
+        return f"{self.get_element_type_display()} - {self.layout.business.name}"
+
+
+
+
+
 class Table(models.Model):
     business = models.ForeignKey(Business, on_delete=models.CASCADE, related_name='tables')
     table_number = models.PositiveIntegerField()
