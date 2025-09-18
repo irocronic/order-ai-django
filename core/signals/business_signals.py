@@ -5,7 +5,7 @@ from django.dispatch import receiver
 from datetime import time
 
 # GÜNCELLENMİŞ: CustomUser ve Business modellerini import ediyoruz
-from ..models import Business, Shift, CustomUser
+from ..models import Business, Shift, CustomUser, BusinessLayout
 
 @receiver(post_save, sender=Business)
 def create_default_shift_for_business(sender, instance, created, **kwargs):
@@ -42,3 +42,13 @@ def deactivate_staff_on_business_owner_deactivation(sender, instance, **kwargs):
                         print(f"SİNYAL TETİKLENDİ: '{business.name}' işletmesi pasifleştirildiği için {deactivated_count} personelin hesabı da pasifleştirildi.")
             except Business.DoesNotExist:
                 pass
+
+
+
+@receiver(post_save, sender=Business)
+def create_layout_for_new_business(sender, instance, created, **kwargs):
+    """Yeni bir işletme oluşturulduğunda, ona ait bir yerleşim planı da oluşturur."""
+    if created:
+        if not hasattr(instance, 'layout'):
+            BusinessLayout.objects.create(business=instance)
+            print(f"SİNYAL TETİKLENDİ: '{instance.name}' işletmesi için varsayılan yerleşim planı oluşturuldu.")

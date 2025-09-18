@@ -367,10 +367,41 @@ class KDSScreen(models.Model):
             self.slug = unique_slug
         super().save(*args, **kwargs)
 
+
+class BusinessLayout(models.Model):
+    """İşletmenin masa yerleşim düzenini temsil eder."""
+    business = models.OneToOneField(Business, on_delete=models.CASCADE, related_name='layout')
+    width = models.FloatField(default=800.0, help_text="Yerleşim planı tuvalinin genişliği")
+    height = models.FloatField(default=600.0, help_text="Yerleşim planı tuvalinin yüksekliği")
+    background_image_url = models.URLField(max_length=1024, blank=True, null=True, verbose_name="Arka Plan Görseli URL'i")
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"{self.business.name} - Yerleşim Planı"
+
+    class Meta:
+        verbose_name = "İşletme Yerleşim Planı"
+        verbose_name_plural = "İşletme Yerleşim Planları"
+
+
+
 class Table(models.Model):
     business = models.ForeignKey(Business, on_delete=models.CASCADE, related_name='tables')
     table_number = models.PositiveIntegerField()
     uuid = models.UUIDField(default=uuid.uuid4, editable=False, unique=True)
+    
+    # --- YENİ EKLENEN ALANLAR ---
+    layout = models.ForeignKey(
+        BusinessLayout, 
+        on_delete=models.CASCADE, 
+        related_name='tables_on_layout', 
+        null=True, 
+        blank=True
+    )
+    pos_x = models.FloatField(null=True, blank=True, verbose_name="X Koordinatı")
+    pos_y = models.FloatField(null=True, blank=True, verbose_name="Y Koordinatı")
+    rotation = models.FloatField(default=0.0, verbose_name="Dönme Açısı (Derece)")
+    # --- YENİ ALANLAR SONU ---
 
     class Meta:
         unique_together = ('business', 'table_number')
@@ -1178,5 +1209,3 @@ class Reservation(models.Model):
 
     def __str__(self):
         return f"Rez. #{self.id}: {self.customer_name} - Masa {self.table.table_number} ({self.reservation_time.strftime('%d.%m %H:%M')})"
-
-# === YENİ MODEL SONU ===

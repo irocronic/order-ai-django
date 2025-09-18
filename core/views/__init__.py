@@ -5,7 +5,7 @@ from .auth_views import (
     PasswordResetRequestView,
     PasswordResetCodeConfirmView,
 )
-from .business_views import BusinessViewSet
+from .business_views import BusinessViewSet, BusinessLayoutViewSet # YENİ: BusinessLayoutViewSet eklendi
 from .menu_views import CategoryViewSet, MenuItemViewSet, MenuItemVariantViewSet
 from .order_views import OrderViewSet, OrderItemViewSet
 from .payment_views import PaymentViewSet
@@ -54,6 +54,7 @@ __all__ = [
     'PasswordResetRequestView',
     'PasswordResetCodeConfirmView',
     'BusinessViewSet',
+    'BusinessLayoutViewSet', # YENİ: __all__ listesine eklendi
     'CategoryViewSet',
     'MenuItemViewSet',
     'MenuItemVariantViewSet',

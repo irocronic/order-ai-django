@@ -17,7 +17,7 @@ from .models import (
     STAFF_PERMISSION_CHOICES, NOTIFICATION_EVENT_TYPES,
     UnitOfMeasure, Ingredient, RecipeItem, IngredientStockMovement,
     Supplier, PurchaseOrder, BusinessWebsite, PurchaseOrderItem,
-    Reservation  # Hata buradaydı, düzeltildi.
+    Reservation, BusinessLayout
 )
 # =============================================================
 
@@ -236,10 +236,12 @@ class BusinessAdmin(admin.ModelAdmin):
 
 @admin.register(Table)
 class TableAdmin(admin.ModelAdmin):
-    list_display = ('table_number', 'business', 'uuid')
-    list_filter = ('business',)
+    # pos_x ve pos_y alanlarını list_display'e ekleyin
+    list_display = ('table_number', 'business', 'uuid', 'pos_x', 'pos_y', 'rotation')
+    list_filter = ('business', 'layout')
     search_fields = ('table_number', 'business__name', 'uuid')
-    list_editable = ('table_number',)
+    # list_editable alanına yeni alanları ekleyin
+    list_editable = ('table_number', 'pos_x', 'pos_y', 'rotation')
     list_display_links = ('uuid',)
 
 
@@ -852,3 +854,19 @@ class BusinessWebsiteAdmin(admin.ModelAdmin):
             'classes': ('collapse',)
         })
     )
+
+
+class TableInlineAdmin(admin.TabularInline):
+    model = Table
+    extra = 0
+    fields = ('table_number', 'pos_x', 'pos_y', 'rotation')
+    readonly_fields = ('table_number',)
+    can_delete = False
+
+@admin.register(BusinessLayout)
+class BusinessLayoutAdmin(admin.ModelAdmin):
+    list_display = ('business', 'width', 'height', 'updated_at')
+    inlines = [TableInlineAdmin]
+    search_fields = ('business__name',)
+
+

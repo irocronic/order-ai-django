@@ -40,9 +40,9 @@ from core.views import (
     RecipeItemViewSet,
     SupplierViewSet,
     PurchaseOrderViewSet,
-    # === YENİ: Rezervasyon View'ları import edildi ===
     ReservationViewSet,
     PublicReservationCreateView,
+    BusinessLayoutViewSet, # YENİ IMPORT
 )
 
 # Business Website API Views için importlar
@@ -76,8 +76,8 @@ router.register(r'shifts', ShiftViewSet, basename='shift')
 router.register(r'schedule', ScheduledShiftViewSet, basename='scheduledshift')
 router.register(r'suppliers', SupplierViewSet, basename='supplier')
 router.register(r'purchase-orders', PurchaseOrderViewSet, basename='purchaseorder')
-# === YENİ: ReservationViewSet router'a eklendi ===
 router.register(r'reservations', ReservationViewSet, basename='reservation')
+router.register(r'layouts', BusinessLayoutViewSet, basename='layout') # YENİ KAYIT
 
 
 # YÖNETİCİ API'leri için ayrı bir DefaultRouter
@@ -96,6 +96,9 @@ urlpatterns = [
     path('ingredients/<int:pk>/adjust-stock/', IngredientViewSet.as_view({'post': 'adjust_stock'}), name='ingredient-adjust-stock'),
     path('ingredients/<int:pk>/history/', IngredientViewSet.as_view({'get': 'history'}), name='ingredient-history'),
     path('ingredients/send-low-stock-report/', IngredientViewSet.as_view({'post': 'send_low_stock_report'}), name='ingredient-send-low-stock-report'),
+    
+    # TableViewSet için özel action URL'i
+    path('tables/bulk-update-positions/', TableViewSet.as_view({'post': 'bulk_update_positions'}), name='table-bulk-update-positions'),
 
     # KDS Siparişleri için URL'ler
     re_path(r'^kds-orders/(?P<kds_slug>[-\w]+)/$', KDSOrderViewSet.as_view({'get': 'list'}), name='kdsorder-list'),
@@ -135,7 +138,7 @@ urlpatterns = [
     path('business/website/preview/', business_website_preview_api, name='business-website-preview'),
     path('public/business/<slug:business_slug>/', business_public_website_api, name='business-public-website'),
     
-    # === YENİ: Herkese Açık Rezervasyon URL'i ===
+    # Herkese Açık Rezervasyon URL'i
     path('public/business/<slug:business_slug>/reservations/', PublicReservationCreateView.as_view(), name='public-reservation-create'),
 ]
 

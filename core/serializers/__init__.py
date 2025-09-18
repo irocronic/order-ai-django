@@ -12,6 +12,7 @@ from .user_serializers import (
 from .business_serializers import (
     BusinessSerializer,
     TableSerializer,
+    BusinessLayoutSerializer,  # <-- eklendi
 )
 from .menu_serializers import (
     CategorySerializer,
@@ -83,6 +84,7 @@ __all__ = [
     'PasswordResetCodeConfirmSerializer',
     'BusinessSerializer',
     'TableSerializer',
+    'BusinessLayoutSerializer',  # <-- eklendi
     'CategorySerializer',
     'MenuItemVariantSerializer',
     'MenuItemSerializer',
