@@ -143,7 +143,11 @@ class TableViewSet(LimitCheckMixin, viewsets.ModelViewSet):
 
         return Response({'status': 'success', 'message': f'{len(tables_data)} masanın pozisyonu güncellendi.'}, status=status.HTTP_200_OK)
 
-class BusinessLayoutViewSet(viewsets.GenericViewSet, mixins.RetrieveModelMixin, mixins.UpdateModelMixin):
+# === DEĞİŞİKLİK BURADA BAŞLIYOR ===
+class BusinessLayoutViewSet(viewsets.GenericViewSet, 
+                              mixins.ListModelMixin, # Listelemeyi (GET /api/layouts/) etkinleştir
+                              mixins.RetrieveModelMixin, 
+                              mixins.UpdateModelMixin):
     """
     İşletme sahibinin kendi yerleşim planını görüntülemesini ve güncellemesini sağlar.
     """
@@ -152,15 +156,38 @@ class BusinessLayoutViewSet(viewsets.GenericViewSet, mixins.RetrieveModelMixin, 
 
     def get_queryset(self):
         user = self.request.user
-        if user.is_authenticated and hasattr(user, 'owned_business'):
+        if user.is_authenticated and hasattr(user, 'owned_business') and user.owned_business is not None:
             return BusinessLayout.objects.filter(business=user.owned_business)
         return BusinessLayout.objects.none()
 
     def get_object(self):
         """
         İşletme sahibinin tek olan yerleşim planını getirir.
+        Bu metot, /api/layouts/{pk}/ gibi detay görünümleri için kullanılır.
         """
         queryset = self.get_queryset()
-        obj = get_object_or_404(queryset)
+        # get_object_or_404, queryset'ten tek bir nesne bekler. 
+        # get() ise, birden fazla nesne varsa veya hiç yoksa hata fırlatır.
+        # OneToOne ilişki için bu güvenlidir.
+        obj = get_object_or_404(queryset) 
         self.check_object_permissions(self.request, obj)
         return obj
+
+    def list(self, request, *args, **kwargs):
+        """
+        GET /api/layouts/ isteğini karşılar. 
+        Liste yerine, kullanıcıya ait tek bir yerleşim planı nesnesi döndürür.
+        """
+        user_business = get_user_business(request.user)
+        if not user_business:
+             return Response({"detail": "Yetkili bir işletmeniz bulunmuyor."}, status=status.HTTP_403_FORBIDDEN)
+        
+        # Sinyalin oluşturması beklenir, ancak yoksa diye get_or_create ile garantiye alıyoruz.
+        instance, created = BusinessLayout.objects.get_or_create(business=user_business)
+        if created:
+            # İsteğe bağlı: Anında oluşturulduysa log tutabilirsiniz.
+            pass
+
+        serializer = self.get_serializer(instance)
+        return Response(serializer.data)
+# === DEĞİŞİKLİK BURADA BİTİYOR ===
