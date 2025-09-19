@@ -332,8 +332,10 @@
                         initialLayoutData = data.layout;
                         window.addEventListener('resize', () => renderLayout(initialLayoutData));
                         const today = formatDate(new Date());
-                        datePicker.value = today;
-                        fetchTableAvailability(today);
+                        if(datePicker) {
+                            datePicker.value = today;
+                            fetchTableAvailability(today);
+                        }
                     } else {
                         const wrapper = document.getElementById('layout-container-wrapper');
                         if(wrapper) wrapper.style.display = 'none';
@@ -363,37 +365,42 @@
                         menuContent.innerHTML = html;
                     }
 
-                    // YENİ: Harita ve Sosyal Medya Linklerini Yükle
                     if (website.show_map && website.map_latitude && website.map_longitude) {
                         const mapContainer = document.getElementById('map-container-inner');
-                        const iframe = document.createElement('iframe');
-                        iframe.loading = 'lazy';
-                        iframe.allowFullscreen = true;
-                        iframe.style.width = '100%';
-                        iframe.style.height = '100%';
-                        iframe.style.border = '0';
-                        iframe.src = `https://www.google.com/maps?q=${website.map_latitude},${website.map_longitude}&hl=tr&z=${website.map_zoom_level || 15}&output=embed`;
-                        mapContainer.appendChild(iframe);
+                        if (mapContainer) {
+                            const iframe = document.createElement('iframe');
+                            iframe.loading = 'lazy';
+                            iframe.allowFullscreen = true;
+                            iframe.style.width = '100%';
+                            iframe.style.height = '100%';
+                            iframe.style.border = '0';
+                            iframe.src = `https://maps.google.com/maps?q=${website.map_latitude},${website.map_longitude}&hl=tr&z=${website.map_zoom_level || 15}&output=embed`;
+                            mapContainer.appendChild(iframe);
+                        }
                     }
 
                     const socialLinksContainer = document.getElementById('social-links-container');
-                    let socialHtml = '';
-                    if(website.facebook_url) socialHtml += `<a href="${website.facebook_url}" target="_blank" title="Facebook"><img src="https://simpleicons.org/icons/facebook.svg" alt="Facebook"></a>`;
-                    if(website.instagram_url) socialHtml += `<a href="${website.instagram_url}" target="_blank" title="Instagram"><img src="https://simpleicons.org/icons/instagram.svg" alt="Instagram"></a>`;
-                    if(website.twitter_url) socialHtml += `<a href="${website.twitter_url}" target="_blank" title="Twitter/X"><img src="https://simpleicons.org/icons/x.svg" alt="X"></a>`;
-                    if (socialLinksContainer) socialLinksContainer.innerHTML = socialHtml;
+                    if (socialLinksContainer) {
+                        let socialHtml = '';
+                        if(website.facebook_url) socialHtml += `<a href="${website.facebook_url}" target="_blank" title="Facebook"><img src="https://simpleicons.org/icons/facebook.svg" alt="Facebook"></a>`;
+                        if(website.instagram_url) socialHtml += `<a href="${website.instagram_url}" target="_blank" title="Instagram"><img src="https://simpleicons.org/icons/instagram.svg" alt="Instagram"></a>`;
+                        if(website.twitter_url) socialHtml += `<a href="${website.twitter_url}" target="_blank" title="Twitter/X"><img src="https://simpleicons.org/icons/x.svg" alt="X"></a>`;
+                        socialLinksContainer.innerHTML = socialHtml;
+                    }
 
                 } catch (error) {
                     console.error('Veri alınırken hata:', error);
                 }
             }
 
-            datePicker.addEventListener('change', (event) => {
-                const selectedDate = event.target.value;
-                if (selectedDate) {
-                    fetchTableAvailability(selectedDate);
-                }
-            });
+            if (datePicker) {
+                datePicker.addEventListener('change', (event) => {
+                    const selectedDate = event.target.value;
+                    if (selectedDate) {
+                        fetchTableAvailability(selectedDate);
+                    }
+                });
+            }
 
             const reservationForm = document.getElementById('reservation-form');
             const reservationFormContainer = document.getElementById('reservation-form-container');
@@ -425,7 +432,7 @@
                     };
 
                     try {
-                        const response = await fetch(`{{ api_url }}reservations/`, {
+                        const response = await fetch(`/api/public/business/{{ business.slug }}/reservations/`, {
                             method: 'POST',
                             headers: {'Content-Type': 'application/json'},
                             body: JSON.stringify(payload),
@@ -434,7 +441,6 @@
                         const responseData = await response.json();
 
                         if (response.ok) {
-                            // GÜNCELLEME: İstenen yeni metin ve form gizleme
                             reservationAlert.innerHTML = '<h4>Teşekkürler!</h4><p>Rezervasyon talebiniz tarafımıza iletilmiştir. Onay süreci için ekibimiz en kısa süre içerisinde sizinle iletişime geçecektir.</p>';
                             reservationAlert.className = 'alert alert-success';
                             if (reservationFormContainer) {
