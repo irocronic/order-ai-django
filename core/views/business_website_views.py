@@ -4,7 +4,7 @@ from rest_framework import generics, status, permissions
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 from django.shortcuts import get_object_or_404, render
-from django.http import Http44
+from django.http import Http404
 # === YENİ: Table ve BusinessLayout modellerini import ediyoruz ===
 from ..models import Business, BusinessWebsite, MenuItem, Category, Table, BusinessLayout
 from ..serializers.business_website_serializers import (
