@@ -4,14 +4,16 @@ from rest_framework import generics, status, permissions
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 from django.shortcuts import get_object_or_404, render
-from django.http import Http404
-# === YENİ: Table modelini import ediyoruz ===
-from ..models import Business, BusinessWebsite, MenuItem, Category, Table
+from django.http import Http44
+# === YENİ: Table ve BusinessLayout modellerini import ediyoruz ===
+from ..models import Business, BusinessWebsite, MenuItem, Category, Table, BusinessLayout
 from ..serializers.business_website_serializers import (
     BusinessWebsiteSerializer, 
     BusinessWebsiteUpdateSerializer,
     BusinessPublicSerializer
 )
+# === YENİ: Yerleşim planı için serializer'ları import ediyoruz ===
+from ..serializers.business_serializers import BusinessLayoutSerializer
 
 class BusinessWebsiteDetailView(generics.RetrieveUpdateAPIView):
     """
@@ -39,17 +41,24 @@ def business_public_website_api(request, business_slug):
     Herkese açık işletme web sitesi API'si (JSON)
     """
     try:
-        business = get_object_or_404(Business.objects.select_related('website'), slug=business_slug)
+        business = get_object_or_404(
+            Business.objects.select_related('website', 'layout'), 
+            slug=business_slug
+        )
         if not hasattr(business, 'website') or not business.website.is_active:
             return Response({'error': 'Web sitesi bulunamadı veya aktif değil'}, status=status.HTTP_404_NOT_FOUND)
         
         categories = Category.objects.filter(business=business, parent=None).order_by('name')
         menu_items = MenuItem.objects.filter(business=business, is_active=True).select_related('category')
         
-        # === YENİ: İşletmeye ait masaları çekiyoruz ===
         tables = Table.objects.filter(business=business).order_by('table_number')
         tables_data = [{'id': table.id, 'table_number': table.table_number} for table in tables]
-        # ==========================================
+        
+        # === YENİ: İşletmenin yerleşim planı verisini çekiyoruz ===
+        layout_data = None
+        if hasattr(business, 'layout'):
+            # BusinessLayoutSerializer, ilişkili masaları ve elemanları zaten içeriyor.
+            layout_data = BusinessLayoutSerializer(business.layout).data
 
         business_serializer = BusinessPublicSerializer(business)
         menu_data = {}
@@ -71,9 +80,9 @@ def business_public_website_api(request, business_slug):
         response_data = {
             'business': business_serializer.data,
             'menu': menu_data,
-            # === YENİ: Masaları yanıta ekliyoruz ===
             'tables': tables_data,
-            # =======================================
+            # === YENİ: Yerleşim planını yanıta ekliyoruz ===
+            'layout': layout_data,
             'meta': {
                 'total_categories': len(menu_data),
                 'total_items': len(menu_items)
