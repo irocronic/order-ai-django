@@ -43,7 +43,7 @@ from core.views import (
     ReservationViewSet,
     PublicReservationCreateView,
     BusinessLayoutViewSet,
-    LayoutElementViewSet,  # <-- EKSİK OLAN IMPORT BURAYA EKLENDİ
+    LayoutElementViewSet,
 )
 
 # Business Website API Views için importlar
@@ -53,6 +53,8 @@ from core.views.business_website_views import (
     business_public_website_api,
     business_website_view
 )
+# YENİ EKLENEN IMPORT
+from core.views.reservation_views import TableAvailabilityAPIView
 
 from subscriptions.views import VerifyPurchaseView
 
@@ -140,13 +142,13 @@ urlpatterns = [
     path('business/website/preview/', business_website_preview_api, name='business-website-preview'),
     path('public/business/<slug:business_slug>/', business_public_website_api, name='business-public-website'),
     
+    # YENİ EKLENEN URL: Masa uygunluk durumunu sorgulamak için
+    path('public/business/<slug:business_slug>/table-availability/', TableAvailabilityAPIView.as_view(), name='public-table-availability'),
+
     # Herkese Açık Rezervasyon URL'i
     path('public/business/<slug:business_slug>/reservations/', PublicReservationCreateView.as_view(), name='public-reservation-create'),
 ]
 
 # Geliştirme ortamında medya dosyalarını sunmak için
 if settings.DEBUG:
-    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
-
-
     urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

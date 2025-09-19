@@ -15,91 +15,62 @@
         :root {
             --primary-color: {{ website.primary_color|default:'#4A90E2' }};
             --secondary-color: {{ website.secondary_color|default:'#50E3C2' }};
-            --accent-color: #ffaf40;
+            --available-color: #28a745; /* Yeşil - Müsait */
+            --reserved-color: #dc3545;  /* Kırmızı - Dolu */
             --text-color: #333;
             --font-family-sans-serif: 'Poppins', sans-serif;
             --font-family-serif: 'Playfair Display', serif;
         }
-
-        body {
-            font-family: var(--font-family-sans-serif);
-            padding-top: 56px; /* Navbar için boşluk */
-        }
-
+        body { font-family: var(--font-family-sans-serif); padding-top: 56px; }
         .bg-primary { background-color: var(--primary-color) !important; }
         .text-primary { color: var(--primary-color) !important; }
         .btn-primary { background-color: var(--primary-color); border-color: var(--primary-color); }
         .btn-secondary { background-color: var(--secondary-color); border-color: var(--secondary-color); }
-        
         h1, h2, h3 { font-family: var(--font-family-serif); }
-        
-        .hero {
-            background-size: cover;
-            background-position: center;
-            color: white;
-            padding: 8rem 0;
-            text-shadow: 2px 2px 8px rgba(0,0,0,0.7);
-        }
-        
+        .hero { background-size: cover; background-position: center; color: white; padding: 8rem 0; text-shadow: 2px 2px 8px rgba(0,0,0,0.7); }
         .section { padding: 4rem 0; }
-        
-        .card-menu-item {
-            border: none;
-            transition: transform 0.3s ease, box-shadow 0.3s ease;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
-            border-radius: 12px;
-        }
-        .card-menu-item:hover {
-            transform: translateY(-5px);
-            box-shadow: 0 8px 25px rgba(0,0,0,0.15);
-        }
+        .card-menu-item { border: none; transition: transform 0.3s ease, box-shadow 0.3s ease; box-shadow: 0 4px 15px rgba(0,0,0,0.1); border-radius: 12px; }
+        .card-menu-item:hover { transform: translateY(-5px); box-shadow: 0 8px 25px rgba(0,0,0,0.15); }
 
-        /* === GÜNCELLENMİŞ MASA DÜZENİ STİLLERİ === */
         #layout-container {
             position: relative;
             border: 2px solid #e0e0e0;
             background-color: #fdfdfd;
-            background-image: 
-                linear-gradient(45deg, #f9f9f9 25%, transparent 25%), 
-                linear-gradient(-45deg, #f9f9f9 25%, transparent 25%),
-                linear-gradient(45deg, transparent 75%, #f9f9f9 75%),
-                linear-gradient(-45deg, transparent 75%, #f9f9f9 75%);
-            background-size: 20px 20px;
-            overflow: hidden; /* Dışarı taşmaları engelle */
+            overflow: hidden;
             margin: 20px auto;
             box-shadow: 0 4px 12px rgba(0,0,0,0.1);
             border-radius: 8px;
         }
-
         .layout-item {
             position: absolute;
             display: flex;
             align-items: center;
             justify-content: center;
             box-sizing: border-box;
-            cursor: default;
-            /* Dönüşümün merkezde olmasını sağlar */
             transform-origin: center center; 
         }
-
         .table-item {
             font-weight: bold;
             font-size: 14px;
             color: #fff;
-            background-color: var(--primary-color);
-            border: 2px solid rgba(0,0,0,0.2);
             box-shadow: 0 2px 5px rgba(0,0,0,0.15);
-            border-radius: 8px; /* Varsayılan kare masalar için */
+            border-radius: 8px;
+            transition: background-color 0.3s ease, border-color 0.3s ease;
         }
-
-        .element-text {
-            background-color: transparent;
-            font-weight: bold;
+        /* YENİ EKLENEN STİLLER */
+        .table-item.available {
+            background-color: var(--available-color);
+            border: 2px solid #1f7a35;
+            cursor: pointer;
         }
-
-        .element-shape {
-             /* Stil özellikleri JS tarafından dinamik olarak atanacak */
+        .table-item.reserved {
+            background-color: var(--reserved-color);
+            border: 2px solid #a71d2a;
+            cursor: not-allowed;
+            opacity: 0.8;
         }
+        .element-text { background-color: transparent; font-weight: bold; }
+        .element-shape {}
     </style>
 </head>
 <body>
@@ -132,8 +103,7 @@
     <section id="menu" class="section">
         <div class="container">
             <h2 class="text-center mb-5">Menümüz</h2>
-            <div id="menu-content">
-                </div>
+            <div id="menu-content"></div>
         </div>
     </section>
     {% endif %}
@@ -145,11 +115,13 @@
             <div class="row align-items-center">
                 <div class="col-lg-7 mb-4 mb-lg-0">
                     <h4 class="text-center mb-3">Masa Düzeni</h4>
-                    <div id="layout-container-wrapper">
-                        <div id="layout-container" style="width: 100%; aspect-ratio: 4 / 3;">
-                            </div>
+                    <div class="mb-3">
+                        <label for="reservation-date-picker" class="form-label"><b>Tarih Seçerek Masa Durumunu Görüntüleyin:</b></label>
+                        <input type="date" id="reservation-date-picker" class="form-control">
                     </div>
-                    <p class="text-center text-muted mt-2 small">Rezervasyon yapmak için sağdaki formdan masa seçebilirsiniz.</p>
+                    <div id="layout-container-wrapper">
+                        <div id="layout-container" style="width: 100%; aspect-ratio: 4 / 3;"></div>
+                    </div>
                 </div>
                 <div class="col-lg-5">
                     <h4>Rezervasyon Formu</h4>
@@ -171,13 +143,13 @@
                             <div class="col-md-6 mb-3">
                                 <label for="table" class="form-label">Masa Seçimi</label>
                                 <select class="form-select" id="table" required>
-                                    <option value="" disabled selected>Masa Seçin</option>
-                                    </select>
+                                    <option value="" disabled selected>Önce Tarih Seçin</option>
+                                </select>
                             </div>
                         </div>
                         <div class="mb-3">
-                            <label for="reservation_time" class="form-label">Tarih ve Saat</label>
-                            <input type="datetime-local" class="form-control" id="reservation_time" required>
+                            <label for="reservation_time" class="form-label">Saat</label>
+                            <input type="time" class="form-control" id="reservation_time" required>
                         </div>
                         <div class="mb-3">
                             <label for="notes" class="form-label">Notlarınız (isteğe bağlı)</label>
@@ -218,7 +190,7 @@
                         height="300" 
                         frameborder="0" 
                         style="border:0; border-radius: 8px;" 
-                        src="https://maps.google.com/maps?q={{ website.map_latitude }},{{ website.map_longitude }}&hl=tr&z={{ website.map_zoom_level }}&output=embed" 
+                        src="https://www.google.com/maps?q={{ website.map_latitude }},{{ website.map_longitude }}&hl=tr&z={{ website.map_zoom_level }}&output=embed" 
                         allowfullscreen>
                     </iframe>
                 </div>
@@ -236,45 +208,43 @@
     <script>
         document.addEventListener('DOMContentLoaded', function() {
             const apiUrl = '{{ api_url }}';
+            let initialLayoutData = null; // Layout verisini globalde tutmak için
+            let allTables = []; // Tüm masaları tutmak için
 
-            // === GÜNCELLENMİŞ RENDER FONKSİYONU ===
-            function renderLayout(layoutData) {
+            const datePicker = document.getElementById('reservation-date-picker');
+
+            function formatDate(date) {
+                const d = new Date(date);
+                const year = d.getFullYear();
+                const month = String(d.getMonth() + 1).padStart(2, '0');
+                const day = String(d.getDate()).padStart(2, '0');
+                return `${year}-${month}-${day}`;
+            }
+
+            // GÜNCELLENMİŞ RENDER FONKSİYONU
+            function renderLayout(layoutData, reservedTableIds = []) {
+                initialLayoutData = layoutData; // Gelen veriyi sakla
                 const container = document.getElementById('layout-container');
-                if (!container || !layoutData) {
-                    console.error('Layout container veya data bulunamadı.');
-                    const wrapper = document.getElementById('layout-container-wrapper');
-                    if(wrapper) wrapper.style.display = 'none';
-                    return;
-                }
+                if (!container || !layoutData) return;
 
                 container.innerHTML = '';
                 const containerWidth = container.clientWidth;
-                if (layoutData.width <= 0) {
-                    console.error('Layout data width sıfır veya negatif, render edilemiyor.');
-                    return;
-                }
+                if (layoutData.width <= 0) return;
                 const scaleX = containerWidth / layoutData.width;
-
                 const containerHeight = layoutData.height * scaleX;
                 container.style.height = `${containerHeight}px`;
-                if (layoutData.height <= 0) {
-                    console.error('Layout data height sıfır veya negatif, render edilemiyor.');
-                    return;
-                }
+                if (layoutData.height <= 0) return;
                 const scaleY = containerHeight / layoutData.height;
-
-                // Daha iyi ölçeklendirme için en küçük oranı kullan
                 const scale = Math.min(scaleX, scaleY);
 
-                // Masaları render et
                 (layoutData.tables_on_layout || []).forEach(table => {
                     if (table.pos_x !== null && table.pos_y !== null) {
                         const tableEl = document.createElement('div');
-                        tableEl.className = 'layout-item table-item';
+                        const isReserved = reservedTableIds.includes(table.id);
+                        tableEl.className = `layout-item table-item ${isReserved ? 'reserved' : 'available'}`;
                         tableEl.textContent = `${table.table_number}`;
                         tableEl.style.left = `${table.pos_x * scaleX}px`;
                         tableEl.style.top = `${table.pos_y * scaleY}px`;
-                        // Masa boyutunu Flutter'daki gibi sabit ve ölçekli yapalım
                         tableEl.style.width = `${45 * scale}px`; 
                         tableEl.style.height = `${45 * scale}px`;
                         tableEl.style.fontSize = `${14 * scale}px`;
@@ -283,7 +253,6 @@
                     }
                 });
 
-                // Dekoratif elemanları render et
                 (layoutData.elements || []).forEach(element => {
                     const el = document.createElement('div');
                     el.className = 'layout-item';
@@ -292,29 +261,53 @@
                     el.style.width = `${element.width * scaleX}px`;
                     el.style.height = `${element.height * scaleY}px`;
                     el.style.transform = `rotate(${element.rotation || 0}deg)`;
-                    
                     const styles = element.style_properties || {};
-
                     if(element.element_type === 'text') {
                         el.className += ' element-text';
                         el.textContent = styles.content || '';
                         el.style.fontSize = `${(styles.fontSize || 14) * scale}px`;
                         el.style.color = styles.color || '#000000';
-                        if (styles.isBold) {
-                            el.style.fontWeight = 'bold';
-                        }
+                        if (styles.isBold) el.style.fontWeight = 'bold';
                     } else if (element.element_type === 'shape') {
                         el.className += ' element-shape';
                         el.style.backgroundColor = styles.fillColor || 'transparent';
                         el.style.border = `${(styles.borderWidth || 1) * scale}px solid ${styles.borderColor || '#000000'}`;
-                        if (styles.shapeType === 'ellipse') {
-                            el.style.borderRadius = '50%';
-                        } else {
-                            el.style.borderRadius = '0'; // Dikdörtgen için
-                        }
+                        if (styles.shapeType === 'ellipse') el.style.borderRadius = '50%';
+                        else el.style.borderRadius = '0';
                     }
                     container.appendChild(el);
                 });
+            }
+
+            // YENİ FONKSİYON: Masa uygunluğunu sorgulama ve UI'ı güncelleme
+            async function fetchTableAvailability(dateString) {
+                const availabilityUrl = apiUrl + `table-availability/?date=${dateString}`;
+                const tableSelect = document.getElementById('table');
+                try {
+                    const response = await fetch(availabilityUrl);
+                    const data = await response.json();
+                    const reservedIds = data.reserved_table_ids || [];
+
+                    // Masa düzenini yeni duruma göre render et
+                    if(initialLayoutData) {
+                        renderLayout(initialLayoutData, reservedIds);
+                    }
+
+                    // Dropdown listesini güncelle
+                    if (tableSelect) {
+                        tableSelect.innerHTML = '<option value="" disabled selected>Masa Seçin</option>';
+                        allTables.forEach(table => {
+                            const isReserved = reservedIds.includes(table.id);
+                            const option = document.createElement('option');
+                            option.value = table.id;
+                            option.textContent = `Masa ${table.table_number}${isReserved ? ' (Dolu)' : ''}`;
+                            option.disabled = isReserved;
+                            tableSelect.appendChild(option);
+                        });
+                    }
+                } catch (error) {
+                    console.error('Masa uygunluk durumu alınamadı:', error);
+                }
             }
 
             async function fetchData() {
@@ -322,27 +315,21 @@
                     const response = await fetch(apiUrl);
                     if (!response.ok) throw new Error('Network response was not ok');
                     const data = await response.json();
+                    
+                    allTables = data.tables || [];
 
                     if (data.layout) {
-                        renderLayout(data.layout);
-                        // Ekran boyutu değiştiğinde yeniden render et
-                        window.addEventListener('resize', () => renderLayout(data.layout));
+                        initialLayoutData = data.layout; // Veriyi sakla
+                        window.addEventListener('resize', () => renderLayout(initialLayoutData));
+                        // Sayfa yüklendiğinde bugünün tarihiyle uygunluk durumunu sorgula
+                        const today = formatDate(new Date());
+                        datePicker.value = today;
+                        fetchTableAvailability(today);
                     } else {
                         const wrapper = document.getElementById('layout-container-wrapper');
                         if(wrapper) wrapper.style.display = 'none';
                     }
                     
-                    const tableSelect = document.getElementById('table');
-                    if (data.tables && tableSelect) {
-                        tableSelect.innerHTML = '<option value="" disabled selected>Masa Seçin</option>';
-                        data.tables.forEach(table => {
-                            const option = document.createElement('option');
-                            option.value = table.id;
-                            option.textContent = `Masa ${table.table_number}`;
-                            tableSelect.appendChild(option);
-                        });
-                    }
-
                     const menuContent = document.getElementById('menu-content');
                     if (data.menu && menuContent) {
                         let html = '';
@@ -369,10 +356,15 @@
 
                 } catch (error) {
                     console.error('Veri alınırken hata:', error);
-                    const reservationSection = document.getElementById('reservation');
-                    if (reservationSection) reservationSection.innerHTML = '<p class="text-center text-danger">İşletme bilgileri yüklenirken bir hata oluştu.</p>';
                 }
             }
+
+            datePicker.addEventListener('change', (event) => {
+                const selectedDate = event.target.value;
+                if (selectedDate) {
+                    fetchTableAvailability(selectedDate);
+                }
+            });
 
             const reservationForm = document.getElementById('reservation-form');
             if(reservationForm) {
@@ -382,8 +374,15 @@
                     alertBox.textContent = '';
                     alertBox.className = '';
 
-                    const reservationTimeInput = document.getElementById('reservation_time');
-                    const reservationISOTime = new Date(reservationTimeInput.value).toISOString();
+                    const selectedDate = document.getElementById('reservation-date-picker').value;
+                    const selectedTime = document.getElementById('reservation_time').value;
+                    if (!selectedDate || !selectedTime) {
+                        alertBox.textContent = 'Lütfen geçerli bir tarih ve saat seçin.';
+                        alertBox.className = 'alert alert-danger';
+                        return;
+                    }
+                    const combinedDateTime = `${selectedDate}T${selectedTime}`;
+                    const reservationISOTime = new Date(combinedDateTime).toISOString();
 
                     const payload = {
                         table: document.getElementById('table').value,
@@ -407,6 +406,8 @@
                             alertBox.textContent = 'Rezervasyonunuz başarıyla alındı. En kısa sürede onaylanacaktır.';
                             alertBox.className = 'alert alert-success';
                             reservationForm.reset();
+                            // Rezervasyon sonrası güncel durumu tekrar çek
+                            fetchTableAvailability(selectedDate);
                         } else {
                             let errorMessage = 'Bilinmeyen bir hata oluştu.';
                             if (responseData && typeof responseData === 'object') {
