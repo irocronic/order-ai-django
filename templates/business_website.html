@@ -162,7 +162,7 @@
                             </div>
                             <div class="mb-3">
                                 <label for="reservation_time" class="form-label">Saat</label>
-                                <input type="time" class="form-control" id="reservation_time" required>
+                                <input type="time" class="form-control" id="reservation_time" required step="1800">
                             </div>
                             <div class="mb-3">
                                 <label for="notes" class="form-label">Notlarınız (isteğe bağlı)</label>
@@ -324,7 +324,7 @@
                     const response = await fetch(apiUrl);
                     if (!response.ok) throw new Error('Network response was not ok');
                     const data = await response.json();
-                    
+                   
                     allTables = data.tables || [];
                     const website = data.business.website;
 
@@ -340,7 +340,7 @@
                         const wrapper = document.getElementById('layout-container-wrapper');
                         if(wrapper) wrapper.style.display = 'none';
                     }
-                    
+                   
                     const menuContent = document.getElementById('menu-content');
                     if (data.menu && menuContent) {
                         let html = '';
@@ -414,6 +414,16 @@
 
                     const selectedDate = datePicker.value;
                     const selectedTime = document.getElementById('reservation_time').value;
+                    
+                    // DEĞİŞİKLİK 2: Saat formatı doğrulaması eklendi
+                    const minutes = parseInt(selectedTime.split(':')[1], 10);
+                    if (minutes % 30 !== 0) {
+                        reservationAlert.textContent = 'Lütfen sadece tam (Örn: 14:00) veya buçuklu (Örn: 14:30) saatleri seçin.';
+                        reservationAlert.className = 'alert alert-danger';
+                        return; // Form gönderimini durdur
+                    }
+                    // DEĞİŞİKLİK 2 SONU
+
                     if (!selectedDate || !selectedTime) {
                         reservationAlert.textContent = 'Lütfen geçerli bir tarih ve saat seçin.';
                         reservationAlert.className = 'alert alert-danger';
@@ -437,7 +447,7 @@
                             headers: {'Content-Type': 'application/json'},
                             body: JSON.stringify(payload),
                         });
-                        
+                       
                         const responseData = await response.json();
 
                         if (response.ok) {
