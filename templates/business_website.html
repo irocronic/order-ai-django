@@ -13,177 +13,434 @@
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600;700&family=Playfair+Display:wght@700&display=swap" rel="stylesheet">
     <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
 
-    <!-- CSS vars that need template rendering remain inline so templating engine can replace them -->
     <style>
         :root {
             --primary-color: {{ website.primary_color|default:'#4A90E2' }};
             --secondary-color: {{ website.secondary_color|default:'#50E3C2' }};
+            --accent-color: #ffaf40;
+            --text-color: #333;
+            --light-text-color: #f8f9fa;
+            --bg-light: #f8f9fa;
+            --bg-dark: #212529;
+        }
+
+        body {
+            font-family: 'Poppins', sans-serif;
+            color: var(--text-color);
+            background-color: var(--bg-light);
+        }
+
+        .navbar {
+            transition: background-color 0.3s ease-in-out;
+            background-color: rgba(33, 37, 41, 0.9);
+        }
+
+        .navbar-brand {
+            font-family: 'Playfair Display', serif;
+            font-weight: 700;
+            color: var(--secondary-color) !important;
+        }
+        
+        .nav-link {
+            transition: color 0.2s;
+        }
+        .nav-link:hover {
+            color: var(--secondary-color) !important;
+        }
+
+        .hero-section {
+            height: 100vh;
+            background-size: cover;
+            background-position: center;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            color: var(--light-text-color);
+        }
+
+        .hero-section .overlay {
+            background-color: rgba(0, 0, 0, 0.6);
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+        }
+
+        .hero-content {
+            position: relative;
+            z-index: 1;
+        }
+        
+        .hero-content h1 {
+            font-family: 'Playfair Display', serif;
+            font-size: 4rem;
+            font-weight: 700;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
+        }
+
+        .section {
+            padding: 80px 0;
+        }
+
+        .section-title {
+            font-family: 'Playfair Display', serif;
+            font-weight: 700;
+            margin-bottom: 40px;
+            text-align: center;
+            color: var(--primary-color);
+        }
+        
+        .btn-primary {
+            background-color: var(--primary-color);
+            border-color: var(--primary-color);
+        }
+        
+        .btn-secondary {
+            background-color: var(--secondary-color);
+            border-color: var(--secondary-color);
+        }
+
+        .menu-category {
+            margin-bottom: 40px;
+        }
+
+        .menu-item-card {
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            overflow: hidden;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        
+        .menu-item-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+        }
+        
+        .menu-item-img {
+            height: 200px;
+            object-fit: cover;
+            width: 100%;
+        }
+        
+        .contact-icon {
+            font-size: 2.5rem;
+            color: var(--primary-color);
+        }
+
+        .footer {
+            background-color: var(--bg-dark);
+            color: var(--light-text-color);
+            padding: 40px 0;
+        }
+
+        .social-links a {
+            color: var(--secondary-color);
+            font-size: 1.5rem;
+            margin: 0 10px;
+            transition: color 0.2s;
+        }
+        
+        .social-links a:hover {
+            color: var(--light-text-color);
+        }
+
+        .section-highlight {
+            animation: highlight 0.7s ease-out;
+        }
+
+        @keyframes highlight {
+            0% { background-color: rgba(var(--bs-warning-rgb), 0.3); }
+            100% { background-color: transparent; }
         }
     </style>
-
-    <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-    <div id="loader"><div class="spinner"></div></div>
-    <nav class="navbar navbar-expand-lg navbar-dark sticky-top">
-      <div class="container-custom">
-        <a class="navbar-brand" href="#" id="nav-logo">İşletme Adı</a>
-        <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#mainNavbar" aria-controls="mainNavbar" aria-expanded="false" aria-label="Menüyü Aç">
-          <span class="navbar-toggler-icon"></span>
-        </button>
-        <div class="collapse navbar-collapse" id="mainNavbar">
-          <ul class="navbar-nav ms-auto mb-2 mb-lg-0">
-            <li class="nav-item" id="nav-link-about" style="display:none;">
-              <a class="nav-link" href="#about">Hakkımızda</a>
-            </li>
-            <li class="nav-item" id="nav-link-menu" style="display:none;">
-              <a class="nav-link" href="#menu">Menü</a>
-            </li>
-            <li class="nav-item" id="nav-link-contact" style="display:none;">
-              <a class="nav-link" href="#contact">İletişim</a>
-            </li>
-            <li class="nav-item" id="nav-link-reservation" style="display:none;">
-              <a class="nav-link" href="#reservation">Rezervasyon</a>
-            </li>
-          </ul>
+    <nav id="mainNavbar" class="navbar navbar-expand-lg navbar-dark fixed-top">
+        <div class="container">
+            <a class="navbar-brand" href="#" id="nav-business-name">Yükleniyor...</a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#mainNavbarContent">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="mainNavbarContent">
+                <ul class="navbar-nav ms-auto mb-2 mb-lg-0">
+                    <li class="nav-item"><a class="nav-link" href="#about">Hakkımızda</a></li>
+                    <li class="nav-item" id="nav-menu-link" style="display: none;"><a class="nav-link" href="#menu">Menü</a></li>
+                    <li class="nav-item" id="nav-reservation-link" style="display: none;"><a class="nav-link" href="#reservation">Rezervasyon</a></li>
+                    <li class="nav-item" id="nav-contact-link" style="display: none;"><a class="nav-link" href="#contact">İletişim</a></li>
+                </ul>
+            </div>
         </div>
-      </div>
     </nav>
+
+    <header id="hero" class="hero-section">
+        <div class="overlay"></div>
+        <div class="hero-content">
+            <h1 id="hero-title">{{ business.name }}</h1>
+            <p class="lead" id="hero-description">{{ website.website_description }}</p>
+        </div>
+    </header>
+
     <main>
-        <section id="about" class="section-anim">
-            <div class="container-custom hero-content">
-                <div class="hero-text">
-                    <h1 id="about-title">...</h1>
-                    <p id="about-description">...</p>
-                </div>
-                <div class="hero-image">
-                    <img id="about-image" src="" alt="Hakkımızda görseli" style="display:none;">
-                </div>
-            </div>
-        </section>
-        <section id="menu" class="section-anim" style="display: none;">
-            <div class="container-custom">
-                <h2>Menümüz</h2>
-                <p class="section-subtitle">Özenle hazırladığımız lezzetlerimizi keşfedin. Her damak zevkine uygun bir seçenek mutlaka var.</p>
-                <div id="menu-container"></div>
-            </div>
-        </section>
-        <section id="contact" class="section-anim" style="display: none;">
-            <div class="container-custom">
-                <h2>Bize Ulaşın</h2>
-                <p class="section-subtitle">Sorularınız, rezervasyonlarınız veya geri bildirimleriniz için bizimle iletişime geçmekten çekinmeyin.</p>
-                <div class="contact-grid">
-                    <div class="contact-item" id="contact-phone-item" style="display: none;">
-                        <i class="material-icons">phone</i>
-                        <h3>Telefon</h3>
-                        <p><a id="contact-phone" href="">...</a></p>
+        <section id="about" class="section">
+            <div class="container">
+                <h2 class="section-title" id="about-title">Hakkımızda</h2>
+                <div class="row align-items-center">
+                    <div class="col-md-6">
+                        <img id="about-image" src="" class="img-fluid rounded shadow" alt="Hakkımızda görseli">
                     </div>
-                    <div class="contact-item" id="contact-email-item" style="display: none;">
-                        <i class="material-icons">email</i>
-                        <h3>E-posta</h3>
-                        <p><a id="contact-email" href="">...</a></p>
-                    </div>
-                    <div class="contact-item" id="contact-address-item" style="display: none;">
-                        <i class="material-icons">location_on</i>
-                        <h3>Adres</h3>
-                        <p id="contact-address">...</p>
-                    </div>
-                    <div class="contact-item" id="contact-hours-item" style="display: none;">
-                        <i class="material-icons">schedule</i>
-                        <h3>Çalışma Saatleri</h3>
-                        <p id="contact-working-hours">...</p>
+                    <div class="col-md-6">
+                        <p id="about-description" class="mt-4 mt-md-0">...</p>
                     </div>
                 </div>
             </div>
         </section>
-        <section id="reservation" class="section-anim" style="display: none;">
-            <div class="container-custom">
-                <div class="reservation-form-block" id="reservation-form-block">
-                    <div class="reservation-form-title">Rezervasyon Yap</div>
-                    <div class="reservation-form-desc">Size ve sevdiklerinize en iyi hizmeti sunmak için rezervasyon talebinizi iletebilirsiniz.</div>
-                    <div id="reservation-form-alert" class="reservation-form-alert alert"></div>
-                    <form id="reservation-form" autocomplete="off">
-                        <div class="mb-3">
-                            <label for="reservation-name" class="form-label reservation-form-label">Adınız Soyadınız</label>
-                            <input type="text" class="form-control" id="reservation-name" name="name" required maxlength="60">
-                        </div>
-                        <div class="mb-3">
-                            <label for="reservation-phone" class="form-label reservation-form-label">Telefon Numaranız</label>
-                            <input type="tel" class="form-control" id="reservation-phone" name="phone" required maxlength="20">
-                        </div>
-                        <div class="mb-3">
-                            <label for="reservation-email" class="form-label reservation-form-label">E-posta Adresiniz</label>
-                            <input type="email" class="form-control" id="reservation-email" name="email" maxlength="60">
-                        </div>
-                        <div class="mb-3">
-                            <label for="reservation-date" class="form-label reservation-form-label">Tarih</label>
-                            <input type="date" class="form-control" id="reservation-date" name="date" required>
-                        </div>
-                        <div class="mb-3">
-                            <label for="reservation-time" class="form-label reservation-form-label">Saat</label>
-                            <input type="time" class="form-control" id="reservation-time" name="time" required>
-                        </div>
-                        <div class="mb-3">
-                            <label for="reservation-persons" class="form-label reservation-form-label">Kişi Sayısı</label>
-                            <input type="number" class="form-control" id="reservation-persons" name="persons" required min="1" max="30">
-                        </div>
-                        <div class="mb-3">
-                            <label for="reservation-table" class="form-label reservation-form-label">Masa Seçimi</label>
-                            <select class="form-select" id="reservation-table" name="table" required>
-                                <option value="" disabled selected>Lütfen bir masa seçin...</option>
-                            </select>
-                        </div>
 
-                        <!-- Vaziyet Planını Görüntüle Butonu (isteğiniz üzerine eklendi) -->
-                        <div style="margin-bottom: 15px;">
-                            <button type="button" id="open-layout-btn" style="padding: 10px 15px; border-radius: 5px; border: 1px solid #333; background-color: #eee; cursor: pointer;">
-                                Vaziyet Planını Görüntüle
-                            </button>
-                        </div>
+        <section id="menu" class="section bg-light" style="display: none;">
+            <div class="container">
+                <h2 class="section-title">Menümüz</h2>
+                <div id="menu-container">
+                    </div>
+            </div>
+        </section>
 
-                        <div class="mb-3">
-                            <label for="reservation-note" class="form-label reservation-form-label">Notunuz (isteğe bağlı)</label>
-                            <textarea class="form-control" id="reservation-note" name="note" rows="2" maxlength="200"></textarea>
-                        </div>
-                        <button type="submit" class="reservation-form-btn w-100">Rezervasyon Gönder</button>
-                    </form>
+        <section id="reservation" class="section" style="display: none;">
+            <div class="container">
+                <h2 class="section-title">Rezervasyon Yap</h2>
+                <div class="row justify-content-center">
+                    <div class="col-lg-8">
+                        <div id="reservation-alert" class="alert d-none" role="alert"></div>
+                        <form id="reservation-form">
+                            <div class="row">
+                                <div class="col-md-6 mb-3">
+                                    <label for="customer_name" class="form-label">Ad Soyad</label>
+                                    <input type="text" class="form-control" id="customer_name" name="customer_name" required>
+                                </div>
+                                <div class="col-md-6 mb-3">
+                                    <label for="customer_phone" class="form-label">Telefon Numarası</label>
+                                    <input type="tel" class="form-control" id="customer_phone" name="customer_phone" required>
+                                </div>
+                                <div class="col-md-6 mb-3">
+                                    <label for="reservation_time" class="form-label">Tarih ve Saat</label>
+                                    <input type="datetime-local" class="form-control" id="reservation_time" name="reservation_time" required>
+                                </div>
+                                <div class="col-md-6 mb-3">
+                                    <label for="party_size" class="form-label">Kişi Sayısı</label>
+                                    <input type="number" class="form-control" id="party_size" name="party_size" min="1" required>
+                                </div>
+                                <div class="col-12 mb-3">
+                                    <label for="table-select" class="form-label">Masa Seçimi</label>
+                                    <select class="form-select" id="table-select" name="table" required>
+                                        <option value="" disabled selected>Lütfen bir masa seçin...</option>
+                                    </select>
+                                </div>
+                                <div class="col-12 mb-3">
+                                    <label for="notes" class="form-label">Özel Notlarınız</label>
+                                    <textarea class="form-control" id="notes" name="notes" rows="3"></textarea>
+                                </div>
+                            </div>
+                            <div class="text-center">
+                                <button type="submit" class="btn btn-primary btn-lg">Rezervasyon Talebi Gönder</button>
+                            </div>
+                        </form>
+                    </div>
                 </div>
             </div>
         </section>
-        <section id="map" class="section-anim" style="display: none;">
-            <div class="container-custom">
-                <h2>Konumumuz</h2>
-                <div class="map-container" id="map-container-inner"></div>
+        
+        <section id="contact" class="section" style="display: none;">
+            <div class="container">
+                <h2 class="section-title">İletişim</h2>
+                <div class="row text-center" id="contact-container">
+                    </div>
             </div>
         </section>
     </main>
+
     <footer class="footer">
-        <div class="container-custom">
-            <div class="social-links" id="social-links-container"></div>
-            <p class="footer-text">© <span id="footer-year"></span> <span id="footer-business-name">İşletme Adı</span>. OrderAI altyapısı ile güçlendirilmiştir.</p>
+        <div class="container text-center">
+            <div class="social-links mb-3" id="social-links-container">
+                </div>
+            <p>&copy; <span id="footer-year"></span> <span id="footer-business-name"></span>. Tüm hakları saklıdır.</p>
         </div>
     </footer>
 
-    <!-- Template-inserted config for external JS to consume -->
-    <script>
-        window.APP_CONFIG = {
-            apiUrl: '{{ api_url }}',
-            businessSlug: '{{ business.slug }}',
-            csrfToken: '{{ csrf_token }}'
-        };
-    </script>
-
-    <!-- Modal HTML (body kapanışından hemen önce eklendi) -->
-    <div id="layout-modal-overlay" class="modal-overlay" style="display:none;">
-        <div class="modal-content" role="dialog" aria-modal="true" aria-label="Vaziyet Planı">
-            <button class="modal-close-btn" id="layout-modal-close-btn" aria-label="Kapat">&times;</button>
-            <h3>İşletme Vaziyet Planı</h3>
-            <p>Rezervasyon yapmak istediğiniz masaya tıklayarak seçebilirsiniz.</p>
-            <div id="layout-container" style="width:800px; height:600px;"></div>
-        </div>
-    </div>
-
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-    <script src="app.js"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            const apiUrl = '{{ api_url }}';
+            
+            const renderPage = (data) => {
+                const business = data.business;
+                const website = business.website;
+                const menu = data.menu;
+                const tables = data.tables || [];
+
+                document.title = website.website_title || business.name;
+                document.getElementById('nav-business-name').textContent = business.name;
+                document.getElementById('hero-title').textContent = business.name;
+                document.getElementById('hero-description').textContent = website.website_description || '';
+                
+                document.getElementById('about-title').textContent = website.about_title || 'Hakkımızda';
+                document.getElementById('about-description').textContent = website.about_description || '';
+                document.getElementById('about-image').src = website.about_image || 'https://via.placeholder.com/600x400';
+
+                if (website.show_menu) {
+                    document.getElementById('nav-menu-link').style.display = 'list-item';
+                    document.getElementById('menu').style.display = 'block';
+                    const menuContainer = document.getElementById('menu-container');
+                    let menuHtml = '';
+                    for (const category in menu) {
+                        menuHtml += `<div class="menu-category"><h3>${category}</h3><div class="row g-4">`;
+                        menu[category].forEach(item => {
+                            menuHtml += `
+                                <div class="col-md-6 col-lg-4">
+                                    <div class="card menu-item-card h-100">
+                                        <img src="${item.image || 'https://via.placeholder.com/400x300'}" class="card-img-top menu-item-img" alt="${item.name}">
+                                        <div class="card-body">
+                                            <h5 class="card-title">${item.name}</h5>
+                                            <p class="card-text">${item.description || ''}</p>
+                                        </div>
+                                        ${item.price ? `<div class="card-footer text-end fw-bold">${formatCurrency(item.price)}</div>` : ''}
+                                    </div>
+                                </div>`;
+                        });
+                        menuHtml += `</div></div>`;
+                    }
+                    menuContainer.innerHTML = menuHtml;
+                }
+                
+                if (website.allow_reservations) {
+                    document.getElementById('nav-reservation-link').style.display = 'list-item';
+                    document.getElementById('reservation').style.display = 'block';
+                    
+                    const tableSelect = document.getElementById('table-select');
+                    tableSelect.innerHTML = '<option value="" disabled selected>Lütfen bir masa seçin...</option>'; 
+                    
+                    if (tables.length > 0) {
+                        tables.forEach(table => {
+                            const option = document.createElement('option');
+                            option.value = table.id;
+                            option.textContent = `Masa ${table.table_number}`;
+                            tableSelect.appendChild(option);
+                        });
+                    } else {
+                        tableSelect.disabled = true;
+                        tableSelect.querySelector('option').textContent = 'Uygun masa bulunamadı.';
+                    }
+                }
+                
+                if (website.show_contact) {
+                    document.getElementById('nav-contact-link').style.display = 'list-item';
+                    document.getElementById('contact').style.display = 'block';
+                    const contactContainer = document.getElementById('contact-container');
+                    let contactHtml = '';
+                    if(website.contact_phone) contactHtml += `<div class="col-md-3 mb-4"><i class="material-icons contact-icon">phone</i><p>${website.contact_phone}</p></div>`;
+                    if(website.contact_email) contactHtml += `<div class="col-md-3 mb-4"><i class="material-icons contact-icon">email</i><p>${website.contact_email}</p></div>`;
+                    if(website.contact_address) contactHtml += `<div class="col-md-3 mb-4"><i class="material-icons contact-icon">location_on</i><p>${website.contact_address}</p></div>`;
+                    if(website.contact_working_hours) contactHtml += `<div class="col-md-3 mb-4"><i class="material-icons contact-icon">schedule</i><p>${website.contact_working_hours}</p></div>`;
+                    contactContainer.innerHTML = contactHtml;
+                }
+                
+                document.getElementById('footer-year').textContent = new Date().getFullYear();
+                document.getElementById('footer-business-name').textContent = business.name;
+                const socialLinksContainer = document.getElementById('social-links-container');
+                let socialHtml = '';
+                if(website.facebook_url) socialHtml += `<a href="${website.facebook_url}" target="_blank">FB</a>`;
+                if(website.instagram_url) socialHtml += `<a href="${website.instagram_url}" target="_blank">IG</a>`;
+                if(website.twitter_url) socialHtml += `<a href="${website.twitter_url}" target="_blank">X</a>`;
+                socialLinksContainer.innerHTML = socialHtml;
+            };
+
+            const fetchData = async () => {
+                try {
+                    const response = await fetch(apiUrl);
+                    if (!response.ok) throw new Error('Veri alınamadı.');
+                    const data = await response.json();
+                    renderPage(data);
+                } catch (error) {
+                    console.error("Hata:", error);
+                    document.getElementById('hero-title').textContent = 'Bir hata oluştu';
+                }
+            };
+            
+            // === GÜNCELLEME BURADA BAŞLIYOR ===
+            const reservationForm = document.getElementById('reservation-form');
+            if (reservationForm) {
+                reservationForm.addEventListener('submit', async function(event) {
+                    event.preventDefault();
+                    const form = event.target;
+                    const alertBox = document.getElementById('reservation-alert');
+                    
+                    // Tarih ve saat değerini al
+                    const localDateTimeString = form.elements['reservation_time'].value;
+                    // Django'nun beklediği ISO formatına (saniyesiz) çevir
+                    const isoDateTimeString = new Date(localDateTimeString).toISOString().substring(0, 19) + "Z";
+                    
+                    const data = {
+                        table: form.elements['table'].value,
+                        customer_name: form.elements['customer_name'].value,
+                        customer_phone: form.elements['customer_phone'].value,
+                        reservation_time: isoDateTimeString, // Düzeltilmiş tarih formatı
+                        party_size: form.elements['party_size'].value,
+                        notes: form.elements['notes'].value,
+                    };
+
+                    try {
+                        const response = await fetch(`/api/public/business/{{ business.slug }}/reservations/`, {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'X-CSRFToken': '{{ csrf_token }}'
+                            },
+                            body: JSON.stringify(data)
+                        });
+
+                        const result = await response.json();
+                        
+                        if (response.ok) {
+                            alertBox.textContent = 'Rezervasyon talebiniz alındı! Onay için sizinle iletişime geçilecektir.';
+                            alertBox.className = 'alert alert-success'; // 'd-none' kaldırıldı
+                            form.reset();
+                        } else {
+                            let errorMessage = 'Bir hata oluştu.';
+                            if (typeof result === 'object' && result !== null) {
+                                // Django'dan gelen tüm hata mesajlarını birleştir
+                                errorMessage = Object.entries(result).map(([key, value]) => {
+                                    return `${key}: ${Array.isArray(value) ? value.join(' ') : value}`;
+                                }).join(' ');
+                            }
+                            alertBox.textContent = 'Hata: ' + errorMessage;
+                            alertBox.className = 'alert alert-danger';
+                        }
+                    } catch (err) {
+                        alertBox.textContent = 'Rezervasyon gönderilirken bir sunucu hatası oluştu. Lütfen tekrar deneyin.';
+                        alertBox.className = 'alert alert-danger';
+                    }
+                });
+            }
+            // === GÜNCELLEME BURADA BİTİYOR ===
+
+            const formatCurrency = (value) => {
+                return new Intl.NumberFormat('tr-TR', { style: 'currency', currency: 'TRY' }).format(value);
+            };
+
+            document.querySelectorAll('.navbar-nav .nav-link').forEach(link => {
+                link.addEventListener('click', function(e) {
+                    const href = this.getAttribute('href');
+                    if (href && href.startsWith('#')) {
+                        e.preventDefault();
+                        const target = document.querySelector(href);
+                        if (target) {
+                            target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                        }
+                    }
+                });
+            });
+
+            fetchData();
+        });
+    </script>
 </body>
 </html>
