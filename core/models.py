@@ -1036,6 +1036,14 @@ class NotificationSetting(models.Model):
 
 class BusinessWebsite(models.Model):
     """İşletmeye özel web sitesi bilgileri"""
+    
+    # === YENİ KOD BAŞLANGICI: TEMA SEÇENEKLERİ ===
+    class ThemeMode(models.TextChoices):
+        SYSTEM = 'system', _('Sistem Varsayılanı')
+        LIGHT = 'light', _('Aydınlık Mod')
+        DARK = 'dark', _('Karanlık Mod')
+    # ============================================
+
     business = models.OneToOneField(
         'Business', 
         on_delete=models.CASCADE, 
@@ -1151,6 +1159,15 @@ class BusinessWebsite(models.Model):
         verbose_name="İkincil Renk"
     )
     
+    # === YENİ KOD: TEMA ALANI ===
+    theme_mode = models.CharField(
+        max_length=10,
+        choices=ThemeMode.choices,
+        default=ThemeMode.SYSTEM,
+        verbose_name="Web Sitesi Teması"
+    )
+    # ============================
+    
     # Durum Bilgileri
     is_active = models.BooleanField(
         default=True, 
@@ -1169,7 +1186,6 @@ class BusinessWebsite(models.Model):
         verbose_name="Haritayı Göster"
     )
     
-    # === YENİ ALANLAR BAŞLANGICI ===
     allow_reservations = models.BooleanField(
         default=False, 
         verbose_name="Online Rezervasyona İzin Ver"
@@ -1178,7 +1194,6 @@ class BusinessWebsite(models.Model):
         default=False, 
         verbose_name="Online Siparişe İzin Ver"
     )
-    # === YENİ ALANLAR SONU ===
     
     # Zaman Damgaları
     created_at = models.DateTimeField(auto_now_add=True)
