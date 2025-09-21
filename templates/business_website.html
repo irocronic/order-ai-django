@@ -77,6 +77,15 @@
             background-color: var(--card-background-color);
         }
         .card-menu-item:hover { transform: translateY(-5px); box-shadow: 0 8px 25px var(--shadow-color); }
+        
+        /* === YENİ DÜZELTME KODU BAŞLANGICI === */
+        [data-theme="dark"] .card-body,
+        [data-theme="dark"] .card-title,
+        [data-theme="dark"] .card-text {
+            color: var(--text-color) !important;
+        }
+        /* === YENİ DÜZELTME KODU SONU === */
+        
         .card-text.text-muted { color: var(--text-muted-color) !important; }
         .card-footer { border-top-color: var(--border-color); }
         
@@ -332,8 +341,6 @@
                         el.className += ' element-text';
                         el.textContent = styles.content || '';
                         el.style.fontSize = `${(styles.fontSize || 14) * scale}px`;
-                        // Renk stilini CSS değişkeninden alması için bu satırı kaldırdık, 
-                        // el.style.color = styles.color || '#000000';
                         if (styles.isBold) el.style.fontWeight = 'bold';
                     } else if (element.element_type === 'shape') {
                         el.className += ' element-shape';
