@@ -172,6 +172,12 @@ class Business(models.Model):
     phone = models.CharField(max_length=20, blank=True, null=True, verbose_name="Telefon Numarası")
     is_setup_complete = models.BooleanField(default=False, help_text="İşletme sahibi kurulum sihirbazını tamamladı mı?")
 
+    pos_integration_enabled = models.BooleanField(
+        default=False,
+        verbose_name="Fiziksel POS Entegrasyonu Aktif",
+        help_text="İşletme, ödemeleri entegre bir POS cihazı üzerinden mi alacak?"
+    )
+
     class Currency(models.TextChoices):
         TRY = 'TRY', _('Türk Lirası (₺)')
         USD = 'USD', _('ABD Doları ($)')

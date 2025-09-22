@@ -305,6 +305,36 @@ class OrderViewSet(viewsets.ModelViewSet):
     def transfer_order(self, request):
         return operational_actions.transfer_order_action(self, request)
 
+
+
+    @action(detail=True, methods=['post'], url_path='initiate-pos-payment')
+    def initiate_pos_payment(self, request, pk=None):
+        order = self.get_object()
+        user = request.user
+        business = get_user_business(user)
+
+        if not business.pos_integration_enabled:
+            return Response({'detail': 'POS entegrasyonu bu işletme için aktif değil.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        amount = request.data.get('amount')
+        if not amount:
+            return Response({'detail': 'Tutar belirtilmelidir.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            # Bu servis, seçtiğiniz ödeme sağlayıcısının SDK'sını kullanacak
+            payment_intent_id = PaymentTerminalService.create_payment(
+                amount=Decimal(amount),
+                order_id=order.id,
+                terminal_id="TERMINAL_ID_BURAYA_GELECEK" # İşletmenin POS cihazı ID'si
+            )
+            return Response({'payment_intent_id': payment_intent_id}, status=status.HTTP_200_OK)
+        except Exception as e:
+            return Response({'detail': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+
+
+
 class OrderItemViewSet(mixins.DestroyModelMixin, mixins.UpdateModelMixin, viewsets.GenericViewSet):
     queryset = OrderItem.objects.all()
     serializer_class = OrderItemSerializer

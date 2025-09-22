@@ -44,6 +44,8 @@ from core.views import (
     PublicReservationCreateView,
     BusinessLayoutViewSet,
     LayoutElementViewSet,
+    # YENİ EKLENEN IMPORT
+    payment_provider_webhook,
 )
 
 # Business Website API Views için importlar
@@ -53,7 +55,6 @@ from core.views.business_website_views import (
     business_public_website_api,
     business_website_view
 )
-# YENİ EKLENEN IMPORT
 from core.views.reservation_views import TableAvailabilityAPIView
 
 from subscriptions.views import VerifyPurchaseView
@@ -83,7 +84,6 @@ router.register(r'reservations', ReservationViewSet, basename='reservation')
 router.register(r'layouts', BusinessLayoutViewSet, basename='layout')
 router.register(r'layout-elements', LayoutElementViewSet, basename='layoutelement')
 
-
 # YÖNETİCİ API'leri için ayrı bir DefaultRouter
 admin_router = DefaultRouter()
 admin_router.register(r'manage-users', AdminUserManagementViewSet, basename='admin-manage-user')
@@ -95,6 +95,11 @@ urlpatterns = [
     # Router tarafından oluşturulan API URL'leri
     path('', include(router.urls)),
     path('admin-panel/', include(admin_router.urls)),
+    
+    # +++++++++++++++++++++ YENİ EKLENEN URL +++++++++++++++++++++
+    # Ödeme sağlayıcısı için Webhook URL'i
+    path('webhooks/payment-status/', payment_provider_webhook, name='payment_webhook'),
+    # +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
     # IngredientViewSet için özel action URL'leri
     path('ingredients/<int:pk>/adjust-stock/', IngredientViewSet.as_view({'post': 'adjust_stock'}), name='ingredient-adjust-stock'),
