@@ -1,5 +1,7 @@
 # core/serializers/__init__.py
 
+# core/serializers/__init__.py
+
 from .user_serializers import (
     RegisterSerializer,
     AccountSettingsSerializer,
@@ -9,11 +11,13 @@ from .user_serializers import (
     PasswordResetRequestSerializer,
     PasswordResetCodeConfirmSerializer,
 )
+# === GÜNCELLEME BURADA ===
 from .business_serializers import (
     BusinessSerializer,
     TableSerializer,
     BusinessLayoutSerializer,
     LayoutElementSerializer,
+    BusinessPaymentSettingsSerializer, # <-- BU SATIRI EKLEYİN
 )
 from .menu_serializers import (
     CategorySerializer,
@@ -88,6 +92,7 @@ __all__ = [
     'TableSerializer',
     'BusinessLayoutSerializer',
     'LayoutElementSerializer',
+    'BusinessPaymentSettingsSerializer', # <-- BU SATIRI EKLEYİN
     'CategorySerializer',
     'MenuItemVariantSerializer',
     'MenuItemSerializer',
