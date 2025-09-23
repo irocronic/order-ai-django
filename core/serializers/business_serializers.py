@@ -72,6 +72,33 @@ class BusinessLayoutSerializer(serializers.ModelSerializer):
 
 
 
+Merhaba, gönderdiğiniz hata ekran görüntüsü ve sunucu logu sorunu çok net bir şekilde açıklıyor. Bu 
+
+500 Internal Server Error hatasının, bir önceki adımda paylaştığım koddaki bir eksiklikten kaynaklandığını tespit ettim. Bu durum için özür dilerim.
+
+Hatanın Nedeni
+Hata mesajında belirtildiği gibi (
+
+TypeError: EncryptedCharField received a non-string value), sorun Django backend'de yaşanıyor. API anahtarlarını veritabanında şifreli olarak saklamak için kullandığımız 
+
+EncryptedCharField alanı, kendisine None (yani boş veya tanımsız) bir değer geldiğinde bu hatayı veriyor. Bu alan şifreleme yapabilmek için her zaman bir metin (string) bekler; bu metin boş bir string ('') olabilir ancak None olamaz.
+
+Mevcut kodda, Flutter'dan anahtar alanları boş gönderildiğinde, serializer bu değeri modele None olarak aktarmaya çalışıyor ve bu da 500 sunucu hatasına neden oluyor.
+
+Çözüm: Serializer'ı Güncellemek
+Bu sorunu çözmek için Django tarafında sadece core/serializers/business_serializers.py dosyasındaki BusinessPaymentSettingsSerializer sınıfını güncellememiz yeterlidir. Yapacağımız değişiklik, None olarak gelen değerleri veritabanına kaydetmeden önce boş bir string'e ('') dönüştürmek olacak.
+
+Aşağıda güncellenmiş ve doğru çalışan BusinessPaymentSettingsSerializer kodunu bulabilirsiniz.
+
+Güncellenmiş Dosya: core/serializers/business_serializers.py
+Lütfen bu dosyadaki mevcut BusinessPaymentSettingsSerializer sınıfını aşağıdaki kodla tamamen değiştirin.
+
+Python
+
+# core/serializers/business_serializers.py
+
+# ... dosyadaki diğer serializer'lar aynı kalacak
+
 class BusinessPaymentSettingsSerializer(serializers.ModelSerializer):
     """
     İşletmenin ödeme sağlayıcı ayarlarını güncellemek için kullanılır.
@@ -85,18 +112,29 @@ class BusinessPaymentSettingsSerializer(serializers.ModelSerializer):
             'payment_secret_key'
         ]
         extra_kwargs = {
-            'payment_api_key': {'write_only': True, 'required': False, 'allow_blank': True},
-            'payment_secret_key': {'write_only': True, 'required': False, 'allow_blank': True},
+            'payment_api_key': {'write_only': True, 'required': False, 'allow_blank': True, 'allow_null': True},
+            'payment_secret_key': {'write_only': True, 'required': False, 'allow_blank': True, 'allow_null': True},
         }
 
     def validate(self, data):
         provider = data.get('payment_provider')
-        api_key = data.get('payment_api_key')
-        secret_key = data.get('payment_secret_key')
+        
+        # +++++++++++++++ ÇÖZÜM BURADA BAŞLIYOR +++++++++++++++
+        # EncryptedCharField'ın "None" değeri kabul etmemesi sorununu çözmek için,
+        # eğer anahtar değeri None ise, onu boş bir string'e ('') çeviriyoruz.
+        api_key = data.get('payment_api_key', '')
+        secret_key = data.get('payment_secret_key', '')
+
+        if api_key is None:
+            data['payment_api_key'] = ''
+        if secret_key is None:
+            data['payment_secret_key'] = ''
+        # +++++++++++++++ ÇÖZÜM BURADA BİTİYOR +++++++++++++++
 
         # Eğer bir sağlayıcı seçildiyse (Entegrasyon Yok dışında), anahtarların girildiğinden emin ol.
         if provider and provider != Business.PaymentProvider.NONE:
-            if not api_key or not secret_key:
+            # Kontrolü güncellenmiş (None'dan string'e çevrilmiş) değerler üzerinden yapıyoruz.
+            if not data.get('payment_api_key') or not data.get('payment_secret_key'):
                 raise serializers.ValidationError(
                     "Seçilen ödeme sağlayıcısı için API Anahtarı ve Gizli Anahtar alanları zorunludur."
                 )
