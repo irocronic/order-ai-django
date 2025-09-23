@@ -67,6 +67,31 @@ class BusinessViewSet(viewsets.ModelViewSet):
         instance.delete()
 
 
+    @action(detail=True, methods=['get', 'put'], url_path='payment-settings', permission_classes=[IsAuthenticated])
+    def payment_settings(self, request, pk=None):
+        business = self.get_object()
+        # Sadece işletme sahibi kendi ayarlarını değiştirebilir
+        if business.owner != request.user:
+            raise PermissionDenied("Bu işlem için yetkiniz yok.")
+
+        if request.method == 'GET':
+            # GET isteğinde anahtarları ASLA göndermiyoruz. Sadece seçili sağlayıcıyı gönderiyoruz.
+            return Response({
+                'payment_provider': business.payment_provider,
+                'provider_display': business.get_payment_provider_display(),
+            })
+
+        elif request.method == 'PUT':
+            serializer = BusinessPaymentSettingsSerializer(business, data=request.data)
+            if serializer.is_valid(raise_exception=True):
+                serializer.save()
+                return Response({
+                    'status': 'success',
+                    'message': 'Ödeme ayarları başarıyla güncellendi.',
+                    'payment_provider': business.payment_provider,
+                })
+
+
 class BusinessLayoutViewSet(viewsets.GenericViewSet, 
                               mixins.ListModelMixin,
                               mixins.RetrieveModelMixin, 

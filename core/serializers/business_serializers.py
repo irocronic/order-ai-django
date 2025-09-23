@@ -69,3 +69,35 @@ class BusinessLayoutSerializer(serializers.ModelSerializer):
         return serializer.data
 
 # === DEĞİŞİKLİK BURADA BİTİYOR ===
+
+
+
+class BusinessPaymentSettingsSerializer(serializers.ModelSerializer):
+    """
+    İşletmenin ödeme sağlayıcı ayarlarını güncellemek için kullanılır.
+    API anahtarları sadece yazma amaçlıdır, okuma sırasında asla gönderilmez.
+    """
+    class Meta:
+        model = Business
+        fields = [
+            'payment_provider',
+            'payment_api_key',
+            'payment_secret_key'
+        ]
+        extra_kwargs = {
+            'payment_api_key': {'write_only': True, 'required': False, 'allow_blank': True},
+            'payment_secret_key': {'write_only': True, 'required': False, 'allow_blank': True},
+        }
+
+    def validate(self, data):
+        provider = data.get('payment_provider')
+        api_key = data.get('payment_api_key')
+        secret_key = data.get('payment_secret_key')
+
+        # Eğer bir sağlayıcı seçildiyse (Entegrasyon Yok dışında), anahtarların girildiğinden emin ol.
+        if provider and provider != Business.PaymentProvider.NONE:
+            if not api_key or not secret_key:
+                raise serializers.ValidationError(
+                    "Seçilen ödeme sağlayıcısı için API Anahtarı ve Gizli Anahtar alanları zorunludur."
+                )
+        return data
