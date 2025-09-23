@@ -30,6 +30,18 @@ if DEBUG:
 
 AUTH_USER_MODEL = 'core.CustomUser'
 
+# --- BASE_URL AYARI (QR ÖDEMELERİ İÇİN) ---
+BASE_URL = os.environ.get('BASE_URL')
+if not BASE_URL:
+    if RENDER_EXTERNAL_HOSTNAME:
+        BASE_URL = f'https://{RENDER_EXTERNAL_HOSTNAME}'
+    elif DEBUG:
+        BASE_URL = 'http://localhost:8000'
+    else:
+        BASE_URL = 'https://order-ai-7bd2c97ec9ef.herokuapp.com'
+
+print(f"🔧 BASE_URL ayarlandı: {BASE_URL}")
+
 # --- UYGULAMA TANIMLARI ---
 INSTALLED_APPS = [
     'whitenoise.runserver_nostatic',
