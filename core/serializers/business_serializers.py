@@ -89,23 +89,36 @@ class BusinessPaymentSettingsSerializer(serializers.ModelSerializer):
             'payment_secret_key': {'write_only': True, 'required': False, 'allow_blank': True, 'allow_null': True},
         }
 
-    def validate(self, data):
-        provider = data.get('payment_provider')
+    def __init__(self, *args, **kwargs):
+        # PUT metodu kullanıldığında partial=False olmasına rağmen,
+        # anahtar alanları zorunlu olmadığı için eksik olabilirler.
+        # Bu yüzden partial=True'yu zorunlu kılarak sadece gönderilen alanların
+        # güncellenmesini sağlıyoruz. Bu, PUT ve PATCH davranışını birleştirir.
+        kwargs['partial'] = True
+        super(BusinessPaymentSettingsSerializer, self).__init__(*args, **kwargs)
+
+    def to_internal_value(self, data):
+        # Bu metot, validate'den önce çalışır ve gelen veriyi Python tiplerine çevirir.
+        # Burada, eksik veya null olan anahtar alanlarının varsayılan olarak boş string olmasını sağlıyoruz.
+        ret = super().to_internal_value(data)
         
-        # EncryptedCharField'ın "None" değeri kabul etmemesi sorununu çözmek için,
-        # eğer anahtar değeri None ise, onu boş bir string'e ('') çeviriyoruz.
+        if 'payment_api_key' not in ret or ret.get('payment_api_key') is None:
+            ret['payment_api_key'] = ''
+            
+        if 'payment_secret_key' not in ret or ret.get('payment_secret_key') is None:
+            ret['payment_secret_key'] = ''
+            
+        return ret
+    
+    def validate(self, data):
+        # to_internal_value sayesinde 'data' içinde anahtarların her zaman var olacağını varsayabiliriz.
+        provider = data.get('payment_provider')
         api_key = data.get('payment_api_key')
         secret_key = data.get('payment_secret_key')
 
-        if api_key is None:
-            data['payment_api_key'] = ''
-        if secret_key is None:
-            data['payment_secret_key'] = ''
-        
         # Eğer bir sağlayıcı seçildiyse (Entegrasyon Yok dışında), anahtarların girildiğinden emin ol.
         if provider and provider != Business.PaymentProvider.NONE:
-            # Kontrolü güncellenmiş (None'dan string'e çevrilmiş) değerler üzerinden yapıyoruz.
-            if not data.get('payment_api_key') or not data.get('payment_secret_key'):
+            if not api_key or not secret_key:
                 raise serializers.ValidationError(
                     "Seçilen ödeme sağlayıcısı için API Anahtarı ve Gizli Anahtar alanları zorunludur."
                 )
