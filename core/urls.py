@@ -44,7 +44,6 @@ from core.views import (
     PublicReservationCreateView,
     BusinessLayoutViewSet,
     LayoutElementViewSet,
-    # YENİ EKLENEN IMPORT
     payment_provider_webhook,
 )
 
@@ -86,7 +85,6 @@ router.register(r'purchase-orders', PurchaseOrderViewSet, basename='purchaseorde
 router.register(r'reservations', ReservationViewSet, basename='reservation')
 router.register(r'layouts', BusinessLayoutViewSet, basename='layout')
 router.register(r'layout-elements', LayoutElementViewSet, basename='layoutelement')
-# +++ YENİ SATIR +++
 router.register(r'terminals', PaymentTerminalViewSet, basename='terminal')
 
 # YÖNETİCİ API'leri için ayrı bir DefaultRouter
@@ -101,10 +99,9 @@ urlpatterns = [
     path('', include(router.urls)),
     path('admin-panel/', include(admin_router.urls)),
     
-    # +++++++++++++++++++++ YENİ EKLENEN URL +++++++++++++++++++++
     # Ödeme sağlayıcısı için Webhook URL'i
     path('webhooks/payment-status/', payment_provider_webhook, name='payment_webhook'),
-    # +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+    path('orders/<int:pk>/check-payment-status/', OrderViewSet.as_view({'get': 'check_payment_status'}), name='order-check-payment-status'),
 
     # IngredientViewSet için özel action URL'leri
     path('ingredients/<int:pk>/adjust-stock/', IngredientViewSet.as_view({'post': 'adjust_stock'}), name='ingredient-adjust-stock'),
