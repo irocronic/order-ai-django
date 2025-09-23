@@ -30,6 +30,7 @@ from asgiref.sync import async_to_sync
 from ..signals.order_signals import send_order_update_notification
 
 from .order_actions import item_actions, status_actions, financial_actions, operational_actions
+from ..services.payment_terminal_service import PaymentTerminalService
 
 logger = logging.getLogger(__name__)
 
