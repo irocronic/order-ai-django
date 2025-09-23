@@ -1,5 +1,3 @@
-# core/admin.py
-
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 from django.utils.html import format_html
@@ -799,81 +797,57 @@ class CampaignMenuItemAdmin(admin.ModelAdmin):
 
 @admin.register(BusinessWebsite)
 class BusinessWebsiteAdmin(admin.ModelAdmin):
-    # list_display, modeldeki gerçek alan adlarını içermelidir.
+    # list_display'e yeni alanlar eklendi
     list_display = [
-        'business',
-        'is_active',
-        'theme_mode', # <-- YENİ EKLENDİ
-        'allow_reservations',
-        'allow_online_ordering',
-        'show_menu',
-        'show_contact',
-        'show_map',
-        'updated_at'
-    ]
-    
-    # list_editable ile liste ekranından hızlıca değişiklik yapılabilir
-    list_editable = [
-        'is_active',
-        'theme_mode', # <-- YENİ EKLENDİ
-        'allow_reservations',
-        'allow_online_ordering'
-    ]
-
-    # Filtreleme için kullanılacak alanlar
-    list_filter = [
+        'business', 
         'is_active', 
-        'theme_mode', # <-- YENİ EKLENDİ
-        'allow_reservations', 
-        'allow_online_ordering', 
+        'allow_reservations',      # <-- YENİ EKLENDİ
+        'allow_online_ordering',   # <-- YENİ EKLENDİ
         'show_menu', 
         'show_contact', 
         'show_map', 
-        'updated_at'
+        'created_at'
     ]
-
-    # Arama çubuğuna eklenecek alan
+    # list_editable ile liste ekranından hızlıca değişiklik yapılabilir
+    list_editable = [
+        'is_active', 
+        'allow_reservations',      # <-- YENİ EKLENDİ
+        'allow_online_ordering'    # <-- YENİ EKLENDİ
+    ]
+    list_filter = ['is_active', 'allow_reservations', 'allow_online_ordering', 'show_menu', 'show_contact', 'show_map', 'created_at']
     search_fields = ['business__name', 'website_title']
-    
-    # Sadece okunabilir alanlar (Genellikle otomatik oluşturulan tarihler)
     readonly_fields = ['created_at', 'updated_at']
     
-    # Alanları gruplamak için fieldsets kullanmak daha düzenli bir görünüm sağlar
     fieldsets = (
         ('Temel Bilgiler', {
             'fields': ('business', 'is_active')
         }),
-        ('Görünüm ve Özellikler', { # <-- ALANLAR YENİDEN DÜZENLENDİ
+        ('Hakkımızda', {
+            'fields': ('about_title', 'about_description', 'about_image')
+        }),
+        ('İletişim', {
+            'fields': ('contact_phone', 'contact_email', 'contact_address', 'contact_working_hours')
+        }),
+        ('Harita', {
+            'fields': ('map_latitude', 'map_longitude', 'map_zoom_level')
+        }),
+        ('SEO', {
+            'fields': ('website_title', 'website_description', 'website_keywords')
+        }),
+        ('Sosyal Medya', {
+            'fields': ('facebook_url', 'instagram_url', 'twitter_url')
+        }),
+        # 'Görünüm' fieldset'ine yeni alanlar eklendi
+        ('Görünüm ve Özellikler', {
             'fields': (
-                'theme_mode', 
                 'primary_color', 
                 'secondary_color', 
                 'show_menu', 
                 'show_contact', 
                 'show_map',
-                'allow_reservations',
-                'allow_online_ordering'
+                'allow_reservations',      # <-- YENİ EKLENDİ
+                'allow_online_ordering'    # <-- YENİ EKLENDİ
             )
-        }),
-        ('Hakkımızda', {
-            'fields': ('about_title', 'about_description', 'about_image'),
-            'classes': ('collapse',) # Bu bölümü daraltılmış başlat
-        }),
-        ('İletişim', {
-            'fields': ('contact_phone', 'contact_email', 'contact_address', 'contact_working_hours'),
-            'classes': ('collapse',)
-        }),
-        ('Harita', {
-            'fields': ('map_latitude', 'map_longitude', 'map_zoom_level'),
-            'classes': ('collapse',)
-        }),
-        ('SEO', {
-            'fields': ('website_title', 'website_description', 'website_keywords'),
-            'classes': ('collapse',)
-        }),
-        ('Sosyal Medya', {
-            'fields': ('facebook_url', 'instagram_url', 'twitter_url'),
-            'classes': ('collapse',)
         }),
         ('Zaman Damgaları', {
             'fields': ('created_at', 'updated_at'),

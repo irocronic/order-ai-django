@@ -8,8 +8,7 @@ from .auth_views import (
 from .business_views import BusinessViewSet, BusinessLayoutViewSet, LayoutElementViewSet
 from .menu_views import CategoryViewSet, MenuItemViewSet, MenuItemVariantViewSet
 from .order_views import OrderViewSet, OrderItemViewSet
-# GÜNCELLEME 1: payment_provider_webhook buraya import edildi
-from .payment_views import PaymentViewSet, payment_provider_webhook 
+from .payment_views import PaymentViewSet
 from .report_views import ReportView, DetailedSalesReportView
 from .stock_views import (
     IngredientViewSet, 
@@ -44,7 +43,6 @@ from .business_website_views import (
 from .reservation_views import (
     ReservationViewSet,
     PublicReservationCreateView,
-    TableAvailabilityAPIView, # TableAvailabilityAPIView de eksikti, eklendi
 )
 
 __all__ = [
@@ -93,7 +91,4 @@ __all__ = [
     'business_website_view',
     'ReservationViewSet',
     'PublicReservationCreateView',
-    'TableAvailabilityAPIView', # Eksik olan import __all__ listesine de eklendi
-    # GÜNCELLEME 2: Yeni fonksiyon __all__ listesine eklendi
-    'payment_provider_webhook', 
 ]

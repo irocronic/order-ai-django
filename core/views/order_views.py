@@ -1,4 +1,4 @@
-# core/views/order_views.py - GÜNCELLENMİŞ VE DÜZELTİLMİŞ KOD
+# core/views/order_views.py
 
 from django.db import transaction
 from django.db.models import Prefetch, Q
@@ -18,7 +18,7 @@ from rest_framework.pagination import PageNumberPagination
 
 from ..models import (
     Order, OrderItem, OrderItemExtra, MenuItem, MenuItemVariant, Table,
-    CreditPaymentDetails, Payment, Business, CustomUser as User, Pager, PaymentTerminal
+    CreditPaymentDetails, Payment, Business, CustomUser as User, Pager
 )
 from ..serializers import OrderSerializer, OrderItemSerializer
 from ..utils.order_helpers import PermissionKeys, get_user_business
@@ -30,8 +30,6 @@ from asgiref.sync import async_to_sync
 from ..signals.order_signals import send_order_update_notification
 
 from .order_actions import item_actions, status_actions, financial_actions, operational_actions
-# === HATA DÜZELTME: Doğrudan sınıf yerine modülün kendisini import ediyoruz ===
-from ..services import payment_terminal_service
 
 logger = logging.getLogger(__name__)
 
@@ -158,6 +156,7 @@ class OrderViewSet(viewsets.ModelViewSet):
         return obj
 
     def _check_order_modifiable(self, order: Order, action_name: str = "Bu işlem"):
+        """Siparişin değiştirilebilir olup olmadığını kontrol eden yardımcı metot."""
         allowed_actions_for_paid_order = ["retrieve", "list", "perform_destroy", "print_bill_action"]
         if order.is_paid and getattr(self, 'action', '') not in allowed_actions_for_paid_order:
             raise PermissionDenied(f"Ödenmiş siparişler üzerinde '{action_name}' yapılamaz.")
@@ -300,92 +299,11 @@ class OrderViewSet(viewsets.ModelViewSet):
 
     def destroy(self, request, *args, **kwargs):
         instance = self.get_object()
-        user = self.request.user
-        self._check_order_modifiable(instance, action_name="Siparişi iptal etme/silme")
-
-        if not (user.user_type == 'business_owner' or \
-                (user.user_type == 'staff' and PermissionKeys.TAKE_ORDERS in user.staff_permissions) or \
-                user.is_superuser):
-            raise PermissionDenied("Bu siparişi iptal etme/silme yetkiniz yok.")
-
-        order_id = instance.id
-        
-        if instance.status != Order.STATUS_CANCELLED and instance.status != Order.STATUS_COMPLETED :
-            original_status_display = instance.get_status_display()
-            instance.status = Order.STATUS_CANCELLED
-            instance.save(update_fields=['status'])
-            logger.info(f"Sipariş {order_id} (eski durum: {original_status_display}) kullanıcı {user.username} tarafından İPTAL EDİLDİ.")
-            
-            transaction.on_commit(
-                lambda: send_order_update_notification(
-                    order=instance,
-                    created=False, 
-                    update_fields=['status']
-                )
-            )
-            
-            order_serializer_data = OrderSerializer(instance, context={'request': self.request}).data
-            return Response(order_serializer_data, status=status.HTTP_200_OK)
-        
-        elif user.is_superuser: 
-            instance.delete()
-            logger.info(f"Sipariş {order_id} SUPERUSER {user.username} tarafından VERİTABANINDAN SİLİNDİ.")
-            return Response(status=status.HTTP_204_NO_CONTENT)
-            
-        else:
-            logger.info(f"Sipariş {order_id} zaten {instance.get_status_display()} durumunda, işlem yapılmadı.")
-            return Response({"detail": f"Sipariş zaten {instance.get_status_display()} durumunda."}, status=status.HTTP_400_BAD_REQUEST)
+        return operational_actions.destroy_order_action(self, instance)
 
     @action(detail=False, methods=['post'], url_path='transfer')
     def transfer_order(self, request):
         return operational_actions.transfer_order_action(self, request)
-
-    @action(detail=True, methods=['post'], url_path='initiate-pos-payment')
-    def initiate_pos_payment(self, request, pk=None):
-        order = self.get_object()
-        user = request.user
-        business = get_user_business(user)
-
-        if not business.pos_integration_enabled:
-            return Response({'detail': 'POS entegrasyonu bu işletme için aktif değil.'}, status=status.HTTP_400_BAD_REQUEST)
-
-        amount = request.data.get('amount')
-        terminal_id = request.data.get('terminal_id') # Flutter'dan terminal ID'si de gelmeli
-
-        if not amount or not terminal_id:
-            return Response({'detail': 'Tutar ve Terminal ID belirtilmelidir.'}, status=status.HTTP_400_BAD_REQUEST)
-
-        try:
-            terminal = PaymentTerminal.objects.get(id=terminal_id, business=business)
-            
-            # Yeni servis yapısını çağır
-            payment_intent_id = payment_terminal_service.create_payment(
-                amount=Decimal(amount),
-                currency=business.currency_code,
-                order=order,
-                terminal=terminal
-            )
-            return Response({'payment_intent_id': payment_intent_id}, status=status.HTTP_200_OK)
-        except PaymentTerminal.DoesNotExist:
-            return Response({'detail': 'Geçersiz terminal ID.'}, status=status.HTTP_404_NOT_FOUND)
-        except Exception as e:
-            return Response({'detail': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-
-    # +++++++++++++++++++++ YENİ ACTION BAŞLANGICI +++++++++++++++++++++
-    @action(detail=True, methods=['get'], url_path='check-payment-status')
-    def check_payment_status(self, request, pk=None):
-        """
-        Bir siparişin ödenip ödenmediğini kontrol eder. Webhook'un gelip gelmediğini
-        anlamak için Flutter tarafından periyodik olarak çağrılır.
-        """
-        order = self.get_object()
-        if order.is_paid and order.status == Order.STATUS_COMPLETED:
-            return Response({'status': 'succeeded'})
-        else:
-            # Henüz ödenmemiş veya başka bir durumda
-            return Response({'status': 'processing'})
-    # +++++++++++++++++++++ YENİ ACTION SONU +++++++++++++++++++++
 
 class OrderItemViewSet(mixins.DestroyModelMixin, mixins.UpdateModelMixin, viewsets.GenericViewSet):
     queryset = OrderItem.objects.all()
@@ -588,11 +506,12 @@ class OrderItemViewSet(mixins.DestroyModelMixin, mixins.UpdateModelMixin, viewse
 
         logger.info(f"OrderItem ID {order_item.id} (Order #{order.id}) 'preparing_kds' olarak işaretlendi.")
         
+        # <<< GÜNCELLEME: Olay türü burada belirleniyor >>>
         transaction.on_commit(
             lambda: send_order_update_notification(
                 order=order, 
                 created=False, 
-                specific_event_type='order_preparing_update'
+                specific_event_type='order_preparing_update' # Doğru olay türünü zorla
             )
         )
         
@@ -624,6 +543,7 @@ class OrderItemViewSet(mixins.DestroyModelMixin, mixins.UpdateModelMixin, viewse
         
         all_ready = not all_kds_items_in_order.exclude(kds_status=OrderItem.KDS_ITEM_STATUS_READY).exists()
 
+        # +++ ÇÖZÜM KODU BAŞLANGICI +++
         notification_event_to_send = None
         
         if all_ready:
@@ -636,6 +556,7 @@ class OrderItemViewSet(mixins.DestroyModelMixin, mixins.UpdateModelMixin, viewse
             notification_event_to_send = 'order_ready_for_pickup_update'
         else:
             logger.info(f"Sipariş #{order.id} için bazı kalemler hazır, ancak diğerleri bekliyor.")
+            # Siparişin genel durumu değişmedi, sadece bir kalemi güncellendi.
             notification_event_to_send = 'order_item_updated'
         
         transaction.on_commit(
@@ -645,6 +566,7 @@ class OrderItemViewSet(mixins.DestroyModelMixin, mixins.UpdateModelMixin, viewse
                 specific_event_type=notification_event_to_send
             )
         )
+        # +++ ÇÖZÜM KODU SONU +++
         
         serializer = OrderSerializer(order_item.order, context={'request': request})
         return Response(serializer.data, status=status.HTTP_200_OK)
@@ -652,6 +574,7 @@ class OrderItemViewSet(mixins.DestroyModelMixin, mixins.UpdateModelMixin, viewse
     @action(detail=True, methods=['post'], url_path='mark-picked-up')
     @transaction.atomic
     def mark_item_picked_up(self, request, pk=None):
+        """Tek bir sipariş kalemini garson tarafından alınmış olarak işaretler."""
         order_item = self.get_object()
         order = order_item.order
         self._check_order_item_modifiable(order_item, "garson tarafından alınma")

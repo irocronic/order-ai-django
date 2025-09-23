@@ -172,12 +172,6 @@ class Business(models.Model):
     phone = models.CharField(max_length=20, blank=True, null=True, verbose_name="Telefon Numarası")
     is_setup_complete = models.BooleanField(default=False, help_text="İşletme sahibi kurulum sihirbazını tamamladı mı?")
 
-    pos_integration_enabled = models.BooleanField(
-        default=False,
-        verbose_name="Fiziksel POS Entegrasyonu Aktif",
-        help_text="İşletme, ödemeleri entegre bir POS cihazı üzerinden mi alacak?"
-    )
-
     class Currency(models.TextChoices):
         TRY = 'TRY', _('Türk Lirası (₺)')
         USD = 'USD', _('ABD Doları ($)')
@@ -1042,14 +1036,6 @@ class NotificationSetting(models.Model):
 
 class BusinessWebsite(models.Model):
     """İşletmeye özel web sitesi bilgileri"""
-    
-    # === YENİ KOD BAŞLANGICI: TEMA SEÇENEKLERİ ===
-    class ThemeMode(models.TextChoices):
-        SYSTEM = 'system', _('Sistem Varsayılanı')
-        LIGHT = 'light', _('Aydınlık Mod')
-        DARK = 'dark', _('Karanlık Mod')
-    # ============================================
-
     business = models.OneToOneField(
         'Business', 
         on_delete=models.CASCADE, 
@@ -1068,7 +1054,6 @@ class BusinessWebsite(models.Model):
         verbose_name="Hakkımızda Açıklaması"
     )
     about_image = models.URLField(
-        max_length=1024,
         blank=True, 
         null=True, 
         verbose_name="Hakkımızda Görseli"
@@ -1165,15 +1150,6 @@ class BusinessWebsite(models.Model):
         verbose_name="İkincil Renk"
     )
     
-    # === YENİ KOD: TEMA ALANI ===
-    theme_mode = models.CharField(
-        max_length=10,
-        choices=ThemeMode.choices,
-        default=ThemeMode.SYSTEM,
-        verbose_name="Web Sitesi Teması"
-    )
-    # ============================
-    
     # Durum Bilgileri
     is_active = models.BooleanField(
         default=True, 
@@ -1192,6 +1168,7 @@ class BusinessWebsite(models.Model):
         verbose_name="Haritayı Göster"
     )
     
+    # === YENİ ALANLAR BAŞLANGICI ===
     allow_reservations = models.BooleanField(
         default=False, 
         verbose_name="Online Rezervasyona İzin Ver"
@@ -1200,6 +1177,7 @@ class BusinessWebsite(models.Model):
         default=False, 
         verbose_name="Online Siparişe İzin Ver"
     )
+    # === YENİ ALANLAR SONU ===
     
     # Zaman Damgaları
     created_at = models.DateTimeField(auto_now_add=True)
@@ -1271,38 +1249,3 @@ class Reservation(models.Model):
 
     def __str__(self):
         return f"Rez. #{self.id}: {self.customer_name} - Masa {self.table.table_number} ({self.reservation_time.strftime('%d.%m %H:%M')})"
-
-
-
-
-class PaymentTerminal(models.Model):
-    """
-    İşletmeye ait fiziksel POS cihazlarını temsil eder.
-    """
-    class Status(models.TextChoices):
-        ACTIVE = 'active', _('Aktif')
-        INACTIVE = 'inactive', _('Pasif')
-        OUT_OF_SERVICE = 'out_of_service', _('Servis Dışı')
-
-    business = models.ForeignKey(Business, on_delete=models.CASCADE, related_name='terminals', verbose_name="İşletme")
-    provider_terminal_id = models.CharField(
-        max_length=255, 
-        unique=True, 
-        verbose_name="Sağlayıcı Terminal ID",
-        help_text="Stripe, Adyen gibi ödeme sağlayıcısından alınan benzersiz terminal kimliği."
-    )
-    name = models.CharField(
-        max_length=100,
-        verbose_name="Terminal Adı",
-        help_text="Kullanıcının terminali tanıması için verdiği isim (örn: Kasa 1, Bar Terminali)."
-    )
-    status = models.CharField(max_length=20, choices=Status.choices, default=Status.ACTIVE, verbose_name="Durum")
-    last_seen = models.DateTimeField(null=True, blank=True, verbose_name="Son Görülme")
-    
-    class Meta:
-        verbose_name = "Ödeme Terminali"
-        verbose_name_plural = "Ödeme Terminalleri"
-        ordering = ['name']
-
-    def __str__(self):
-        return f"{self.name} ({self.business.name})"

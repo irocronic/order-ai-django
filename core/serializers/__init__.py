@@ -1,5 +1,3 @@
-# core/serializers/__init__.py
-
 from .user_serializers import (
     RegisterSerializer,
     AccountSettingsSerializer,
@@ -75,10 +73,6 @@ from .business_website_serializers import (
     BusinessWebsiteUpdateSerializer,
     BusinessPublicSerializer,
 )
-from .terminal_serializers import (
-    PaymentTerminalSerializer,
-)
-
 
 __all__ = [
     'RegisterSerializer',
@@ -128,5 +122,4 @@ __all__ = [
     'BusinessWebsiteSerializer',
     'BusinessWebsiteUpdateSerializer',
     'BusinessPublicSerializer',
-    'PaymentTerminalSerializer',
 ]

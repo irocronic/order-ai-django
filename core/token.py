@@ -61,7 +61,6 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
             token['business_id'] = business.id
             token['is_setup_complete'] = business.is_setup_complete
             token['currency_code'] = business.currency_code
-            token['pos_integration_enabled'] = business.pos_integration_enabled
             
             try:
                 subscription = business.subscription

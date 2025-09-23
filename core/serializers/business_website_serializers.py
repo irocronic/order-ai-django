@@ -32,13 +32,12 @@ class BusinessWebsiteSerializer(serializers.ModelSerializer):
             'twitter_url',
             'primary_color',
             'secondary_color',
-            'theme_mode',           # <-- YENİ ALAN
             'is_active',
             'show_menu',
             'show_contact',
             'show_map',
-            'allow_reservations',
-            'allow_online_ordering',
+            'allow_reservations',      # <-- GÜNCELLENDİ
+            'allow_online_ordering',   # <-- GÜNCELLENDİ
             'website_url',
             'has_location',
             'created_at',
@@ -71,12 +70,11 @@ class BusinessWebsiteUpdateSerializer(serializers.ModelSerializer):
             'twitter_url',
             'primary_color',
             'secondary_color',
-            'theme_mode',           # <-- YENİ ALAN
             'show_menu',
             'show_contact',
             'show_map',
-            'allow_reservations',
-            'allow_online_ordering'
+            'allow_reservations',      # <-- GÜNCELLENDİ
+            'allow_online_ordering'    # <-- GÜNCELLENDİ
         ]
 
     def validate(self, data):
