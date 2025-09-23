@@ -8,9 +8,22 @@ from django.shortcuts import get_object_or_404
 from django.db import transaction
 from rest_framework.exceptions import PermissionDenied, ValidationError
 
+# === YENİ EKLENEN IMPORT ===
+# Hata detaylarını loglara yazdırmak için traceback modülünü ekliyoruz.
+import traceback
+
 from ..mixins import LimitCheckMixin
 from ..models import Business, Table, BusinessLayout, LayoutElement
-from ..serializers import BusinessSerializer, TableSerializer, BusinessLayoutSerializer, LayoutElementSerializer
+
+# === SERIALIZER IMPORT LİSTESİ GÜNCELLENDİ ===
+# BusinessPaymentSettingsSerializer'ı import ettiğimizden emin oluyoruz.
+from ..serializers import (
+    BusinessSerializer, 
+    TableSerializer, 
+    BusinessLayoutSerializer, 
+    LayoutElementSerializer,
+    BusinessPaymentSettingsSerializer
+)
 from ..utils.order_helpers import get_user_business, PermissionKeys
 
 
@@ -82,9 +95,33 @@ class BusinessViewSet(viewsets.ModelViewSet):
             })
 
         elif request.method == 'PUT':
+            # Gelen veriyi loglayalım
+            print(f"--- GELEN İSTEK VERİSİ (payment-settings): {request.data}")
+            
             serializer = BusinessPaymentSettingsSerializer(business, data=request.data)
             if serializer.is_valid(raise_exception=True):
-                serializer.save()
+                
+                # === HATA AYIKLAMA (DEBUG) KODU BAŞLANGICI ===
+                try:
+                    print("--- serializer.save() ÇAĞRILMADAN HEMEN ÖNCE ---")
+                    serializer.save()
+                    print("--- serializer.save() BAŞARIYLA TAMAMLANDI ---")
+                except Exception as e:
+                    # Hata olursa, bu blok çalışacak ve tüm detayları loglara yazacak.
+                    print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
+                    print("!!! serializer.save() SIRASINDA BİR HATA YAKALANDI !!!")
+                    print(f"!!! HATA TİPİ: {type(e)}")
+                    print(f"!!! HATA MESAJI: {str(e)}")
+                    
+                    # En önemli kısım: Tam traceback'i loglara yazdırmak için
+                    traceback.print_exc()
+                    
+                    print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
+                    
+                    # Hatayı yeniden fırlatarak 500 response'unun oluşmasını sağlıyoruz.
+                    raise e
+                # === HATA AYIKLAMA (DEBUG) KODU SONU ===
+                
                 return Response({
                     'status': 'success',
                     'message': 'Ödeme ayarları başarıyla güncellendi.',
@@ -93,9 +130,9 @@ class BusinessViewSet(viewsets.ModelViewSet):
 
 
 class BusinessLayoutViewSet(viewsets.GenericViewSet, 
-                              mixins.ListModelMixin,
-                              mixins.RetrieveModelMixin, 
-                              mixins.UpdateModelMixin):
+                                mixins.ListModelMixin,
+                                mixins.RetrieveModelMixin, 
+                                mixins.UpdateModelMixin):
     """
     İşletme sahibinin kendi yerleşim planını görüntülemesini ve güncellemesini sağlar.
     """
