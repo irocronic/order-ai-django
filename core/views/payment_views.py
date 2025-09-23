@@ -1,4 +1,4 @@
-# core/views/payment_views.py
+# core/views/payment_views.py (GÜNCELLENMİŞ VE TAM SÜRÜM)
 
 from rest_framework import viewsets, status
 from rest_framework.permissions import IsAuthenticated, AllowAny
@@ -6,13 +6,17 @@ from rest_framework.exceptions import PermissionDenied
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 from django.db import transaction
+from django.http import HttpResponse
+from django.conf import settings
+from decimal import Decimal
+import logging
+import stripe
 
 from ..models import Payment, Business, Order
 from ..serializers import PaymentSerializer
-from .order_views import get_user_business
-# YENİ EKLENEN IMPORT'LAR
-from ..tasks import send_socket_io_notification 
-import logging
+from ..utils.order_helpers import get_user_business
+from ..tasks import send_socket_io_notification
+from ..services import payment_terminal_service # Yeni, modüler servis yapısını import et
 
 logger = logging.getLogger(__name__)
 
@@ -71,123 +75,40 @@ class PaymentViewSet(viewsets.ModelViewSet):
                 raise PermissionDenied("Bu ödemeyi silme yetkiniz yok.")
         instance.delete()
 
-# +++++++++++++++++++++ YENİ EKLENEN BÖLÜM +++++++++++++++++++++
+
 @api_view(['POST'])
-@permission_classes([AllowAny]) # Bu endpoint'e dış servislerden (ödeme sağlayıcı) istek geleceği için kimlik doğrulaması gerektirmez.
+@permission_classes([AllowAny])
 @transaction.atomic
 def payment_provider_webhook(request):
     """
-    Ödeme sağlayıcısından (örn: Stripe, Adyen) gelen anlık durum güncellemelerini işler.
-    Bu, fiziksel POS cihazındaki işlemin sonucunu backend'e bildirir.
+    Aktif ödeme sağlayıcısından gelen webhook'ları işler.
+    Tüm mantık, seçilen servis sınıfı tarafından yönetilir.
     """
-    payload = request.data
-    event_type = payload.get('type') # Bu, sağlayıcının dokümantasyonuna göre değişir.
+    try:
+        # Fabrika, ayardaki aktif sağlayıcıyı seçip ilgili handle_webhook metodunu çağıracak
+        order, payment = payment_terminal_service.handle_webhook(request)
 
-    logger.info(f"Payment Webhook alındı: Event Tipi -> {event_type}")
-
-    # Örnek olarak 'terminal.payment.succeeded' event'ini işleyelim.
-    if event_type == 'terminal.payment.succeeded':
-        try:
-            payment_intent = payload['data']['object']
-            metadata = payment_intent.get('metadata', {})
-            order_id = metadata.get('order_id')
-            terminal_id = metadata.get('terminal_id')
-
-            if not order_id:
-                logger.error("Webhook hatası: Payload içinde 'order_id' bulunamadı.")
-                return Response({'status': 'error', 'message': 'Missing order_id'}, status=status.HTTP_400_BAD_REQUEST)
-
-            order = Order.objects.select_for_update().get(id=int(order_id))
-
-            if order.is_paid:
-                logger.warning(f"Webhook uyarısı: Sipariş #{order_id} zaten ödenmiş durumda.")
-                return Response({'status': 'ok', 'message': 'Order already paid'}, status=status.HTTP_200_OK)
-
-            # Siparişi ödenmiş olarak işaretle ve tamamla
+        if order and payment:
+            # Ödeme başarılıysa siparişi güncelle ve Flutter'a bildirim gönder
             order.is_paid = True
             order.status = Order.STATUS_COMPLETED
             order.save(update_fields=['is_paid', 'status'])
-            
-            # Ödeme kaydını oluştur
-            Payment.objects.create(
-                order=order,
-                payment_type='credit_card', # POS cihazı olduğu için
-                amount=Decimal(payment_intent['amount']) / 100 # Tutar genellikle 'cent' olarak gelir.
-            )
-            
-            logger.info(f"Sipariş #{order_id} POS cihazı ({terminal_id}) üzerinden başarıyla ödendi.")
+            logger.info(f"Sipariş #{order.id} POS webhook üzerinden başarıyla ödendi.")
 
-            # Flutter uygulamasına Socket.IO ile bildirim gönder
             room = f"business_{order.business_id}"
-            event = 'pos_payment_update'
+            event_name = 'pos_payment_update'
             data = {'status': 'success', 'order_id': order.id}
-            send_socket_io_notification(room, event, data)
-            logger.info(f"Flutter uygulamasına '{event}' olayı gönderildi. Oda: {room}")
-
-        except Order.DoesNotExist:
-            logger.error(f"Webhook hatası: Sipariş ID '{order_id}' bulunamadı.")
-            return Response({'status': 'error', 'message': 'Order not found'}, status=status.HTTP_404_NOT_FOUND)
-        except Exception as e:
-            logger.error(f"Webhook işlenirken kritik hata: {e}", exc_info=True)
-            return Response({'status': 'error', 'message': 'Internal server error'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-    elif event_type == 'terminal.payment.failed':
-         # Başarısız ödeme durumunu işle
-        payment_intent = payload['data']['object']
-        metadata = payment_intent.get('metadata', {})
-        order_id = metadata.get('order_id')
+            send_socket_io_notification(room, event_name, data)
+            logger.info(f"Flutter'a '{event_name}' olayı gönderildi. Oda: {room}")
         
-        if order_id:
-            try:
-                order = Order.objects.get(id=int(order_id))
-                room = f"business_{order.business_id}"
-                event = 'pos_payment_update'
-                data = {'status': 'failed', 'order_id': order.id, 'error': 'POS cihazında ödeme başarısız oldu.'}
-                send_socket_io_notification(room, event, data)
-                logger.warning(f"Sipariş #{order_id} için POS ödemesi başarısız oldu. Flutter'a bildirim gönderildi.")
-            except Order.DoesNotExist:
-                 logger.error(f"Webhook (failed event) hatası: Sipariş ID '{order_id}' bulunamadı.")
+        return HttpResponse(status=200)
 
-    # Sağlayıcıya isteğin başarıyla alındığını bildir
-
-
-
-
-
-def payment_provider_webhook(request):
-    # ... (imza doğrulama ve event ayrıştırma kodları)
-    
-    # ### DEMO İÇİN MEVCUT YAPI KORUNUYOR ###
-    payload = request.data
-    event_type = payload.get('type')
-    
-    if event_type == 'terminal.payment.succeeded':
-        # ... (mevcut başarılı ödeme kodu)
-        pass
-    
-    elif event_type == 'terminal.payment.failed':
-        # ... (mevcut başarısız ödeme kodu)
-        pass
-        
-    # +++ YENİ BÖLÜM BAŞLANGICI +++
-    elif event_type == 'terminal.payment.canceled':
-        payment_intent = payload['data']['object']
-        metadata = payment_intent.get('metadata', {})
-        order_id = metadata.get('order_id')
-        
-        if order_id:
-            try:
-                order = Order.objects.get(id=int(order_id))
-                room = f"business_{order.business_id}"
-                event = 'pos_payment_update'
-                data = {'status': 'canceled', 'order_id': order.id, 'error': 'Ödeme terminalden iptal edildi.'}
-                send_socket_io_notification(room, event, data)
-                logger.warning(f"Sipariş #{order_id} için POS ödemesi iptal edildi. Flutter'a bildirim gönderildi.")
-            except Order.DoesNotExist:
-                 logger.error(f"Webhook (canceled event) hatası: Sipariş ID '{order_id}' bulunamadı.")
-    # +++ YENİ BÖLÜM SONU +++
-
-
-    return Response({'status': 'received'}, status=status.HTTP_200_OK)
-
-# +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+    except PermissionError as e:
+        logger.warning(f"[Webhook] Yetki hatası: {e}")
+        return HttpResponse(status=403)
+    except (ValueError, Order.DoesNotExist) as e:
+        logger.error(f"[Webhook] Geçersiz veri veya bulunamayan sipariş: {e}")
+        return HttpResponse(status=400)
+    except Exception as e:
+        logger.error(f"[Webhook] İşlenirken kritik hata: {e}", exc_info=True)
+        return HttpResponse(status=500)

@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 import json
 import ssl  # SSL ayarları için gerekli
 
-# --- TEMEL AYARLARI ---
+# --- TEMEL AYARLAR ---
 BASE_DIR = Path(__file__).resolve().parent.parent
 dotenv_path = os.path.join(BASE_DIR, '.env')
 if os.path.exists(dotenv_path):
@@ -316,6 +316,48 @@ if not GOOGLE_APPLICATION_CREDENTIALS:
         print("UYARI: GOOGLE_APPLICATION_CREDENTIALS_PATH ayarlanmamış ve lokalde google-credentials.json bulunamadı. Abonelik doğrulama çalışmayabilir.")
 
 ANDROID_PACKAGE_NAME = os.environ.get('ANDROID_PACKAGE_NAME', 'com.orderai.app')
+
+# ==============================================================================
+# --- ÖDEME SAĞLAYICI AYARLARI (YENİ VE MODÜLER YAPI) ---
+# ==============================================================================
+# .env dosyasından hangi sağlayıcının aktif olduğunu oku (varsayılan: iyzico)
+ACTIVE_PAYMENT_PROVIDER = os.environ.get('ACTIVE_PAYMENT_PROVIDER', 'iyzico')
+
+# Tüm sağlayıcıların ayarlarını ve gizli anahtarlarını merkezi bir yerde topla
+PAYMENT_PROVIDERS = {
+    'stripe': {
+        'service_class': 'core.services.stripe_terminal_service.StripeTerminalService',
+        'secret_key': os.environ.get('STRIPE_SECRET_KEY'),
+        'webhook_secret': os.environ.get('STRIPE_WEBHOOK_SECRET'),
+    },
+    'iyzico': {
+        'service_class': 'core.services.iyzico_terminal_service.IyzicoTerminalService',
+        'api_key': os.environ.get('IYZICO_API_KEY'),
+        'secret_key': os.environ.get('IYZICO_SECRET_KEY'),
+        'base_url': os.environ.get('IYZICO_BASE_URL', 'https://api.iyzipay.com'),
+    }
+    # Gelecekte buraya 'paytr' gibi başka sağlayıcılar eklenebilir.
+}
+
+# Kodun geri kalanında kolay erişim için aktif sağlayıcının ayarlarını al
+ACTIVE_PROVIDER_CONFIG = PAYMENT_PROVIDERS.get(ACTIVE_PAYMENT_PROVIDER, {})
+
+# Geriye dönük uyumluluk ve kolay erişim için eski değişkenleri de dinamik olarak set edelim
+STRIPE_SECRET_KEY = PAYMENT_PROVIDERS.get('stripe', {}).get('secret_key')
+STRIPE_WEBHOOK_SECRET = PAYMENT_PROVIDERS.get('stripe', {}).get('webhook_secret')
+
+IYZICO_API_KEY = PAYMENT_PROVIDERS.get('iyzico', {}).get('api_key')
+IYZICO_SECRET_KEY = PAYMENT_PROVIDERS.get('iyzico', {}).get('secret_key')
+IYZICO_BASE_URL = PAYMENT_PROVIDERS.get('iyzico', {}).get('base_url')
+
+# Üretim ortamı için uyarılar
+if not DEBUG:
+    if ACTIVE_PAYMENT_PROVIDER == 'stripe' and (not STRIPE_SECRET_KEY or not STRIPE_WEBHOOK_SECRET):
+        print("UYARI: Stripe aktif sağlayıcı olarak seçilmiş ancak STRIPE_SECRET_KEY veya STRIPE_WEBHOOK_SECRET ayarlanmamış.")
+    if ACTIVE_PAYMENT_PROVIDER == 'iyzico' and (not IYZICO_API_KEY or not IYZICO_SECRET_KEY):
+        print("UYARI: Iyzico aktif sağlayıcı olarak seçilmiş ancak IYZICO_API_KEY veya IYZICO_SECRET_KEY ayarlanmamış.")
+# ==============================================================================
+
 
 # --- SOCKET.IO AYARLARI ---
 SOCKETIO_SETTINGS = {

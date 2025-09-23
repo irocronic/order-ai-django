@@ -349,18 +349,27 @@ class OrderViewSet(viewsets.ModelViewSet):
             return Response({'detail': 'POS entegrasyonu bu işletme için aktif değil.'}, status=status.HTTP_400_BAD_REQUEST)
 
         amount = request.data.get('amount')
-        if not amount:
-            return Response({'detail': 'Tutar belirtilmelidir.'}, status=status.HTTP_400_BAD_REQUEST)
+        terminal_id = request.data.get('terminal_id') # Flutter'dan terminal ID'si de gelmeli
+
+        if not amount or not terminal_id:
+            return Response({'detail': 'Tutar ve Terminal ID belirtilmelidir.'}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
-            payment_intent_id = PaymentTerminalService.create_payment(
+            terminal = PaymentTerminal.objects.get(id=terminal_id, business=business)
+            
+            # Yeni servis yapısını çağır
+            payment_intent_id = payment_terminal_service.create_payment(
                 amount=Decimal(amount),
-                order_id=order.id,
-                terminal_id="TERMINAL_ID_BURAYA_GELECEK"
+                currency=business.currency_code,
+                order=order,
+                terminal=terminal
             )
             return Response({'payment_intent_id': payment_intent_id}, status=status.HTTP_200_OK)
+        except PaymentTerminal.DoesNotExist:
+            return Response({'detail': 'Geçersiz terminal ID.'}, status=404_NOT_FOUND)
         except Exception as e:
             return Response({'detail': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
 
     # +++++++++++++++++++++ YENİ ACTION BAŞLANGICI +++++++++++++++++++++
     @action(detail=True, methods=['get'], url_path='check-payment-status')
