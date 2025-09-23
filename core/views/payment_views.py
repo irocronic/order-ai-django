@@ -149,6 +149,45 @@ def payment_provider_webhook(request):
                  logger.error(f"Webhook (failed event) hatası: Sipariş ID '{order_id}' bulunamadı.")
 
     # Sağlayıcıya isteğin başarıyla alındığını bildir
+
+
+
+
+
+def payment_provider_webhook(request):
+    # ... (imza doğrulama ve event ayrıştırma kodları)
+    
+    # ### DEMO İÇİN MEVCUT YAPI KORUNUYOR ###
+    payload = request.data
+    event_type = payload.get('type')
+    
+    if event_type == 'terminal.payment.succeeded':
+        # ... (mevcut başarılı ödeme kodu)
+        pass
+    
+    elif event_type == 'terminal.payment.failed':
+        # ... (mevcut başarısız ödeme kodu)
+        pass
+        
+    # +++ YENİ BÖLÜM BAŞLANGICI +++
+    elif event_type == 'terminal.payment.canceled':
+        payment_intent = payload['data']['object']
+        metadata = payment_intent.get('metadata', {})
+        order_id = metadata.get('order_id')
+        
+        if order_id:
+            try:
+                order = Order.objects.get(id=int(order_id))
+                room = f"business_{order.business_id}"
+                event = 'pos_payment_update'
+                data = {'status': 'canceled', 'order_id': order.id, 'error': 'Ödeme terminalden iptal edildi.'}
+                send_socket_io_notification(room, event, data)
+                logger.warning(f"Sipariş #{order_id} için POS ödemesi iptal edildi. Flutter'a bildirim gönderildi.")
+            except Order.DoesNotExist:
+                 logger.error(f"Webhook (canceled event) hatası: Sipariş ID '{order_id}' bulunamadı.")
+    # +++ YENİ BÖLÜM SONU +++
+
+
     return Response({'status': 'received'}, status=status.HTTP_200_OK)
 
 # +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++

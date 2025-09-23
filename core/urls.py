@@ -48,6 +48,9 @@ from core.views import (
     payment_provider_webhook,
 )
 
+# +++ YENİ IMPORT +++
+from core.views.terminal_views import PaymentTerminalViewSet
+
 # Business Website API Views için importlar
 from core.views.business_website_views import (
     BusinessWebsiteDetailView,
@@ -83,6 +86,8 @@ router.register(r'purchase-orders', PurchaseOrderViewSet, basename='purchaseorde
 router.register(r'reservations', ReservationViewSet, basename='reservation')
 router.register(r'layouts', BusinessLayoutViewSet, basename='layout')
 router.register(r'layout-elements', LayoutElementViewSet, basename='layoutelement')
+# +++ YENİ SATIR +++
+router.register(r'terminals', PaymentTerminalViewSet, basename='terminal')
 
 # YÖNETİCİ API'leri için ayrı bir DefaultRouter
 admin_router = DefaultRouter()

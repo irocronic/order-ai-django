@@ -1271,3 +1271,38 @@ class Reservation(models.Model):
 
     def __str__(self):
         return f"Rez. #{self.id}: {self.customer_name} - Masa {self.table.table_number} ({self.reservation_time.strftime('%d.%m %H:%M')})"
+
+
+
+
+class PaymentTerminal(models.Model):
+    """
+    İşletmeye ait fiziksel POS cihazlarını temsil eder.
+    """
+    class Status(models.TextChoices):
+        ACTIVE = 'active', _('Aktif')
+        INACTIVE = 'inactive', _('Pasif')
+        OUT_OF_SERVICE = 'out_of_service', _('Servis Dışı')
+
+    business = models.ForeignKey(Business, on_delete=models.CASCADE, related_name='terminals', verbose_name="İşletme")
+    provider_terminal_id = models.CharField(
+        max_length=255, 
+        unique=True, 
+        verbose_name="Sağlayıcı Terminal ID",
+        help_text="Stripe, Adyen gibi ödeme sağlayıcısından alınan benzersiz terminal kimliği."
+    )
+    name = models.CharField(
+        max_length=100,
+        verbose_name="Terminal Adı",
+        help_text="Kullanıcının terminali tanıması için verdiği isim (örn: Kasa 1, Bar Terminali)."
+    )
+    status = models.CharField(max_length=20, choices=Status.choices, default=Status.ACTIVE, verbose_name="Durum")
+    last_seen = models.DateTimeField(null=True, blank=True, verbose_name="Son Görülme")
+    
+    class Meta:
+        verbose_name = "Ödeme Terminali"
+        verbose_name_plural = "Ödeme Terminalleri"
+        ordering = ['name']
+
+    def __str__(self):
+        return f"{self.name} ({self.business.name})"
