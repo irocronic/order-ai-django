@@ -1,4 +1,4 @@
-# core/views/order_views.py - GÜNCELLENMİŞ KOD
+# core/views/order_views.py - GÜNCELLENMİŞ VE DÜZELTİLMİŞ KOD
 
 from django.db import transaction
 from django.db.models import Prefetch, Q
@@ -18,7 +18,7 @@ from rest_framework.pagination import PageNumberPagination
 
 from ..models import (
     Order, OrderItem, OrderItemExtra, MenuItem, MenuItemVariant, Table,
-    CreditPaymentDetails, Payment, Business, CustomUser as User, Pager
+    CreditPaymentDetails, Payment, Business, CustomUser as User, Pager, PaymentTerminal
 )
 from ..serializers import OrderSerializer, OrderItemSerializer
 from ..utils.order_helpers import PermissionKeys, get_user_business
@@ -29,8 +29,9 @@ from asgiref.sync import async_to_sync
 
 from ..signals.order_signals import send_order_update_notification
 
-from .order_actions import item_actions, status_actions, financial_actions
-from ..services.payment_terminal_service import PaymentTerminalService
+from .order_actions import item_actions, status_actions, financial_actions, operational_actions
+# === HATA DÜZELTME: Doğrudan sınıf yerine modülün kendisini import ediyoruz ===
+from ..services import payment_terminal_service
 
 logger = logging.getLogger(__name__)
 
@@ -366,7 +367,7 @@ class OrderViewSet(viewsets.ModelViewSet):
             )
             return Response({'payment_intent_id': payment_intent_id}, status=status.HTTP_200_OK)
         except PaymentTerminal.DoesNotExist:
-            return Response({'detail': 'Geçersiz terminal ID.'}, status=404_NOT_FOUND)
+            return Response({'detail': 'Geçersiz terminal ID.'}, status=status.HTTP_404_NOT_FOUND)
         except Exception as e:
             return Response({'detail': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
