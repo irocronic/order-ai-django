@@ -2,169 +2,206 @@
 
 from .base import BasePaymentService
 from core.models import Business, Order
-import requests
-import json
 import logging
 from decimal import Decimal
 from django.conf import settings
-import hashlib
+import qrcode
+from io import BytesIO
 import base64
-import time
+import uuid
 
 logger = logging.getLogger(__name__)
 
 class IyzicoPaymentService(BasePaymentService):
     def __init__(self, business: Business):
         super().__init__(business)
-        # Iyzico API'si için gerekli ayarları yap
-        self.api_key = self.api_key
-        self.secret_key = self.secret_key
-        self.base_url = self._get_base_url()
+        # Iyzico SDK'sını import et ve yapılandır
+        self._setup_iyzico_sdk()
 
-    def _get_base_url(self):
-        """Ortam tipine göre API URL'ini döndür"""
-        if getattr(settings, 'DEBUG', False):
-            return 'https://sandbox-api.iyzipay.com'  # Test ortamı
-        else:
-            return 'https://api.iyzipay.com'  # Production ortamı
-
-    def _generate_auth_string(self, request_body):
-        """Iyzico için authorization string oluştur"""
-        random_string = str(int(time.time() * 1000))
-        auth_string = f"apiKey:{self.api_key}&randomKey:{random_string}&signature:{self._generate_signature(request_body, random_string)}"
-        return base64.b64encode(auth_string.encode()).decode()
-
-    def _generate_signature(self, request_body, random_string):
-        """Iyzico signature oluştur"""
-        signature_data = f"{self.api_key}{random_string}{self.secret_key}{request_body}"
-        return hashlib.sha1(signature_data.encode()).hexdigest()
+    def _setup_iyzico_sdk(self):
+        """Iyzico SDK'sını yapılandır"""
+        try:
+            import iyzipay
+            
+            # Options yapılandırması
+            self.options = iyzipay.Options()
+            self.options.api_key = self.api_key
+            self.options.secret_key = self.secret_key
+            
+            # Test/Production ortamına göre base URL ayarla
+            if getattr(settings, 'DEBUG', False):
+                self.options.base_url = "https://sandbox-api.iyzipay.com"
+                logger.info("Iyzico SDK Sandbox ortamı için yapılandırıldı")
+            else:
+                self.options.base_url = "https://api.iyzipay.com"
+                logger.info("Iyzico SDK Production ortamı için yapılandırıldı")
+                
+        except ImportError:
+            logger.error("iyzipay kütüphanesi bulunamadı. 'pip install iyzipay' ile yükleyin.")
+            raise ImportError("iyzipay kütüphanesi yüklenmelidir")
 
     def create_payment(self, order: Order, card_details: dict):
+        """Normal kart ödeme implementasyonu"""
         logger.info(f"Iyzico normal ödeme işlemi başlatılıyor: Order #{order.id}")
-        # TODO: Normal kart ödeme implementasyonu
+        # TODO: Gelecekte implementasyonu tamamlanacak
         return {"status": "success", "transaction_id": f"iyzico_{order.id}"}
 
     def create_qr_payment_request(self, order: Order):
         """
-        Iyzico API'sini kullanarak bir sipariş için QR ödeme isteği oluşturur.
+        Raporda önerilen yaklaşım: Checkout Form + QR Generation
+        1. Iyzico Checkout Form ile ödeme oturumu başlat
+        2. Dönen URL'yi QR kod'una çevir
         """
         try:
-            # Sipariş öğelerini hazırla
-            basket_items = self._prepare_basket_items(order)
+            import iyzipay
             
+            logger.info(f"Iyzico QR ödeme oluşturma (Checkout Form): Order #{order.id}")
+            
+            # 1. Checkout Form için request hazırla
             request_data = {
                 'locale': 'tr',
                 'conversationId': f'order-{order.id}-{str(order.uuid)[:8]}',
                 'price': str(order.grand_total.quantize(Decimal('0.01'))),
                 'paidPrice': str(order.grand_total.quantize(Decimal('0.01'))),
-                'currency': order.business.currency_code,
-                'paymentGroup': 'PRODUCT',
+                'currency': order.business.currency_code or 'TRY',
                 'basketId': str(order.id),
-                'basketItems': basket_items,
+                'paymentGroup': 'PRODUCT',
                 'callbackUrl': f'{settings.BASE_URL}/api/iyzico/callback/',
+                'enabledInstallments': [1],  # Tek çekim
+                'buyer': self._prepare_buyer_info(order),
+                'shippingAddress': self._prepare_address_info(order, 'shipping'),
+                'billingAddress': self._prepare_address_info(order, 'billing'),
+                'basketItems': self._prepare_basket_items(order),
             }
             
-            logger.info(f"Iyzico QR oluşturma isteği: Order #{order.id}")
+            # 2. Checkout Form initialize et
+            checkout_form_initialize = iyzipay.CheckoutFormInitialize().create(request_data, self.options)
             
-            # JSON string oluştur
-            request_json = json.dumps(request_data, separators=(',', ':'))
-            
-            # Authorization header oluştur
-            auth_header = self._generate_auth_string(request_json)
-            
-            # API isteği gönder
-            headers = {
-                'Authorization': f'IYZWSv2 {auth_header}',
-                'Content-Type': 'application/json',
-                'Accept': 'application/json'
-            }
-            
-            # QR Code endpoint'i (Iyzico'nun gerçek QR endpoint'i)
-            url = f'{self.base_url}/payment/qr/initialize'
-            
-            response = requests.post(url, headers=headers, data=request_json, timeout=30)
-            
-            if response.status_code == 200:
-                response_data = response.json()
-                logger.info(f"Iyzico QR yanıtı alındı: Order #{order.id}")
+            if checkout_form_initialize.status == 'success':
+                payment_url = checkout_form_initialize.payment_page_url
+                transaction_token = checkout_form_initialize.token
                 
-                if response_data.get('status') == 'success':
-                    return {
-                        "qr_data": response_data.get('qrCodeImageUrl'),  # QR kod URL'i
-                        "transaction_id": response_data.get('token')  # Transaction token
-                    }
-                else:
-                    error_message = response_data.get('errorMessage', 'QR ödeme oluşturulamadı')
-                    logger.error(f"Iyzico QR hatası: {error_message}")
-                    raise Exception(f"Iyzico QR oluşturma hatası: {error_message}")
+                logger.info(f"Checkout Form başarıyla oluşturuldu. Token: {transaction_token}")
+                
+                # 3. Payment URL'ini QR kod'una çevir
+                qr_data_string = self._generate_qr_code_string(payment_url)
+                
+                return {
+                    "qr_data": qr_data_string,  # Flutter QR widget'ı için URL
+                    "transaction_id": transaction_token
+                }
             else:
-                logger.error(f"Iyzico API hatası: {response.status_code} - {response.text}")
-                raise Exception(f"Iyzico API bağlantı hatası: {response.status_code}")
+                error_message = checkout_form_initialize.error_message or 'Checkout form oluşturulamadı'
+                logger.error(f"Iyzico Checkout Form hatası: {error_message}")
+                raise Exception(f"Iyzico Checkout Form hatası: {error_message}")
                 
-        except requests.RequestException as e:
-            logger.error(f"Iyzico API isteği hatası: {str(e)}", exc_info=True)
-            raise Exception(f"Iyzico API bağlantı hatası: {str(e)}")
+        except ImportError:
+            logger.error("iyzipay kütüphanesi bulunamadı")
+            raise Exception("iyzipay kütüphanesi yüklenmemiş")
         except Exception as e:
             logger.error(f"QR ödeme oluşturma hatası: {str(e)}", exc_info=True)
-            raise
+            raise Exception(f"QR ödeme oluşturma hatası: {str(e)}")
+
+    def _generate_qr_code_string(self, payment_url):
+        """
+        Ödeme URL'ini QR kod string'ine çevir
+        Flutter'da QrImageView widget'ı bu string'i kullanacak
+        """
+        try:
+            # QR kod oluştur (sadece URL string'ini döndür)
+            qr = qrcode.QRCode(
+                version=1,
+                error_correction=qrcode.constants.ERROR_CORRECT_L,
+                box_size=10,
+                border=4,
+            )
+            qr.add_data(payment_url)
+            qr.make(fit=True)
+            
+            # Flutter için sadece URL string'ini döndür
+            # Flutter'daki QrImageView widget'ı bu URL'yi kullanarak QR kodu oluşturacak
+            logger.debug(f"QR kod verisi oluşturuldu: {payment_url}")
+            return payment_url
+            
+        except Exception as e:
+            logger.error(f"QR kod oluşturma hatası: {str(e)}")
+            # Hata durumunda da URL'yi döndür
+            return payment_url
 
     def check_payment_status(self, transaction_id: str):
         """
-        Iyzico API'sini kullanarak bir QR ödemesinin durumunu kontrol eder.
+        Checkout Form token'ı ile ödeme durumunu kontrol et
         """
         try:
+            import iyzipay
+            
+            logger.debug(f"Iyzico ödeme durumu sorgulanıyor: {transaction_id}")
+            
             request_data = {
                 'locale': 'tr',
                 'conversationId': f'check-{transaction_id}',
-                'token': transaction_id  # QR token
-            }
-
-            logger.debug(f"Iyzico ödeme durumu sorgulanıyor: {transaction_id}")
-            
-            request_json = json.dumps(request_data, separators=(',', ':'))
-            auth_header = self._generate_auth_string(request_json)
-            
-            headers = {
-                'Authorization': f'IYZWSv2 {auth_header}',
-                'Content-Type': 'application/json',
-                'Accept': 'application/json'
+                'token': transaction_id
             }
             
-            url = f'{self.base_url}/payment/qr/retrieve'
-            response = requests.post(url, headers=headers, data=request_json, timeout=30)
+            # Checkout Form durumunu sorgula
+            checkout_form_result = iyzipay.CheckoutForm().retrieve(request_data, self.options)
             
-            if response.status_code == 200:
-                response_data = response.json()
+            if checkout_form_result.status == 'success':
+                payment_status = checkout_form_result.payment_status
                 
-                if response_data.get('status') == 'success':
-                    payment_status = response_data.get('paymentStatus')
-                    
-                    status_mapping = {
-                        'SUCCESS': 'paid',
-                        'FAILURE': 'failed',
-                        'INIT_THREEDS': 'pending',
-                        'WAITING': 'pending',
-                        'BKM_POS_SELECTED': 'pending'
-                    }
-                    
-                    mapped_status = status_mapping.get(payment_status, 'pending')
-                    logger.debug(f"Ödeme durumu - Transaction: {transaction_id}, Status: {payment_status} -> {mapped_status}")
-                    
-                    return {"status": mapped_status}
-                else:
-                    error_message = response_data.get('errorMessage', 'Durum sorgulanamadı')
-                    logger.warning(f"Iyzico durum sorgulama hatası: {error_message}")
-                    return {"status": "pending"}
+                # Iyzico status mapping
+                status_mapping = {
+                    'SUCCESS': 'paid',
+                    'FAILURE': 'failed',
+                    'INIT_THREEDS': 'pending',
+                    'CALLBACK_THREEDS': 'pending',
+                    'BKM_POS_SELECTED': 'pending',
+                    'WAITING': 'pending'
+                }
+                
+                mapped_status = status_mapping.get(payment_status, 'pending')
+                logger.debug(f"Ödeme durumu - Token: {transaction_id}, Status: {payment_status} -> {mapped_status}")
+                
+                return {"status": mapped_status}
             else:
-                logger.warning(f"Iyzico API hatası: {response.status_code}")
+                error_message = checkout_form_result.error_message or 'Durum sorgulanamadı'
+                logger.warning(f"Iyzico durum sorgulama hatası: {error_message}")
                 return {"status": "pending"}
                 
-        except requests.RequestException as e:
-            logger.error(f"Ödeme durumu sorgulama hatası: {str(e)}")
+        except ImportError:
+            logger.error("iyzipay kütüphanesi bulunamadı")
             return {"status": "pending"}
         except Exception as e:
             logger.error(f"Ödeme durumu sorgulama hatası: {str(e)}", exc_info=True)
             return {"status": "pending"}
+
+    def _prepare_buyer_info(self, order: Order):
+        """Alıcı bilgilerini Iyzico formatında hazırla"""
+        return {
+            'id': f'buyer-{order.id}',
+            'name': order.customer_name or 'Ad',
+            'surname': 'Soyad',
+            'gsmNumber': order.customer_phone or '+905350000000',
+            'email': f'order{order.id}@orderai.com',
+            'identityNumber': '74300864791',
+            'lastLoginDate': '2023-01-01 00:00:00',
+            'registrationDate': '2023-01-01 00:00:00',
+            'registrationAddress': 'İstanbul, Türkiye',
+            'ip': '127.0.0.1',
+            'city': 'İstanbul',
+            'country': 'Turkey',
+            'zipCode': '34000'
+        }
+
+    def _prepare_address_info(self, order: Order, address_type: str):
+        """Adres bilgilerini Iyzico formatında hazırla"""
+        return {
+            'contactName': order.customer_name or 'Müşteri',
+            'city': 'İstanbul',
+            'country': 'Turkey',
+            'address': f'{order.business.name} - {address_type.title()} Address',
+            'zipCode': '34000'
+        }
 
     def _prepare_basket_items(self, order: Order):
         """Sipariş öğelerini Iyzico formatına çevir"""
@@ -175,14 +212,20 @@ class IyzicoPaymentService(BasePaymentService):
             if item.variant:
                 item_name += f' ({item.variant.name})'
                 
+            # Ekstralar varsa isimde belirt
+            if hasattr(item, 'extras') and item.extras.exists():
+                extra_names = [extra.variant.name for extra in item.extras.all()]
+                if extra_names:
+                    item_name += f' + {", ".join(extra_names)}'
+                
             category_name = 'Genel'
             if item.menu_item.category:
                 category_name = item.menu_item.category.name
             
             basket_items.append({
                 'id': f'item-{item.id}',
-                'name': item_name,
-                'category1': category_name,
+                'name': item_name[:255],  # Iyzico karakter sınırı
+                'category1': category_name[:255],
                 'category2': 'Restoran',
                 'itemType': 'VIRTUAL',
                 'price': str((item.price * item.quantity).quantize(Decimal('0.01')))
