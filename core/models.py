@@ -9,6 +9,7 @@ from datetime import timedelta
 from django.utils.text import slugify
 from django.utils.translation import gettext_lazy as _
 from django.core.validators import MinValueValidator, MaxValueValidator
+from encrypted_model_fields.fields import EncryptedCharField
 import pytz
 
 # === YENİ KOD BAŞLANGICI: CustomUserManager ===
@@ -224,6 +225,35 @@ class Business(models.Model):
         if not hasattr(self, 'website'):
             BusinessWebsite.objects.create(business=self)
     # === YENİ METOT SONU ===
+
+
+    class PaymentProvider(models.TextChoices):
+        NONE = 'none', 'Entegrasyon Yok'
+        IYZICO = 'iyzico', 'Iyzico'
+        PAYTR = 'paytr', 'PayTR'
+        # Gelecekte eklenecek diğer sağlayıcılar buraya gelebilir.
+
+    payment_provider = models.CharField(
+        max_length=20,
+        choices=PaymentProvider.choices,
+        default=PaymentProvider.NONE,
+        verbose_name="Ödeme Sağlayıcı"
+    )
+
+    payment_api_key = EncryptedCharField(
+        max_length=255,
+        blank=True,
+        null=True,
+        verbose_name="Ödeme Sağlayıcı API Anahtarı"
+    )
+
+    payment_secret_key = EncryptedCharField(
+        max_length=255,
+        blank=True,
+        null=True,
+        verbose_name="Ödeme Sağlayıcı Gizli Anahtarı"
+    )
+
 
 
 # === YENİ MODELLER: Tedarikçi ve Alım Yönetimi ===

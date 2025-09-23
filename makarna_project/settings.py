@@ -91,24 +91,19 @@ DATABASES = {
 
 DATABASE_URL_ENV = os.environ.get('DATABASE_URL')
 if DATABASE_URL_ENV:
-    # Boş string kontrolü eklendi
     if DATABASE_URL_ENV.strip() == '':
         raise Exception("DATABASE_URL environment variable is empty. Please set a valid PostgreSQL connection string from Neon.tech.")
     
-    # Neon.tech pooled connection için ayarlar
     DATABASES['default'] = dj_database_url.config(
         default=DATABASE_URL_ENV,
-        conn_max_age=600,  # Neon için connection pooling
-        ssl_require=True,  # Neon SSL gerektiriyor
+        conn_max_age=600,
+        ssl_require=True,
     )
-    
-    # Neon.tech pooled connection için OPTIONS (default_transaction_isolation kaldırıldı)
     DATABASES['default']['OPTIONS'] = {
         'connect_timeout': 10,
-        'sslmode': 'require',  # Neon için SSL zorunlu
-        'application_name': 'orderai_django',  # Connection tracking için
+        'sslmode': 'require',
+        'application_name': 'orderai_django',
     }
-    
     print(f"✅ Neon.tech PostgreSQL (Pooled) veritabanı yapılandırıldı")
     print(f"   - Host: {DATABASES['default'].get('HOST', 'N/A')}")
     print(f"   - Database: {DATABASES['default'].get('NAME', 'N/A')}")
@@ -174,7 +169,6 @@ if RENDER_EXTERNAL_URL:
 REDIS_URL = os.environ.get('REDIS_URL', 'redis://localhost:6379/0')
 
 def patch_redis_url(url, extra_params: dict):
-    """rediss:// için eksik parametreleri ekle"""
     if url.startswith('rediss://'):
         from urllib.parse import urlsplit, urlunsplit, parse_qs, urlencode
         split = urlsplit(url)
@@ -186,7 +180,6 @@ def patch_redis_url(url, extra_params: dict):
         return urlunsplit((split.scheme, split.netloc, split.path, new_query, split.fragment))
     return url
 
-# Channels için ayarlar (URL parametresiyle)
 channel_redis_url = patch_redis_url(
     REDIS_URL,
     {
@@ -203,7 +196,6 @@ CHANNEL_LAYERS = {
     },
 }
 
-# Celery için ayarlar (transport_options ile)
 CELERY_BROKER_URL = patch_redis_url(
     REDIS_URL,
     {"ssl_cert_reqs": "CERT_REQUIRED"}
@@ -339,3 +331,9 @@ print(f"🔧 Celery Memory Optimization:")
 print(f"   - Worker Concurrency: {CELERY_WORKER_CONCURRENCY}")
 print(f"   - Max Tasks Per Child: {CELERY_WORKER_MAX_TASKS_PER_CHILD}")
 print(f"   - Max Memory Per Child: {CELERY_WORKER_MAX_MEMORY_PER_CHILD}KB")
+
+# --- ENCRYPTED MODEL FIELDS AYARI ---
+FIELD_ENCRYPTION_KEY = os.environ.get(
+    'DJANGO_FIELD_ENCRYPTION_KEY',
+    'lCDG_OQWmZY4GGVtjACes8bZZZ4j73euPH0sjC5Omj0='
+)

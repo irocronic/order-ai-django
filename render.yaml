@@ -44,6 +44,8 @@ envVarGroups:
         value: "True"
       - key: DJANGO_CSRF_COOKIE_SECURE
         value: "True"
+      - key: DJANGO_FIELD_ENCRYPTION_KEY
+        generateValue: true
 
 services:
   # 1. Django Web Servisi
