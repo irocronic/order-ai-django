@@ -14,10 +14,41 @@ from makarna_project.asgi import sio
 from ...models import Order, CreditPaymentDetails, Payment
 from ...serializers import OrderSerializer
 from ...utils.order_helpers import PermissionKeys, get_user_business
-# === DEĞİŞİKLİK BURADA: import yolunu güncelliyoruz ===
 from ...utils.json_helpers import convert_decimals_to_strings
+from ...services.payment_service_factory import PaymentServiceFactory
 
 logger = logging.getLogger(__name__)
+
+@transaction.atomic
+def _finalize_order_as_paid(order: Order, payment_type: str, amount: Decimal, request_user):
+    """Bir siparişi ödenmiş olarak işaretler ve ilgili işlemleri yapar."""
+    if order.is_paid:
+        # Zaten ödenmişse tekrar işlem yapma
+        return order
+
+    if hasattr(order, 'credit_payment_details') and order.credit_payment_details:
+        credit_details = order.credit_payment_details
+        if credit_details.paid_at is None:
+            credit_details.paid_at = timezone.now()
+            credit_details.save(update_fields=['paid_at'])
+            logger.info(f"Sipariş #{order.id} için veresiye kaydı kapatıldı.")
+
+    order.is_paid = True
+    order.status = Order.STATUS_COMPLETED
+    if order.delivered_at is None:
+        order.delivered_at = timezone.now()
+        order.order_items.filter(delivered=False).update(delivered=True)
+    
+    order.save(update_fields=['is_paid', 'status', 'delivered_at'])
+    logger.info(f"Order ID {order.id} is_paid=True, status={Order.STATUS_COMPLETED} olarak güncellendi.")
+
+    payment_instance, created = Payment.objects.update_or_create(
+        order=order,
+        defaults={'payment_type': payment_type, 'amount': amount}
+    )
+    logger.info(f"Payment ID {payment_instance.id} (created: {created}) kaydedildi. Stok düşürme sinyali tetiklenecek.")
+    
+    return order
 
 @transaction.atomic
 def mark_as_paid_action(view_instance, request, pk=None):
@@ -56,27 +87,7 @@ def mark_as_paid_action(view_instance, request, pk=None):
     if payment_type not in valid_payment_types:
         return Response({'detail': 'Geçersiz ödeme türü.'}, status=status.HTTP_400_BAD_REQUEST)
 
-    if hasattr(order, 'credit_payment_details') and order.credit_payment_details:
-        credit_details = order.credit_payment_details
-        if credit_details.paid_at is None:
-            credit_details.paid_at = timezone.now()
-            credit_details.save(update_fields=['paid_at'])
-            logger.info(f"Sipariş #{order.id} için veresiye kaydı kapatıldı.")
-
-    order.is_paid = True
-    order.status = Order.STATUS_COMPLETED
-    if order.delivered_at is None:
-        order.delivered_at = timezone.now()
-        order.order_items.filter(delivered=False).update(delivered=True)
-    
-    order.save(update_fields=['is_paid', 'status', 'delivered_at'])
-    logger.info(f"Order ID {order.id} is_paid=True, status={Order.STATUS_COMPLETED} olarak güncellendi ve kaydedildi.")
-
-    payment_instance, created = Payment.objects.update_or_create(
-        order=order,
-        defaults={'payment_type': payment_type, 'amount': amount}
-    )
-    logger.info(f"Payment ID {payment_instance.id} (created: {created}) for Order ID {order.id} kaydedildi. Stok düşürme sinyali tetiklenecek.")
+    order = _finalize_order_as_paid(order, payment_type, amount, request.user)
     
     original_table_id = order.table.id if order.table else None
     
@@ -101,6 +112,71 @@ def mark_as_paid_action(view_instance, request, pk=None):
 
     return Response(order_serializer.data, status=status.HTTP_200_OK)
 
+def initiate_qr_payment_action(view_instance, request, pk=None):
+    """Sipariş için dinamik QR ödeme isteği başlatır."""
+    order = view_instance.get_object()
+    view_instance._check_order_modifiable(order, action_name="QR ile Ödeme Başlatma")
+
+    payment_service = PaymentServiceFactory.get_service(order.business)
+    if not payment_service:
+        return Response(
+            {"detail": "Bu işletme için yapılandırılmış bir ödeme sağlayıcısı bulunmuyor."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+    
+    try:
+        response_data = payment_service.create_qr_payment_request(order)
+        return Response(response_data, status=status.HTTP_200_OK)
+    except Exception as e:
+        logger.error(f"QR ödeme isteği oluşturulurken hata: {e}", exc_info=True)
+        return Response({"detail": "Ödeme isteği oluşturulurken bir hata oluştu."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+def check_qr_payment_status_action(view_instance, request, pk=None):
+    """Başlatılmış bir QR ödemesinin durumunu kontrol eder."""
+    order = view_instance.get_object()
+    transaction_id = request.query_params.get('transaction_id')
+
+    if not transaction_id:
+        return Response({"detail": "transaction_id gereklidir."}, status=status.HTTP_400_BAD_REQUEST)
+
+    payment_service = PaymentServiceFactory.get_service(order.business)
+    if not payment_service:
+        return Response({"detail": "Ödeme sağlayıcısı bulunamadı."}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        status_response = payment_service.check_payment_status(transaction_id)
+        payment_status = status_response.get("status")
+
+        if payment_status == "paid":
+            # Ödeme başarılıysa, siparişi tamamla
+            finalized_order = _finalize_order_as_paid(order, 'qr_code', order.grand_total, request.user)
+            
+            # Başarılı finalizasyon sonrası socket bildirimi gönder
+            original_table_id = finalized_order.table.id if finalized_order.table else None
+            finalized_order.refresh_from_db()
+            order_serializer = OrderSerializer(finalized_order, context={'request': request})
+
+            if sio:
+                room_name = f'business_{finalized_order.business.id}'
+                payload = {
+                    'event_type': 'order_paid',
+                    'message': f"Sipariş #{finalized_order.id} QR ile ödendi.",
+                    'order_id': finalized_order.id,
+                    'table_id': original_table_id,
+                    'updated_order_data': order_serializer.data,
+                }
+                try:
+                    cleaned_payload = convert_decimals_to_strings(payload)
+                    async_to_sync(sio.emit)('order_status_update', cleaned_payload, room=room_name)
+                    logger.info(f"Socket.IO (QR Ödeme): 'order_status_update' (paid) {room_name} odasına gönderildi (Sipariş ID: {finalized_order.id}).")
+                except Exception as e_socket:
+                    logger.error(f"Socket.IO event gönderilirken hata (QR ödeme - sipariş {finalized_order.id}): {e_socket}", exc_info=True)
+            
+        return Response(status_response, status=status.HTTP_200_OK)
+        
+    except Exception as e:
+        logger.error(f"QR ödeme durumu kontrol edilirken hata: {e}", exc_info=True)
+        return Response({"detail": "Ödeme durumu kontrol edilirken bir hata oluştu."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 @transaction.atomic
 def save_credit_payment_action(view_instance, request, pk=None):
@@ -161,7 +237,6 @@ def save_credit_payment_action(view_instance, request, pk=None):
             logger.error(f"Socket.IO event gönderilirken hata (veresiye - sipariş {order.id}): {e_socket}", exc_info=True)
 
     return Response(order_serializer.data, status=status.HTTP_200_OK)
-
 
 def list_credit_sales_action(view_instance, request):
     """Ödenmemiş veresiye satışları listeler."""

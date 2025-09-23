@@ -305,6 +305,18 @@ class OrderViewSet(viewsets.ModelViewSet):
     def transfer_order(self, request):
         return operational_actions.transfer_order_action(self, request)
 
+
+    @action(detail=True, methods=['post'], url_path='initiate-qr-payment')
+    def initiate_qr_payment(self, request, pk=None):
+        return financial_actions.initiate_qr_payment_action(self, request, pk=pk)
+
+    @action(detail=True, methods=['get'], url_path='check-qr-payment-status')
+    def check_qr_payment_status(self, request, pk=None):
+        return financial_actions.check_qr_payment_status_action(self, request, pk=pk)
+
+
+
+
 class OrderItemViewSet(mixins.DestroyModelMixin, mixins.UpdateModelMixin, viewsets.GenericViewSet):
     queryset = OrderItem.objects.all()
     serializer_class = OrderItemSerializer

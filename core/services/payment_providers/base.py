@@ -19,7 +19,6 @@ class BasePaymentService(ABC):
     def create_payment(self, order: Order, card_details: dict):
         """
         Ödeme oturumu başlatır veya doğrudan ödeme alır.
-        Sağlayıcıya özel mantık burada yer alır.
         """
         pass
 
@@ -27,5 +26,14 @@ class BasePaymentService(ABC):
     def check_payment_status(self, transaction_id: str):
         """
         Bir ödemenin durumunu kontrol eder.
+        Dönüş: {'status': 'paid' | 'pending' | 'failed'}
+        """
+        pass
+
+    @abstractmethod
+    def create_qr_payment_request(self, order: Order):
+        """
+        Belirli bir sipariş için dinamik QR ödeme isteği oluşturur.
+        Dönüş: {'qr_data': '...', 'transaction_id': '...'}
         """
         pass
