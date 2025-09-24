@@ -125,6 +125,68 @@ class BusinessViewSet(viewsets.ModelViewSet):
                         'detail': 'Ayarlar güncellenirken bir hata oluştu. Lütfen tekrar deneyin.'
                     }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
+    @action(detail=True, methods=['get'], url_path='debug-payment-keys', permission_classes=[IsAuthenticated])
+    def debug_payment_keys(self, request, pk=None):
+        """
+        TEMPORARY DEBUG ENDPOINT - Encrypted field'ları debug etmek için
+        Production'da kaldırılacak!
+        """
+        business = self.get_object()
+        # Sadece işletme sahibi kendi anahtarlarını görebilir
+        if business.owner != request.user:
+            raise PermissionDenied("Bu işlem için yetkiniz yok.")
+
+        import logging
+        logger = logging.getLogger(__name__)
+        
+        try:
+            # Veritabanından fresh instance çek
+            fresh_business = Business.objects.get(id=business.id)
+            
+            # Encrypted field'ların decrypt edilmiş değerlerini al
+            decrypted_api_key = fresh_business.payment_api_key
+            decrypted_secret_key = fresh_business.payment_secret_key
+            
+            logger.info(f"=== DEBUG PAYMENT KEYS ===")
+            logger.info(f"Business ID: {fresh_business.id}")
+            logger.info(f"Payment Provider: {fresh_business.payment_provider}")
+            logger.info(f"Decrypted API Key: '{decrypted_api_key}'")
+            logger.info(f"Decrypted Secret Key: '{decrypted_secret_key}'")
+            logger.info(f"API Key length: {len(decrypted_api_key) if decrypted_api_key else 0}")
+            logger.info(f"Secret Key length: {len(decrypted_secret_key) if decrypted_secret_key else 0}")
+            
+            # Raw veritabanı değerlerini de kontrol et (encrypted)
+            from django.db import connection
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "SELECT payment_api_key, payment_secret_key FROM core_business WHERE id = %s",
+                    [fresh_business.id]
+                )
+                row = cursor.fetchone()
+                if row:
+                    raw_api_key, raw_secret_key = row
+                    logger.info(f"Raw DB API Key: '{raw_api_key}'")
+                    logger.info(f"Raw DB Secret Key: '{raw_secret_key}'")
+            
+            return Response({
+                'business_id': fresh_business.id,
+                'payment_provider': fresh_business.payment_provider,
+                'api_key_exists': bool(decrypted_api_key),
+                'secret_key_exists': bool(decrypted_secret_key),
+                'api_key_length': len(decrypted_api_key) if decrypted_api_key else 0,
+                'secret_key_length': len(decrypted_secret_key) if decrypted_secret_key else 0,
+                'api_key_preview': decrypted_api_key[:8] + '...' if decrypted_api_key and len(decrypted_api_key) > 8 else decrypted_api_key,
+                'secret_key_preview': decrypted_secret_key[:8] + '...' if decrypted_secret_key and len(decrypted_secret_key) > 8 else decrypted_secret_key,
+                'warning': 'This is a temporary debug endpoint - remove in production!'
+            })
+            
+        except Exception as e:
+            logger.error(f"Debug endpoint error: {str(e)}", exc_info=True)
+            return Response({
+                'error': str(e),
+                'warning': 'Debug endpoint failed'
+            }, status=500)
+
 
 class BusinessLayoutViewSet(viewsets.GenericViewSet, 
                                 mixins.ListModelMixin,
