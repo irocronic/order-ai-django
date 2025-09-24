@@ -8,7 +8,6 @@ from django.db import transaction
 from django.db.models import Prefetch, Q
 from decimal import Decimal
 import logging
-import uuid
 from asgiref.sync import async_to_sync
 
 from makarna_project.asgi import sio
@@ -114,48 +113,45 @@ def mark_as_paid_action(view_instance, request, pk=None):
     return Response(order_serializer.data, status=status.HTTP_200_OK)
 
 def initiate_qr_payment_action(view_instance, request, pk=None):
-    """QR ödeme isteği başlatma - MOCK TEST VERSIYONU"""
+    """Sipariş için dinamik QR ödeme isteği başlatır."""
+    order = view_instance.get_object()
+    view_instance._check_order_modifiable(order, action_name="QR ile Ödeme Başlatma")
+
+    payment_service = PaymentServiceFactory.get_service(order.business)
+    if not payment_service:
+        return Response(
+            {"detail": "Bu işletme için yapılandırılmış bir ödeme sağlayıcısı bulunmuyor."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+    
     try:
-        order = view_instance.get_object()
-        logger.info(f"Mock QR ödeme başlatılıyor: Order #{order.id}")
-        
-        # Mock QR data oluştur
-        mock_qr_data = f"https://checkout.iyzipay.com/payment?token=mock_{order.id}_{uuid.uuid4().hex[:8]}"
-        mock_transaction_id = str(uuid.uuid4())
-        
-        response_data = {
-            'qr_data': mock_qr_data,
-            'transaction_id': mock_transaction_id,
-            'message': 'Mock QR ödeme oluşturuldu'
-        }
-        
-        logger.info(f"Mock QR ödeme başarıyla oluşturuldu: {mock_transaction_id}")
-        return Response(response_data, status=200)
-        
+        response_data = payment_service.create_qr_payment_request(order)
+        return Response(response_data, status=status.HTTP_200_OK)
     except Exception as e:
-        logger.error(f"Mock QR ödeme hatası: {str(e)}", exc_info=True)
-        return Response({
-            'detail': f'Mock QR ödeme hatası: {str(e)}'
-        }, status=400)
+        logger.error(f"QR ödeme isteği oluşturulurken hata: {e}", exc_info=True)
+        return Response({"detail": "Ödeme isteği oluşturulurken bir hata oluştu."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 def check_qr_payment_status_action(view_instance, request, pk=None):
-    """Başlatılmış bir QR ödemesinin durumunu kontrol eder - MOCK VERSIYONU."""
+    """Başlatılmış bir QR ödemesinin durumunu kontrol eder."""
     order = view_instance.get_object()
     transaction_id = request.query_params.get('transaction_id')
 
     if not transaction_id:
         return Response({"detail": "transaction_id gereklidir."}, status=status.HTTP_400_BAD_REQUEST)
 
+    payment_service = PaymentServiceFactory.get_service(order.business)
+    if not payment_service:
+        return Response({"detail": "Ödeme sağlayıcısı bulunamadı."}, status=status.HTTP_400_BAD_REQUEST)
+
     try:
-        # Mock status response - %25 ihtimalle 'paid', geri kalanı 'pending'
-        import random
-        random.seed(hash(transaction_id) % (2**32))
-        
-        if random.random() < 0.25:  # %25 başarı oranı
-            payment_status = "paid"
-            # Mock ödeme başarılıysa, siparişi tamamla
+        status_response = payment_service.check_payment_status(transaction_id)
+        payment_status = status_response.get("status")
+
+        if payment_status == "paid":
+            # Ödeme başarılıysa, siparişi tamamla
             finalized_order = _finalize_order_as_paid(order, 'qr_code', order.grand_total, request.user)
             
+            # Başarılı finalizasyon sonrası socket bildirimi gönder
             original_table_id = finalized_order.table.id if finalized_order.table else None
             finalized_order.refresh_from_db()
             order_serializer = OrderSerializer(finalized_order, context={'request': request})
@@ -164,7 +160,7 @@ def check_qr_payment_status_action(view_instance, request, pk=None):
                 room_name = f'business_{finalized_order.business.id}'
                 payload = {
                     'event_type': 'order_paid',
-                    'message': f"Sipariş #{finalized_order.id} QR ile ödendi (Mock).",
+                    'message': f"Sipariş #{finalized_order.id} QR ile ödendi.",
                     'order_id': finalized_order.id,
                     'table_id': original_table_id,
                     'updated_order_data': order_serializer.data,
@@ -172,20 +168,15 @@ def check_qr_payment_status_action(view_instance, request, pk=None):
                 try:
                     cleaned_payload = convert_decimals_to_strings(payload)
                     async_to_sync(sio.emit)('order_status_update', cleaned_payload, room=room_name)
-                    logger.info(f"Socket.IO (Mock QR Ödeme): 'order_status_update' (paid) {room_name} odasına gönderildi.")
+                    logger.info(f"Socket.IO (QR Ödeme): 'order_status_update' (paid) {room_name} odasına gönderildi (Sipariş ID: {finalized_order.id}).")
                 except Exception as e_socket:
-                    logger.error(f"Socket.IO event gönderilirken hata (Mock QR ödeme): {e_socket}", exc_info=True)
-        else:
-            payment_status = "pending"
-        
-        status_response = {"status": payment_status}
-        logger.debug(f"Mock QR durumu: {transaction_id} -> {payment_status}")
-        
+                    logger.error(f"Socket.IO event gönderilirken hata (QR ödeme - sipariş {finalized_order.id}): {e_socket}", exc_info=True)
+            
         return Response(status_response, status=status.HTTP_200_OK)
         
     except Exception as e:
-        logger.error(f"Mock QR ödeme durumu kontrol edilirken hata: {e}", exc_info=True)
-        return Response({"detail": "Mock ödeme durumu kontrol edilirken bir hata oluştu."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        logger.error(f"QR ödeme durumu kontrol edilirken hata: {e}", exc_info=True)
+        return Response({"detail": "Ödeme durumu kontrol edilirken bir hata oluştu."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 @transaction.atomic
 def save_credit_payment_action(view_instance, request, pk=None):
