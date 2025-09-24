@@ -4,46 +4,49 @@ envVarGroups:
   - name: orderai-env-group
     envVars:
       - key: PYTHON_VERSION
-        value: 3.12.4
+        value: "3.11.4"
       - key: DJANGO_SETTINGS_MODULE
         value: makarna_project.settings
       - key: DJANGO_DEBUG
-        value: false
+        value: "false"
       - key: PYTHONUNBUFFERED
         value: "1"
       - key: DATABASE_URL
-        fromDatabase:
-          name: makarna-db # Render'daki veritabanı adınızla eşleştiğinden emin olun
-          property: connectionString
+        value: "postgresql://neondb_owner:npg_G6VFunewpsm3@ep-shy-art-a2znpuhr-pooler.eu-central-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require"
       - key: REDIS_URL
-        fromService:
-          type: redis
-          name: makarna-redis # Render'daki Redis adınızla eşleştiğinden emin olun
-          property: connectionString
+        value: "rediss://default:ASbBAAImcDE3ZmUyMGJkNzhjMTg0MDQyYTI0YTY5MzE0ZDY4MDhmZnAxOTkyMQ@artistic-kiwi-9921.upstash.io:6379"
       # --- GÜVENLİK İÇİN SECRET OLARAK TANIMLANAN DEĞİŞKENLER ---
-      # Bu anahtarların değerlerini Render panosundaki "Environment" sekmesinde
-      # "Secret Files" veya "Normal Environment Variables" olarak oluşturmalısınız.
       - key: DJANGO_SECRET_KEY
-        generateValue: true # Render'ın güvenli bir anahtar üretmesini sağlar
+        value: "aXA/VLSgdpS+5IO/d3RUOjwa4TafYrE9Q+sL2enfvDA="
       - key: DJANGO_EMAIL_HOST_USER
-        value: "akma.koray@gmail.com" # Hassas değilse burada kalabilir, değilse secret yapın
+        value: "akma.koray@gmail.com"
       - key: DJANGO_EMAIL_HOST_PASSWORD
-        value: ${DJANGO_EMAIL_HOST_PASSWORD} # Render panosundan eklenen secret'ı kullanır
+        value: "vhpjyfnxsjuicpgy"
       - key: DJANGO_ALLOWED_HOSTS
-        value: ${DJANGO_ALLOWED_HOSTS} # Render panosundan eklenen secret'ı kullanır
+        value: "orderai-web.onrender.com,127.0.0.1,localhost"
       - key: DJANGO_ADMIN_EMAIL_RECIPIENTS
         value: "akma.koray@gmail.com"
+      - key: DJANGO_CORS_ALLOWED_ORIGINS
+        value: "https://orderai-web.onrender.com"
+      - key: DJANGO_CSRF_TRUSTED_ORIGINS
+        value: "https://orderai-web.onrender.com"
+      - key: DJANGO_FIELD_ENCRYPTION_KEY
+        value: "kP8lQu7ygRiIpJAUckxGkHUCC-6Y-U2BgEMwLcKcdSo="
       # --- UYGULAMA AYARLARI ---
       - key: ANDROID_PACKAGE_NAME
         value: "com.orderai.app"
       - key: GOOGLE_APPLICATION_CREDENTIALS_PATH
         value: "/etc/secrets/google-credentials.json"
+      - key: GOOGLE_MAPS_API_KEY
+        value: "AIzaSyBAgXbA85EJfjSCc5BdQtEdH3wXJ1trb80"
       - key: DJANGO_SECURE_SSL_REDIRECT
         value: "True"
       - key: DJANGO_SESSION_COOKIE_SECURE
         value: "True"
       - key: DJANGO_CSRF_COOKIE_SECURE
         value: "True"
+      - key: RENDER_EXTERNAL_URL
+        value: "https://orderai-web.onrender.com"
 
 services:
   # 1. Django Web Servisi
