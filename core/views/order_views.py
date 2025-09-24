@@ -14,6 +14,7 @@ from rest_framework.exceptions import PermissionDenied, ValidationError, NotFoun
 import logging
 from decimal import Decimal
 from contextlib import contextmanager
+from django.conf import settings
 
 from rest_framework.pagination import PageNumberPagination
 
@@ -36,18 +37,49 @@ logger = logging.getLogger(__name__)
 
 @contextmanager
 def handle_db_lock_timeout(max_wait_time=5):
-    """Database lock timeout'u yöneten context manager"""
+    """Database lock timeout'u yöneten context manager - DB engine'e uygun"""
+    old_timeout = None
     try:
-        with connection.cursor() as cursor:
-            cursor.execute(f"SET innodb_lock_wait_timeout = {max_wait_time}")
+        # Database engine'ini tespit et
+        engine = settings.DATABASES['default']['ENGINE']
+        
+        if 'postgresql' in engine.lower():
+            # PostgreSQL için lock_timeout
+            with connection.cursor() as cursor:
+                # Mevcut değeri al
+                cursor.execute("SHOW lock_timeout")
+                old_timeout = cursor.fetchone()[0]
+                # Yeni değeri set et (milisaniye cinsinden)
+                cursor.execute(f"SET lock_timeout = '{max_wait_time * 1000}ms'")
+                
+        elif 'mysql' in engine.lower():
+            # MySQL için innodb_lock_wait_timeout
+            with connection.cursor() as cursor:
+                cursor.execute("SELECT @@innodb_lock_wait_timeout")
+                old_timeout = cursor.fetchone()[0]
+                cursor.execute(f"SET innodb_lock_wait_timeout = {max_wait_time}")
+                
+        # SQLite için özel bir timeout ayarı yok, sadece geç
+        
         yield
+        
     except Exception as e:
-        logger.error(f"Database lock timeout hatası: {e}")
-        raise
+        logger.error(f"Database lock timeout ayarı hatası: {e}")
+        # Hata olursa da devam et, kritik değil
+        yield
     finally:
-        # Timeout değerini varsayılana geri döndür
-        with connection.cursor() as cursor:
-            cursor.execute("SET innodb_lock_wait_timeout = DEFAULT")
+        try:
+            # Eski değeri geri yükle
+            if old_timeout is not None:
+                if 'postgresql' in engine.lower():
+                    with connection.cursor() as cursor:
+                        cursor.execute(f"SET lock_timeout = '{old_timeout}'")
+                elif 'mysql' in engine.lower():
+                    with connection.cursor() as cursor:
+                        cursor.execute(f"SET innodb_lock_wait_timeout = {old_timeout}")
+        except Exception:
+            # Cleanup hatası kritik değil
+            pass
 
 class StandardResultsSetPagination(PageNumberPagination):
     page_size = 20
