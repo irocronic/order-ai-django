@@ -89,51 +89,81 @@ class BusinessPaymentSettingsSerializer(serializers.ModelSerializer):
             'payment_secret_key': {'write_only': True, 'required': False, 'allow_blank': True, 'allow_null': True},
         }
 
-    def __init__(self, *args, **kwargs):
-        # PUT metodu kullanıldığında partial=False olmasına rağmen,
-        # anahtar alanları zorunlu olmadığı için eksik olabilirler.
-        # Bu yüzden partial=True'yu zorunlu kılarak sadece gönderilen alanların
-        # güncellenmesini sağlıyoruz. Bu, PUT ve PATCH davranışını birleştirir.
-        kwargs['partial'] = True
-        super(BusinessPaymentSettingsSerializer, self).__init__(*args, **kwargs)
-
     def to_internal_value(self, data):
-        # Bu metot, validate'den önce çalışir ve gelen veriyi Python tiplerine çevirir.
+        """
+        DÜZELTME: Daha basit ve güvenilir yaklaşım
+        Gelen veriyi aynen işle, boş string'leri koru
+        """
         ret = super().to_internal_value(data)
         
-        # DÜZELTME: Sadece gelen data'da varsa işleme al, yoksa mevcut değeri koru
+        # Sadece provider değişikliği kontrolü
+        if 'payment_provider' in data:
+            ret['payment_provider'] = data['payment_provider']
+            
+        # API key varsa işle
         if 'payment_api_key' in data:
-            if data.get('payment_api_key') is None or data.get('payment_api_key') == '':
-                ret['payment_api_key'] = ''
-            else:
-                ret['payment_api_key'] = data['payment_api_key']
-                
+            ret['payment_api_key'] = data['payment_api_key'] or ''
+            
+        # Secret key varsa işle    
         if 'payment_secret_key' in data:
-            if data.get('payment_secret_key') is None or data.get('payment_secret_key') == '':
-                ret['payment_secret_key'] = ''
-            else:
-                ret['payment_secret_key'] = data['payment_secret_key']
+            ret['payment_secret_key'] = data['payment_secret_key'] or ''
             
         return ret
     
     def validate(self, data):
-        # Mevcut instance'dan değerleri al
-        provider = data.get('payment_provider', self.instance.payment_provider if self.instance else None)
-        
-        # API key için: gelen data'da varsa onu al, yoksa mevcut değeri kullan
-        api_key = data.get('payment_api_key')
-        if api_key is None and self.instance:
-            api_key = self.instance.payment_api_key
-            
-        # Secret key için: gelen data'da varsa onu al, yoksa mevcut değeri kullan    
-        secret_key = data.get('payment_secret_key')
-        if secret_key is None and self.instance:
-            secret_key = self.instance.payment_secret_key
+        """
+        DÜZELTME: Validasyon mantığı düzeltildi
+        """
+        # Provider bilgisini al
+        provider = data.get('payment_provider')
+        if provider is None and self.instance:
+            provider = self.instance.payment_provider
 
-        # Eğer bir sağlayıcı seçildiyse (Entegrasyon Yok dışında), anahtarların girildiğinden emin ol.
+        # Eğer provider 'none' değilse, anahtarların dolu olması gerekir
         if provider and provider != Business.PaymentProvider.NONE:
-            if not api_key or not secret_key:
+            # API key kontrolü
+            api_key = data.get('payment_api_key')
+            if api_key is None and self.instance:
+                api_key = self.instance.payment_api_key
+                
+            # Secret key kontrolü
+            secret_key = data.get('payment_secret_key')
+            if secret_key is None and self.instance:
+                secret_key = self.instance.payment_secret_key
+                
+            # Boş kontrolü
+            if not api_key or not api_key.strip():
                 raise serializers.ValidationError(
-                    "Seçilen ödeme sağlayıcısı için API Anahtarı ve Gizli Anahtar alanları zorunludur."
+                    "Seçilen ödeme sağlayıcısı için API Anahtarı zorunludur."
                 )
+            if not secret_key or not secret_key.strip():
+                raise serializers.ValidationError(
+                    "Seçilen ödeme sağlayıcısı için Gizli Anahtar zorunludur."
+                )
+        
         return data
+
+    def update(self, instance, validated_data):
+        """
+        DÜZELTME: Güncelleme işlemi için özel save mantığı
+        """
+        import logging
+        logger = logging.getLogger(__name__)
+        
+        logger.info(f"Serializer update çağrıldı - Instance ID: {instance.id}")
+        
+        # Alanları güncelle
+        for attr, value in validated_data.items():
+            logger.info(f"Güncelleniyor - {attr}: {bool(value) if 'key' in attr else value}")
+            setattr(instance, attr, value)
+        
+        # Kaydet
+        instance.save()
+        
+        # Refresh from DB to ensure we have latest data
+        instance.refresh_from_db()
+        
+        logger.info(f"Update tamamlandı - API Key dolu: {bool(instance.payment_api_key)}")
+        logger.info(f"Update tamamlandı - Secret Key dolu: {bool(instance.payment_secret_key)}")
+        
+        return instance
