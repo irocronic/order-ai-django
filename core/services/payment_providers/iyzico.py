@@ -135,6 +135,24 @@ class IyzicoPaymentService(BasePaymentService):
             price = str(order.grand_total.quantize(Decimal('0.01')))
             logger.info(f"💰 Toplam tutar: {price} {order.business.currency_code or 'TRY'}")
             
+            # HATA DÜZELTMESİ: Basket items toplam fiyat kontrolü
+            basket_items = self._prepare_basket_items(order)
+            basket_total = sum(Decimal(item['price']) for item in basket_items)
+            
+            logger.info(f"💰 Order Grand Total: {order.grand_total}")
+            logger.info(f"💰 Basket Items Total: {basket_total}")
+            logger.info(f"💰 Fark: {order.grand_total - basket_total}")
+            
+            # Eğer fark varsa düzelt
+            if abs(order.grand_total - basket_total) > Decimal('0.01'):
+                logger.warning(f"⚠️ Toplam tutarlar eşleşmiyor! Order: {order.grand_total}, Basket: {basket_total}")
+                # Son item'ın fiyatını ayarla
+                if basket_items:
+                    difference = order.grand_total - basket_total
+                    last_item_price = Decimal(basket_items[-1]['price']) + difference
+                    basket_items[-1]['price'] = str(last_item_price.quantize(Decimal('0.01')))
+                    logger.info(f"✅ Son item fiyatı düzeltildi: {basket_items[-1]['price']}")
+            
             request_data = {
                 'locale': 'tr',
                 'conversationId': conversation_id,
@@ -148,11 +166,15 @@ class IyzicoPaymentService(BasePaymentService):
                 'buyer': self._prepare_buyer_info(order),
                 'shippingAddress': self._prepare_address_info(order, 'shipping'),
                 'billingAddress': self._prepare_address_info(order, 'billing'),
-                'basketItems': self._prepare_basket_items(order),
+                'basketItems': basket_items,
             }
             
             logger.info("📦 Request data hazırlandı")
             logger.info(f"Basket items sayısı: {len(request_data['basketItems'])}")
+            
+            # Final validation
+            final_basket_total = sum(Decimal(item['price']) for item in request_data['basketItems'])
+            logger.info(f"💰 Final validation - Order: {price}, Basket: {final_basket_total}")
             
             # 2. Checkout Form initialize et
             logger.info("🔄 Checkout Form initialize ediliyor...")
