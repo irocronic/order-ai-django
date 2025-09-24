@@ -187,7 +187,7 @@ class OrderViewSet(viewsets.ModelViewSet):
             with handle_db_lock_timeout():
                 # SELECT FOR UPDATE ile order'ı kilitle
                 order = Order.objects.select_for_update().get(id=pk)
-                return item_actions.add_item_action(self, request, order=order)
+                return item_actions.add_item_action(self, request, pk=pk)
         except Order.DoesNotExist:
             raise NotFound('Sipariş bulunamadı.')
         except Exception as e:
