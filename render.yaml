@@ -55,8 +55,6 @@ services:
     buildCommand: "./build.sh"
     startCommand: "gunicorn makarna_project.asgi:application --workers 1 --worker-class uvicorn.workers.UvicornWorker --bind 0.0.0.0:$PORT"
     healthCheckPath: /
-    envVarGroups:
-      - orderai-env-group # Yukarıda tanımlanan ortak grubu kullanır.
 
   # 2. Celery Worker Servisi
   - type: worker
@@ -66,5 +64,3 @@ services:
     plan: starter
     buildCommand: "./build.sh"
     startCommand: "celery -A makarna_project worker -l info --concurrency=2 --max-tasks-per-child=100 --prefetch-multiplier=1"
-    envVarGroups:
-      - orderai-env-group # Yukarıda tanımlanan ortak grubu kullanır.
