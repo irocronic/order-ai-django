@@ -125,67 +125,70 @@ class BusinessViewSet(viewsets.ModelViewSet):
                         'detail': 'Ayarlar güncellenirken bir hata oluştu. Lütfen tekrar deneyin.'
                     }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-    @action(detail=True, methods=['get'], url_path='debug-payment-keys', permission_classes=[IsAuthenticated])
-    def debug_payment_keys(self, request, pk=None):
+    @action(detail=True, methods=['get'], url_path='debug-encryption', permission_classes=[IsAuthenticated])
+    def debug_encryption(self, request, pk=None):
         """
-        TEMPORARY DEBUG ENDPOINT - Encrypted field'ları debug etmek için
-        Production'da kaldırılacak!
+        TEMPORARY DEBUG ENDPOINT: Encrypted field'ların decrypt durumunu kontrol et
+        ⚠️ PRODUCTION'da bu endpoint'i kaldırın veya sadece superuser'lara açın!
         """
         business = self.get_object()
-        # Sadece işletme sahibi kendi anahtarlarını görebilir
-        if business.owner != request.user:
+        # Sadece işletme sahibi kendi ayarlarını görebilir
+        if business.owner != request.user and not request.user.is_superuser:
             raise PermissionDenied("Bu işlem için yetkiniz yok.")
 
-        import logging
-        logger = logging.getLogger(__name__)
-        
         try:
-            # Veritabanından fresh instance çek
+            import logging
+            logger = logging.getLogger(__name__)
+            
+            # Veritabanından fresh data çek
             fresh_business = Business.objects.get(id=business.id)
             
-            # Encrypted field'ların decrypt edilmiş değerlerini al
+            # Encrypted field'ları decrypt et
             decrypted_api_key = fresh_business.payment_api_key
             decrypted_secret_key = fresh_business.payment_secret_key
             
-            logger.info(f"=== DEBUG PAYMENT KEYS ===")
+            logger.info(f"=== DEBUG ENCRYPTION ENDPOINT ===")
             logger.info(f"Business ID: {fresh_business.id}")
             logger.info(f"Payment Provider: {fresh_business.payment_provider}")
             logger.info(f"Decrypted API Key: '{decrypted_api_key}'")
             logger.info(f"Decrypted Secret Key: '{decrypted_secret_key}'")
-            logger.info(f"API Key length: {len(decrypted_api_key) if decrypted_api_key else 0}")
-            logger.info(f"Secret Key length: {len(decrypted_secret_key) if decrypted_secret_key else 0}")
             
-            # Raw veritabanı değerlerini de kontrol et (encrypted)
-            from django.db import connection
-            with connection.cursor() as cursor:
-                cursor.execute(
-                    "SELECT payment_api_key, payment_secret_key FROM core_business WHERE id = %s",
-                    [fresh_business.id]
-                )
-                row = cursor.fetchone()
-                if row:
-                    raw_api_key, raw_secret_key = row
-                    logger.info(f"Raw DB API Key: '{raw_api_key}'")
-                    logger.info(f"Raw DB Secret Key: '{raw_secret_key}'")
+            # Test: IyzicoPaymentService oluştur ve değerleri kontrol et
+            if fresh_business.payment_provider == 'iyzico':
+                from ..services.payment_providers.iyzico import IyzicoPaymentService
+                
+                try:
+                    payment_service = IyzicoPaymentService(fresh_business)
+                    logger.info(f"IyzicoPaymentService created successfully")
+                    logger.info(f"Service API Key: '{payment_service.api_key}'")
+                    logger.info(f"Service Secret Key: '{payment_service.secret_key}'")
+                except Exception as service_error:
+                    logger.error(f"IyzicoPaymentService creation error: {service_error}")
             
-            return Response({
+            debug_info = {
                 'business_id': fresh_business.id,
                 'payment_provider': fresh_business.payment_provider,
-                'api_key_exists': bool(decrypted_api_key),
-                'secret_key_exists': bool(decrypted_secret_key),
                 'api_key_length': len(decrypted_api_key) if decrypted_api_key else 0,
                 'secret_key_length': len(decrypted_secret_key) if decrypted_secret_key else 0,
-                'api_key_preview': decrypted_api_key[:8] + '...' if decrypted_api_key and len(decrypted_api_key) > 8 else decrypted_api_key,
-                'secret_key_preview': decrypted_secret_key[:8] + '...' if decrypted_secret_key and len(decrypted_secret_key) > 8 else decrypted_secret_key,
-                'warning': 'This is a temporary debug endpoint - remove in production!'
-            })
+                'api_key_empty': not bool(decrypted_api_key and decrypted_api_key.strip()),
+                'secret_key_empty': not bool(decrypted_secret_key and decrypted_secret_key.strip()),
+                'api_key_first_chars': decrypted_api_key[:8] + "..." if decrypted_api_key else "EMPTY",
+                'secret_key_first_chars': decrypted_secret_key[:8] + "..." if decrypted_secret_key else "EMPTY",
+                'encrypted_fields_working': bool(decrypted_api_key and decrypted_secret_key),
+                'warning': '⚠️ Bu endpoint sadece debug amaçlıdır. Production ortamında kaldırın!'
+            }
+            
+            return Response(debug_info)
             
         except Exception as e:
-            logger.error(f"Debug endpoint error: {str(e)}", exc_info=True)
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Debug encryption endpoint error: {str(e)}", exc_info=True)
+            
             return Response({
                 'error': str(e),
-                'warning': 'Debug endpoint failed'
-            }, status=500)
+                'message': 'Debug endpoint hatası'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 class BusinessLayoutViewSet(viewsets.GenericViewSet, 
