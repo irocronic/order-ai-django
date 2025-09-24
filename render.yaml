@@ -1,6 +1,5 @@
-# Ortak ortam değişkenlerini (environment variables) tek bir grup altında topla
 envVarGroups:
-  - name: orderai-env-group
+  - name: orderai-common-env
     envVars:
       # --- PYTHON & DJANGO TEMEL AYARLARI ---
       - key: PYTHON_VERSION
@@ -11,24 +10,13 @@ envVarGroups:
         value: "false"
       - key: PYTHONUNBUFFERED
         value: "1"
-      
-      # --- VERİTABANI VE REDIS BAĞLANTILARI ---
-      - key: DATABASE_URL
-        fromDatabase:
-          name: makarna-db
-          property: connectionString
-      - key: REDIS_URL
-        fromService:
-          type: redis
-          name: makarna-redis
-          property: connectionString
-      
+
       # --- GÜVENLİK VE AUTHENTICATION AYARLARI ---
       - key: DJANGO_SECRET_KEY
         value: "aXA/VLSgdpS+5IO/d3RUOjwa4TafYrE9Q+sL2enfvDA="
       - key: DJANGO_FIELD_ENCRYPTION_KEY
         value: "kP8lQu7ygRiIpJAUckxGkHUCC-6Y-U2BgEMwLcKcdSo="
-      
+
       # --- HOST VE DOMAIN AYARLARI ---
       - key: DJANGO_ALLOWED_HOSTS
         value: "orderai-web.onrender.com,127.0.0.1,localhost"
@@ -38,7 +26,7 @@ envVarGroups:
         value: "https://orderai-web.onrender.com"
       - key: RENDER_EXTERNAL_URL
         value: "https://orderai-web.onrender.com"
-      
+
       # --- SSL VE GÜVENLİK AYARLARI ---
       - key: DJANGO_SECURE_SSL_REDIRECT
         value: "True"
@@ -46,7 +34,7 @@ envVarGroups:
         value: "True"
       - key: DJANGO_CSRF_COOKIE_SECURE
         value: "True"
-      
+
       # --- E-POSTA AYARLARI ---
       - key: DJANGO_EMAIL_HOST_USER
         value: "akma.koray@gmail.com"
@@ -54,13 +42,13 @@ envVarGroups:
         value: "vhpjyfnxsjuicpgy"
       - key: DJANGO_ADMIN_EMAIL_RECIPIENTS
         value: "akma.koray@gmail.com"
-      
+
       # --- GOOGLE SERVICES AYARLARI ---
       - key: GOOGLE_MAPS_API_KEY
         value: "AIzaSyBAgXbA85EJfjSCc5BdQtEdH3wXJ1trb80"
       - key: GOOGLE_APPLICATION_CREDENTIALS_PATH
         value: "/etc/secrets/google-credentials.json"
-      
+
       # --- UYGULAMA ÖZELİNDE AYARLAR ---
       - key: ANDROID_PACKAGE_NAME
         value: "com.orderai.app"
@@ -75,6 +63,18 @@ services:
     buildCommand: "./build.sh"
     startCommand: "gunicorn makarna_project.asgi:application --workers 1 --worker-class uvicorn.workers.UvicornWorker --bind 0.0.0.0:$PORT"
     healthCheckPath: /
+    envVarGroups:
+      - orderai-common-env
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: makarna-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: makarna-redis
+          property: connectionString
 
   # 2. Celery Worker Servisi
   - type: worker
@@ -84,3 +84,15 @@ services:
     plan: starter
     buildCommand: "./build.sh"
     startCommand: "celery -A makarna_project worker -l info --concurrency=2 --max-tasks-per-child=100 --prefetch-multiplier=1"
+    envVarGroups:
+      - orderai-common-env
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: makarna-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: makarna-redis
+          property: connectionString
