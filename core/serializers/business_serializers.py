@@ -23,6 +23,10 @@ class TableSerializer(serializers.ModelSerializer):
         read_only_fields = ['uuid', 'business'] # layout ve business genellikle otomatik atanır
 
 
+
+
+
+
 # === YENİ SERIALIZER BAŞLANGICI ===
 class LayoutElementSerializer(serializers.ModelSerializer):
     class Meta:
@@ -33,6 +37,9 @@ class LayoutElementSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ['layout']
 # === YENİ SERIALIZER SONU ===
+
+
+
 
 
 # === DEĞİŞİKLİK BURADA BAŞLIYOR ===
@@ -64,51 +71,23 @@ class BusinessLayoutSerializer(serializers.ModelSerializer):
 # === DEĞİŞİKLİK BURADA BİTİYOR ===
 
 
+
 class BusinessPaymentSettingsSerializer(serializers.ModelSerializer):
     """
     İşletmenin ödeme sağlayıcı ayarlarını güncellemek için kullanılır.
-    API anahtarları güvenlik nedeniyle maskelenmiş olarak döndürülür.
+    API anahtarları sadece yazma amaçlıdır, okuma sırasında asla gönderilmez.
     """
-    payment_api_key_masked = serializers.SerializerMethodField()
-    payment_secret_key_masked = serializers.SerializerMethodField()
-    
     class Meta:
         model = Business
         fields = [
             'payment_provider',
             'payment_api_key',
-            'payment_secret_key',
-            'payment_api_key_masked',
-            'payment_secret_key_masked'
+            'payment_secret_key'
         ]
         extra_kwargs = {
             'payment_api_key': {'write_only': True, 'required': False, 'allow_blank': True, 'allow_null': True},
             'payment_secret_key': {'write_only': True, 'required': False, 'allow_blank': True, 'allow_null': True},
         }
-
-    def get_payment_api_key_masked(self, obj):
-        """API anahtarını maskelenmiş formatta döndürür"""
-        if obj.payment_api_key:
-            key = str(obj.payment_api_key)
-            if len(key) > 8:
-                return key[:4] + '*' * (len(key) - 8) + key[-4:]
-            elif len(key) > 4:
-                return key[:2] + '*' * (len(key) - 4) + key[-2:]
-            else:
-                return '*' * len(key)
-        return ''
-
-    def get_payment_secret_key_masked(self, obj):
-        """Secret anahtarını maskelenmiş formatta döndürür"""
-        if obj.payment_secret_key:
-            key = str(obj.payment_secret_key)
-            if len(key) > 8:
-                return key[:4] + '*' * (len(key) - 8) + key[-4:]
-            elif len(key) > 4:
-                return key[:2] + '*' * (len(key) - 4) + key[-2:]
-            else:
-                return '*' * len(key)
-        return ''
 
     def __init__(self, *args, **kwargs):
         # PUT metodu kullanıldığında partial=False olmasına rağmen,
@@ -119,23 +98,37 @@ class BusinessPaymentSettingsSerializer(serializers.ModelSerializer):
         super(BusinessPaymentSettingsSerializer, self).__init__(*args, **kwargs)
 
     def to_internal_value(self, data):
-        # Bu metot, validate'den önce çalışır ve gelen veriyi Python tiplerine çevirir.
-        # Burada, eksik veya null olan anahtar alanlarının varsayılan olarak boş string olmasını sağlıyoruz.
+        # Bu metot, validate'den önce çalışir ve gelen veriyi Python tiplerine çevirir.
         ret = super().to_internal_value(data)
         
-        if 'payment_api_key' not in ret or ret.get('payment_api_key') is None:
-            ret['payment_api_key'] = ''
-            
-        if 'payment_secret_key' not in ret or ret.get('payment_secret_key') is None:
-            ret['payment_secret_key'] = ''
+        # DÜZELTME: Sadece gelen data'da varsa işleme al, yoksa mevcut değeri koru
+        if 'payment_api_key' in data:
+            if data.get('payment_api_key') is None or data.get('payment_api_key') == '':
+                ret['payment_api_key'] = ''
+            else:
+                ret['payment_api_key'] = data['payment_api_key']
+                
+        if 'payment_secret_key' in data:
+            if data.get('payment_secret_key') is None or data.get('payment_secret_key') == '':
+                ret['payment_secret_key'] = ''
+            else:
+                ret['payment_secret_key'] = data['payment_secret_key']
             
         return ret
     
     def validate(self, data):
-        # to_internal_value sayesinde 'data' içinde anahtarların her zaman var olacağını varsayabiliriz.
-        provider = data.get('payment_provider')
+        # Mevcut instance'dan değerleri al
+        provider = data.get('payment_provider', self.instance.payment_provider if self.instance else None)
+        
+        # API key için: gelen data'da varsa onu al, yoksa mevcut değeri kullan
         api_key = data.get('payment_api_key')
+        if api_key is None and self.instance:
+            api_key = self.instance.payment_api_key
+            
+        # Secret key için: gelen data'da varsa onu al, yoksa mevcut değeri kullan    
         secret_key = data.get('payment_secret_key')
+        if secret_key is None and self.instance:
+            secret_key = self.instance.payment_secret_key
 
         # Eğer bir sağlayıcı seçildiyse (Entegrasyon Yok dışında), anahtarların girildiğinden emin ol.
         if provider and provider != Business.PaymentProvider.NONE:

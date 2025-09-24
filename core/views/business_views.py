@@ -81,23 +81,26 @@ class BusinessViewSet(viewsets.ModelViewSet):
             raise PermissionDenied("Bu işlem için yetkiniz yok.")
 
         if request.method == 'GET':
-            # GET isteğinde maskelenmiş anahtarları ve sağlayıcı bilgilerini döndürüyoruz
-            serializer = BusinessPaymentSettingsSerializer(business)
-            return Response(serializer.data)
+            # GET isteğinde anahtarları ASLA göndermiyoruz. Sadece seçili sağlayıcıyı gönderiyoruz.
+            # DÜZELTME: Anahtarların dolu olup olmadığını kontrol etme bilgisi eklendi
+            return Response({
+                'payment_provider': business.payment_provider,
+                'provider_display': business.get_payment_provider_display(),
+                'has_api_key': bool(business.payment_api_key and business.payment_api_key.strip()),
+                'has_secret_key': bool(business.payment_secret_key and business.payment_secret_key.strip()),
+            })
 
         elif request.method == 'PUT':
             serializer = BusinessPaymentSettingsSerializer(business, data=request.data)
             if serializer.is_valid(raise_exception=True):
                 try:
                     serializer.save()
-                    
-                    # Başarılı güncelleme sonrasında güncel verileri döndür
-                    updated_serializer = BusinessPaymentSettingsSerializer(business)
-                    
                     return Response({
                         'status': 'success',
                         'message': 'Ödeme ayarları başarıyla güncellendi.',
-                        'data': updated_serializer.data
+                        'payment_provider': business.payment_provider,
+                        'has_api_key': bool(business.payment_api_key and business.payment_api_key.strip()),
+                        'has_secret_key': bool(business.payment_secret_key and business.payment_secret_key.strip()),
                     })
                 except Exception as e:
                     # Gerçek hatayı loglayalım ve genel bir mesaj döndürelim
