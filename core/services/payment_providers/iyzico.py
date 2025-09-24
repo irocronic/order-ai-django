@@ -23,15 +23,22 @@ class IyzicoPaymentService(BasePaymentService):
         try:
             import iyzipay
             
-            # Options dictionary olarak yapılandırma
-            self.options = {
+            # Options yapılandırması
+            options = {
                 'api_key': self.api_key,
                 'secret_key': self.secret_key,
-                'base_url': 'sandbox-api.iyzipay.com' if getattr(settings, 'DEBUG', False) else 'api.iyzipay.com'
-                # Sadece domain, https:// olmadan
             }
             
-            logger.info(f"Iyzico SDK yapılandırıldı - Base URL: {self.options['base_url']}")
+            # Test/Production ortamına göre base URL ayarla
+            if getattr(settings, 'DEBUG', False):
+                options['base_url'] = 'sandbox-api.iyzipay.com'
+                logger.info("Iyzico SDK Sandbox ortamı için yapılandırıldı")
+            else:
+                options['base_url'] = 'api.iyzipay.com'
+                logger.info("Iyzico SDK Production ortamı için yapılandırıldı")
+            
+            self.options = options
+            logger.debug(f"Iyzico SDK yapılandırması tamamlandı: {options['base_url']}")
                 
         except ImportError:
             logger.error("iyzipay kütüphanesi bulunamadı. 'pip install iyzipay' ile yükleyin.")
@@ -64,21 +71,28 @@ class IyzicoPaymentService(BasePaymentService):
                 'basketId': str(order.id),
                 'paymentGroup': 'PRODUCT',
                 'callbackUrl': f'{settings.BASE_URL}/api/iyzico/callback/',
-                'enabledInstallments': ['1'],  # String array olarak
+                'enabledInstallments': ['1'],  # String array olarak gönder
                 'buyer': self._prepare_buyer_info(order),
                 'shippingAddress': self._prepare_address_info(order, 'shipping'),
                 'billingAddress': self._prepare_address_info(order, 'billing'),
                 'basketItems': self._prepare_basket_items(order),
             }
             
+            logger.debug(f"Iyzico request data hazırlandı: {request_data}")
+            
             # 2. Checkout Form initialize et
             checkout_form_initialize = iyzipay.CheckoutFormInitialize().create(request_data, self.options)
             
-            if checkout_form_initialize.status == 'success':
+            logger.debug(f"Iyzico API response type: {type(checkout_form_initialize)}")
+            logger.debug(f"Iyzico API response: {checkout_form_initialize}")
+            
+            # Response'u kontrol et - farklı response tiplerini handle et
+            if hasattr(checkout_form_initialize, 'status') and checkout_form_initialize.status == 'success':
                 payment_url = checkout_form_initialize.payment_page_url
                 transaction_token = checkout_form_initialize.token
                 
                 logger.info(f"Checkout Form başarıyla oluşturuldu. Token: {transaction_token}")
+                logger.debug(f"Payment URL: {payment_url}")
                 
                 # 3. Payment URL'ini QR kod'una çevir
                 qr_data_string = self._generate_qr_code_string(payment_url)
@@ -88,7 +102,24 @@ class IyzicoPaymentService(BasePaymentService):
                     "transaction_id": transaction_token
                 }
             else:
-                error_message = checkout_form_initialize.error_message or 'Checkout form oluşturulamadı'
+                # Hata durumu - response objesini detaylı logla
+                logger.error(f"Iyzico Checkout Form hatası - Response: {vars(checkout_form_initialize) if hasattr(checkout_form_initialize, '__dict__') else str(checkout_form_initialize)}")
+                
+                error_message = 'Checkout form oluşturulamadı'
+                if hasattr(checkout_form_initialize, 'error_message'):
+                    error_message = checkout_form_initialize.error_message
+                elif hasattr(checkout_form_initialize, 'errorMessage'):
+                    error_message = checkout_form_initialize.errorMessage
+                elif hasattr(checkout_form_initialize, 'read'):
+                    # HTTPResponse durumu
+                    try:
+                        response_body = checkout_form_initialize.read()
+                        logger.error(f"HTTP Response body: {response_body}")
+                        error_message = f"HTTP Error: {response_body}"
+                    except Exception as e:
+                        logger.error(f"HTTP Response okuma hatası: {e}")
+                        error_message = f"HTTP Response read error: {str(e)}"
+                
                 logger.error(f"Iyzico Checkout Form hatası: {error_message}")
                 raise Exception(f"Iyzico Checkout Form hatası: {error_message}")
                 
@@ -143,7 +174,10 @@ class IyzicoPaymentService(BasePaymentService):
             # Checkout Form durumunu sorgula
             checkout_form_result = iyzipay.CheckoutForm().retrieve(request_data, self.options)
             
-            if checkout_form_result.status == 'success':
+            logger.debug(f"Status check response type: {type(checkout_form_result)}")
+            logger.debug(f"Status check response: {checkout_form_result}")
+            
+            if hasattr(checkout_form_result, 'status') and checkout_form_result.status == 'success':
                 payment_status = checkout_form_result.payment_status
                 
                 # Iyzico status mapping
@@ -161,7 +195,12 @@ class IyzicoPaymentService(BasePaymentService):
                 
                 return {"status": mapped_status}
             else:
-                error_message = checkout_form_result.error_message or 'Durum sorgulanamadı'
+                error_message = 'Durum sorgulanamadı'
+                if hasattr(checkout_form_result, 'error_message'):
+                    error_message = checkout_form_result.error_message
+                elif hasattr(checkout_form_result, 'errorMessage'):
+                    error_message = checkout_form_result.errorMessage
+                
                 logger.warning(f"Iyzico durum sorgulama hatası: {error_message}")
                 return {"status": "pending"}
                 
