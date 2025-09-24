@@ -91,35 +91,34 @@ class BusinessViewSet(viewsets.ModelViewSet):
             })
 
         elif request.method == 'PUT':
+            # DEBUG: Gelen veriyi logla
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.info(f"=== PAYMENT SETTINGS UPDATE DEBUG ===")
+            logger.info(f"Business ID: {business.id}")
+            logger.info(f"Incoming data: {request.data}")
+            
             serializer = BusinessPaymentSettingsSerializer(business, data=request.data)
             if serializer.is_valid(raise_exception=True):
                 try:
-                    # DÜZELTME: Kaydetmeden önce debug log
-                    import logging
-                    logger = logging.getLogger(__name__)
-                    logger.info(f"Ödeme ayarları kaydediliyor - Business ID: {business.id}")
-                    logger.info(f"Provider: {serializer.validated_data.get('payment_provider')}")
-                    logger.info(f"API Key dolu: {bool(serializer.validated_data.get('payment_api_key'))}")
-                    logger.info(f"Secret Key dolu: {bool(serializer.validated_data.get('payment_secret_key'))}")
+                    serializer.save()
                     
-                    saved_business = serializer.save()
-                    
-                    # DÜZELTME: Kaydettikten sonra kontrol
-                    saved_business.refresh_from_db()
-                    logger.info(f"Kaydedildikten sonra - API Key dolu: {bool(saved_business.payment_api_key)}")
-                    logger.info(f"Kaydedildikten sonra - Secret Key dolu: {bool(saved_business.payment_secret_key)}")
+                    # DEBUG: Kaydedildikten sonra veritabanından oku ve logla
+                    business.refresh_from_db()
+                    logger.info(f"Kaydedildikten sonra - API Key (decrypt): {business.payment_api_key}")
+                    logger.info(f"Kaydedildikten sonra - Secret Key (decrypt): {business.payment_secret_key}")
+                    logger.info(f"API Key boş mu: {not bool(business.payment_api_key and business.payment_api_key.strip())}")
+                    logger.info(f"Secret Key boş mu: {not bool(business.payment_secret_key and business.payment_secret_key.strip())}")
                     
                     return Response({
                         'status': 'success',
                         'message': 'Ödeme ayarları başarıyla güncellendi.',
-                        'payment_provider': saved_business.payment_provider,
-                        'has_api_key': bool(saved_business.payment_api_key and saved_business.payment_api_key.strip()),
-                        'has_secret_key': bool(saved_business.payment_secret_key and saved_business.payment_secret_key.strip()),
+                        'payment_provider': business.payment_provider,
+                        'has_api_key': bool(business.payment_api_key and business.payment_api_key.strip()),
+                        'has_secret_key': bool(business.payment_secret_key and business.payment_secret_key.strip()),
                     })
                 except Exception as e:
                     # Gerçek hatayı loglayalım ve genel bir mesaj döndürelim
-                    import logging
-                    logger = logging.getLogger(__name__)
                     logger.error(f"Payment settings update error: {str(e)}", exc_info=True)
                     
                     return Response({

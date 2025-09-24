@@ -23,10 +23,6 @@ class TableSerializer(serializers.ModelSerializer):
         read_only_fields = ['uuid', 'business'] # layout ve business genellikle otomatik atanır
 
 
-
-
-
-
 # === YENİ SERIALIZER BAŞLANGICI ===
 class LayoutElementSerializer(serializers.ModelSerializer):
     class Meta:
@@ -37,9 +33,6 @@ class LayoutElementSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ['layout']
 # === YENİ SERIALIZER SONU ===
-
-
-
 
 
 # === DEĞİŞİKLİK BURADA BAŞLIYOR ===
@@ -71,7 +64,6 @@ class BusinessLayoutSerializer(serializers.ModelSerializer):
 # === DEĞİŞİKLİK BURADA BİTİYOR ===
 
 
-
 class BusinessPaymentSettingsSerializer(serializers.ModelSerializer):
     """
     İşletmenin ödeme sağlayıcı ayarlarını güncellemek için kullanılır.
@@ -89,81 +81,79 @@ class BusinessPaymentSettingsSerializer(serializers.ModelSerializer):
             'payment_secret_key': {'write_only': True, 'required': False, 'allow_blank': True, 'allow_null': True},
         }
 
+    def __init__(self, *args, **kwargs):
+        # PUT metodu kullanıldığında partial=False olmasına rağmen,
+        # anahtar alanları zorunlu olmadığı için eksik olabilirler.
+        # Bu yüzden partial=True'yu zorunlu kılarak sadece gönderilen alanların
+        # güncellenmesini sağlıyoruz. Bu, PUT ve PATCH davranışını birleştirir.
+        kwargs['partial'] = True
+        super(BusinessPaymentSettingsSerializer, self).__init__(*args, **kwargs)
+        
+        # DEBUG LOGGING
+        import logging
+        self.logger = logging.getLogger(__name__)
+
     def to_internal_value(self, data):
-        """
-        DÜZELTME: Daha basit ve güvenilir yaklaşım
-        Gelen veriyi aynen işle, boş string'leri koru
-        """
+        # DEBUG: Gelen veriyi logla
+        self.logger.info(f"=== SERIALIZER to_internal_value DEBUG ===")
+        self.logger.info(f"Incoming data: {data}")
+        
+        # Bu metot, validate'den önce çalışir ve gelen veriyi Python tiplerine çevirir.
         ret = super().to_internal_value(data)
         
-        # Sadece provider değişikliği kontrolü
-        if 'payment_provider' in data:
-            ret['payment_provider'] = data['payment_provider']
-            
-        # API key varsa işle
+        self.logger.info(f"After super().to_internal_value: {ret}")
+        
+        # DÜZELTME: Sadece gelen data'da varsa işleme al, yoksa mevcut değeri koru
         if 'payment_api_key' in data:
-            ret['payment_api_key'] = data['payment_api_key'] or ''
-            
-        # Secret key varsa işle    
+            if data.get('payment_api_key') is None or data.get('payment_api_key') == '':
+                ret['payment_api_key'] = ''
+                self.logger.info("API Key boş olarak set edildi")
+            else:
+                ret['payment_api_key'] = data['payment_api_key']
+                self.logger.info(f"API Key set edildi (ilk 8 karakter): {data['payment_api_key'][:8]}...")
+                
         if 'payment_secret_key' in data:
-            ret['payment_secret_key'] = data['payment_secret_key'] or ''
+            if data.get('payment_secret_key') is None or data.get('payment_secret_key') == '':
+                ret['payment_secret_key'] = ''
+                self.logger.info("Secret Key boş olarak set edildi")
+            else:
+                ret['payment_secret_key'] = data['payment_secret_key']
+                self.logger.info(f"Secret Key set edildi (ilk 8 karakter): {data['payment_secret_key'][:8]}...")
             
+        self.logger.info(f"Final to_internal_value result: {ret}")
         return ret
     
     def validate(self, data):
-        """
-        DÜZELTME: Validasyon mantığı düzeltildi
-        """
-        # Provider bilgisini al
-        provider = data.get('payment_provider')
-        if provider is None and self.instance:
-            provider = self.instance.payment_provider
+        self.logger.info(f"=== SERIALIZER validate DEBUG ===")
+        
+        # Mevcut instance'dan değerleri al
+        provider = data.get('payment_provider', self.instance.payment_provider if self.instance else None)
+        self.logger.info(f"Provider: {provider}")
+        
+        # API key için: gelen data'da varsa onu al, yoksa mevcut değeri kullan
+        api_key = data.get('payment_api_key')
+        if api_key is None and self.instance:
+            api_key = self.instance.payment_api_key
+            self.logger.info(f"API Key mevcut instance'dan alındı: {bool(api_key)}")
+        else:
+            self.logger.info(f"API Key data'dan alındı: {bool(api_key)}")
+            
+        # Secret key için: gelen data'da varsa onu al, yoksa mevcut değeri kullan    
+        secret_key = data.get('payment_secret_key')
+        if secret_key is None and self.instance:
+            secret_key = self.instance.payment_secret_key
+            self.logger.info(f"Secret Key mevcut instance'dan alındı: {bool(secret_key)}")
+        else:
+            self.logger.info(f"Secret Key data'dan alındı: {bool(secret_key)}")
 
-        # Eğer provider 'none' değilse, anahtarların dolu olması gerekir
+        # Eğer bir sağlayıcı seçildiyse (Entegrasyon Yok dışında), anahtarların girildiğinden emin ol.
         if provider and provider != Business.PaymentProvider.NONE:
-            # API key kontrolü
-            api_key = data.get('payment_api_key')
-            if api_key is None and self.instance:
-                api_key = self.instance.payment_api_key
-                
-            # Secret key kontrolü
-            secret_key = data.get('payment_secret_key')
-            if secret_key is None and self.instance:
-                secret_key = self.instance.payment_secret_key
-                
-            # Boş kontrolü
-            if not api_key or not api_key.strip():
+            self.logger.info("Sağlayıcı seçilmiş, anahtar kontrolü yapılıyor...")
+            if not api_key or not secret_key:
+                self.logger.error(f"Eksik anahtarlar! API Key: {bool(api_key)}, Secret Key: {bool(secret_key)}")
                 raise serializers.ValidationError(
-                    "Seçilen ödeme sağlayıcısı için API Anahtarı zorunludur."
-                )
-            if not secret_key or not secret_key.strip():
-                raise serializers.ValidationError(
-                    "Seçilen ödeme sağlayıcısı için Gizli Anahtar zorunludur."
+                    "Seçilen ödeme sağlayıcısı için API Anahtarı ve Gizli Anahtar alanları zorunludur."
                 )
         
+        self.logger.info("Validation başarılı")
         return data
-
-    def update(self, instance, validated_data):
-        """
-        DÜZELTME: Güncelleme işlemi için özel save mantığı
-        """
-        import logging
-        logger = logging.getLogger(__name__)
-        
-        logger.info(f"Serializer update çağrıldı - Instance ID: {instance.id}")
-        
-        # Alanları güncelle
-        for attr, value in validated_data.items():
-            logger.info(f"Güncelleniyor - {attr}: {bool(value) if 'key' in attr else value}")
-            setattr(instance, attr, value)
-        
-        # Kaydet
-        instance.save()
-        
-        # Refresh from DB to ensure we have latest data
-        instance.refresh_from_db()
-        
-        logger.info(f"Update tamamlandı - API Key dolu: {bool(instance.payment_api_key)}")
-        logger.info(f"Update tamamlandı - Secret Key dolu: {bool(instance.payment_secret_key)}")
-        
-        return instance

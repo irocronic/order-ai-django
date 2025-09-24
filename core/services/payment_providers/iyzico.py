@@ -21,6 +21,32 @@ class IyzicoPaymentService(BasePaymentService):
         logger.info(f"Business ID: {business.id}")
         logger.info(f"Business Name: {business.name}")
         
+        # CRITICAL DEBUG: Encrypted field'ları decrypt ederek gerçek değerlerini görelim
+        logger.info(f"=== ENCRYPTION DEBUG ===")
+        try:
+            # Veritabanından taze veri çek
+            fresh_business = Business.objects.get(id=business.id)
+            
+            # Encrypted field'ların decrypt edilmiş değerlerini logla
+            decrypted_api_key = fresh_business.payment_api_key
+            decrypted_secret_key = fresh_business.payment_secret_key
+            
+            logger.info(f"🔓 Decrypted API Key: '{decrypted_api_key}'")
+            logger.info(f"🔓 Decrypted Secret Key: '{decrypted_secret_key}'")
+            logger.info(f"🔓 API Key uzunluğu: {len(decrypted_api_key) if decrypted_api_key else 0}")
+            logger.info(f"🔓 Secret Key uzunluğu: {len(decrypted_secret_key) if decrypted_secret_key else 0}")
+            logger.info(f"🔓 API Key boş mu: {not bool(decrypted_api_key and decrypted_api_key.strip())}")
+            logger.info(f"🔓 Secret Key boş mu: {not bool(decrypted_secret_key and decrypted_secret_key.strip())}")
+            
+            # self.api_key ve self.secret_key değerlerini de kontrol et
+            logger.info(f"🔧 self.api_key: '{self.api_key}'")
+            logger.info(f"🔧 self.secret_key: '{self.secret_key}'")
+            logger.info(f"🔧 self.api_key == decrypted_api_key: {self.api_key == decrypted_api_key}")
+            logger.info(f"🔧 self.secret_key == decrypted_secret_key: {self.secret_key == decrypted_secret_key}")
+            
+        except Exception as debug_error:
+            logger.error(f"❌ Encryption debug hatası: {debug_error}")
+        
         # Iyzico SDK'sını import et ve yapılandır
         self._setup_iyzico_sdk()
 
@@ -36,8 +62,15 @@ class IyzicoPaymentService(BasePaymentService):
             
             if self.api_key:
                 logger.info(f"API Key ilk 8 karakter: {self.api_key[:8]}...")
+                logger.info(f"API Key uzunluğu: {len(self.api_key)}")
+            else:
+                logger.error("❌ API Key boş!")
+                
             if self.secret_key:
                 logger.info(f"Secret Key ilk 8 karakter: {self.secret_key[:8]}...")
+                logger.info(f"Secret Key uzunluğu: {len(self.secret_key)}")
+            else:
+                logger.error("❌ Secret Key boş!")
             
             # Options dictionary olarak oluştur
             self.options = {
@@ -54,6 +87,7 @@ class IyzicoPaymentService(BasePaymentService):
                 logger.info("🔧 Iyzico SDK Production ortamı için yapılandırıldı")
                 
             logger.info(f"Base URL: {self.options['base_url']}")
+            logger.info(f"Final options (anahtarlar gizli): {{'api_key': '***', 'secret_key': '***', 'base_url': '{self.options['base_url']}'}}")
                 
         except ImportError as e:
             logger.error(f"❌ iyzipay kütüphanesi bulunamadı: {str(e)}")
@@ -78,6 +112,19 @@ class IyzicoPaymentService(BasePaymentService):
             import iyzipay
             
             logger.info(f"🚀 Iyzico QR ödeme oluşturma başlıyor: Order #{order.id}")
+            
+            # CRITICAL DEBUG: SDK çağrısından hemen önce anahtarları tekrar kontrol et
+            logger.info(f"=== SDK CALL DEBUG ===")
+            logger.info(f"API Key boş mu: {not bool(self.api_key and self.api_key.strip())}")
+            logger.info(f"Secret Key boş mu: {not bool(self.secret_key and self.secret_key.strip())}")
+            
+            if not self.api_key or not self.api_key.strip():
+                logger.error("❌ API Key boş! SDK çağrısı yapılamaz.")
+                raise Exception("API Key boş - encrypted field decrypt edilememiş olabilir")
+                
+            if not self.secret_key or not self.secret_key.strip():
+                logger.error("❌ Secret Key boş! SDK çağrısı yapılamaz.")
+                raise Exception("Secret Key boş - encrypted field decrypt edilememiş olabilir")
             
             # Debug: Payment provider config kontrol
             try:
@@ -117,6 +164,8 @@ class IyzicoPaymentService(BasePaymentService):
             
             # 2. Checkout Form initialize et
             logger.info("🔄 Checkout Form initialize ediliyor...")
+            logger.info(f"Options: {{'api_key': '***', 'secret_key': '***', 'base_url': '{self.options.get('base_url', 'N/A')}'}}")
+            
             checkout_form_initialize = iyzipay.CheckoutFormInitialize().create(request_data, self.options)
             
             logger.info(f"📥 API Response alındı")
