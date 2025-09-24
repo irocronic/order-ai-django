@@ -311,7 +311,15 @@ elif DEBUG and not ADMIN_EMAIL_RECIPIENTS:
     print("UYARI: Geliştirme ortamında yeni üyelik bildirimleri için DJANGO_ADMIN_EMAIL_RECIPIENTS ayarlanmamış. Bildirim gönderilmeyecek.")
 
 # --- GOOGLE MAPS API AYARI ---
-GOOGLE_MAPS_API_KEY = os.environ.get('GOOGLE_MAPS_API_KEY', 'AIzaSyBAgXbA85EJfjSCc5BdQtEdH3wXJ1trb80')
+# API key'i environment variable'dan al, fallback olarak None kullan
+GOOGLE_MAPS_API_KEY = os.environ.get('GOOGLE_MAPS_API_KEY')
+
+# Eğer API key yoksa uyarı ver
+if not GOOGLE_MAPS_API_KEY:
+    if DEBUG:
+        print("⚠️  UYARI: GOOGLE_MAPS_API_KEY environment variable ayarlanmamış. Google Places özelliği çalışmayacak.")
+    else:
+        raise ValueError("Production ortamında GOOGLE_MAPS_API_KEY environment variable'ı gereklidir.")
 
 # --- GOOGLE & SUBSCRIPTION AYARLARI ---
 GOOGLE_APPLICATION_CREDENTIALS = os.environ.get('GOOGLE_APPLICATION_CREDENTIALS_PATH')

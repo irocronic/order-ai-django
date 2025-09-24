@@ -33,6 +33,9 @@ envVarGroups:
         value: ${DJANGO_ALLOWED_HOSTS} # Render panosundan eklenen secret'ı kullanır
       - key: DJANGO_ADMIN_EMAIL_RECIPIENTS
         value: "akma.koray@gmail.com"
+      # --- YENİ EKLENEN: GOOGLE MAPS API KEY ---
+      - key: GOOGLE_MAPS_API_KEY
+        value: ${GOOGLE_MAPS_API_KEY} # Render panosundan eklenen secret'ı kullanır
       # --- UYGULAMA AYARLARI ---
       - key: ANDROID_PACKAGE_NAME
         value: "com.orderai.app"
