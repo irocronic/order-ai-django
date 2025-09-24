@@ -1,7 +1,13 @@
-# Ortak ortam değişkenlerini (environment variables) tek bir yerden yönetmek için bir grup oluşturuluyor.
-# Bu, hem web hem de worker servislerinin aynı ayarlara sahip olmasını garanti eder ve yönetimi kolaylaştırır.
-envVarGroups:
-  - name: orderai-env-group
+services:
+  # 1. Django Web Servisi
+  - type: web
+    name: orderai-web
+    env: python
+    region: frankfurt
+    plan: starter
+    buildCommand: "./build.sh"
+    startCommand: "gunicorn makarna_project.asgi:application --workers 1 --worker-class uvicorn.workers.UvicornWorker --bind 0.0.0.0:$PORT"
+    healthCheckPath: /
     envVars:
       # --- PYTHON & DJANGO TEMEL AYARLARI ---
       - key: PYTHON_VERSION
@@ -26,9 +32,9 @@ envVarGroups:
       
       # --- GÜVENLİK VE AUTHENTICATION AYARLARI ---
       - key: DJANGO_SECRET_KEY
-        sync: false
+        value: "aXA/VLSgdpS+5IO/d3RUOjwa4TafYrE9Q+sL2enfvDA="
       - key: DJANGO_FIELD_ENCRYPTION_KEY
-        sync: false
+        value: "kP8lQu7ygRiIpJAUckxGkHUCC-6Y-U2BgEMwLcKcdSo="
       
       # --- HOST VE DOMAIN AYARLARI ---
       - key: DJANGO_ALLOWED_HOSTS
@@ -52,32 +58,19 @@ envVarGroups:
       - key: DJANGO_EMAIL_HOST_USER
         value: "akma.koray@gmail.com"
       - key: DJANGO_EMAIL_HOST_PASSWORD
-        sync: false
+        value: "vhpjyfnxsjuicpgy"
       - key: DJANGO_ADMIN_EMAIL_RECIPIENTS
         value: "akma.koray@gmail.com"
       
       # --- GOOGLE SERVICES AYARLARI ---
       - key: GOOGLE_MAPS_API_KEY
-        sync: false
+        value: "AIzaSyBAgXbA85EJfjSCc5BdQtEdH3wXJ1trb80"
       - key: GOOGLE_APPLICATION_CREDENTIALS_PATH
         value: "/etc/secrets/google-credentials.json"
       
       # --- UYGULAMA ÖZELİNDE AYARLAR ---
       - key: ANDROID_PACKAGE_NAME
         value: "com.orderai.app"
-
-services:
-  # 1. Django Web Servisi
-  - type: web
-    name: orderai-web
-    env: python
-    region: frankfurt
-    plan: starter
-    buildCommand: "./build.sh"
-    startCommand: "gunicorn makarna_project.asgi:application --workers 1 --worker-class uvicorn.workers.UvicornWorker --bind 0.0.0.0:$PORT"
-    healthCheckPath: /
-    envVarGroups:
-      - from: orderai-env-group
 
   # 2. Celery Worker Servisi
   - type: worker
@@ -87,5 +80,66 @@ services:
     plan: starter
     buildCommand: "./build.sh"
     startCommand: "celery -A makarna_project worker -l info --concurrency=2 --max-tasks-per-child=100 --prefetch-multiplier=1"
-    envVarGroups:
-      - from: orderai-env-group
+    envVars:
+      # --- PYTHON & DJANGO TEMEL AYARLARI ---
+      - key: PYTHON_VERSION
+        value: "3.11.4"
+      - key: DJANGO_SETTINGS_MODULE
+        value: makarna_project.settings
+      - key: DJANGO_DEBUG
+        value: "false"
+      - key: PYTHONUNBUFFERED
+        value: "1"
+      
+      # --- VERİTABANI VE REDIS BAĞLANTILARI ---
+      - key: DATABASE_URL
+        fromDatabase:
+          name: makarna-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: makarna-redis
+          property: connectionString
+      
+      # --- GÜVENLİK VE AUTHENTICATION AYARLARI ---
+      - key: DJANGO_SECRET_KEY
+        value: "aXA/VLSgdpS+5IO/d3RUOjwa4TafYrE9Q+sL2enfvDA="
+      - key: DJANGO_FIELD_ENCRYPTION_KEY
+        value: "kP8lQu7ygRiIpJAUckxGkHUCC-6Y-U2BgEMwLcKcdSo="
+      
+      # --- HOST VE DOMAIN AYARLARI ---
+      - key: DJANGO_ALLOWED_HOSTS
+        value: "orderai-web.onrender.com,127.0.0.1,localhost"
+      - key: DJANGO_CORS_ALLOWED_ORIGINS
+        value: "https://orderai-web.onrender.com"
+      - key: DJANGO_CSRF_TRUSTED_ORIGINS
+        value: "https://orderai-web.onrender.com"
+      - key: RENDER_EXTERNAL_URL
+        value: "https://orderai-web.onrender.com"
+      
+      # --- SSL VE GÜVENLİK AYARLARI ---
+      - key: DJANGO_SECURE_SSL_REDIRECT
+        value: "True"
+      - key: DJANGO_SESSION_COOKIE_SECURE
+        value: "True"
+      - key: DJANGO_CSRF_COOKIE_SECURE
+        value: "True"
+      
+      # --- E-POSTA AYARLARI ---
+      - key: DJANGO_EMAIL_HOST_USER
+        value: "akma.koray@gmail.com"
+      - key: DJANGO_EMAIL_HOST_PASSWORD
+        value: "vhpjyfnxsjuicpgy"
+      - key: DJANGO_ADMIN_EMAIL_RECIPIENTS
+        value: "akma.koray@gmail.com"
+      
+      # --- GOOGLE SERVICES AYARLARI ---
+      - key: GOOGLE_MAPS_API_KEY
+        value: "AIzaSyBAgXbA85EJfjSCc5BdQtEdH3wXJ1trb80"
+      - key: GOOGLE_APPLICATION_CREDENTIALS_PATH
+        value: "/etc/secrets/google-credentials.json"
+      
+      # --- UYGULAMA ÖZELİNDE AYARLAR ---
+      - key: ANDROID_PACKAGE_NAME
+        value: "com.orderai.app"
