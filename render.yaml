@@ -5,7 +5,7 @@ envVarGroups:
     envVars:
       # --- PYTHON & DJANGO TEMEL AYARLARI ---
       - key: PYTHON_VERSION
-        value: "3.11.4"  # Mevcut versiyonunuzla eşleştirdim
+        value: "3.11.4"
       - key: DJANGO_SETTINGS_MODULE
         value: makarna_project.settings
       - key: DJANGO_DEBUG
@@ -16,19 +16,19 @@ envVarGroups:
       # --- VERİTABANI VE REDIS BAĞLANTILARI ---
       - key: DATABASE_URL
         fromDatabase:
-          name: makarna-db # Render'daki veritabanı adınızla eşleştiğinden emin olun
+          name: makarna-db
           property: connectionString
       - key: REDIS_URL
         fromService:
           type: redis
-          name: makarna-redis # Render'daki Redis adınızla eşleştiğinden emin olun
+          name: makarna-redis
           property: connectionString
       
       # --- GÜVENLİK VE AUTHENTICATION AYARLARI ---
       - key: DJANGO_SECRET_KEY
-        value: ${DJANGO_SECRET_KEY} # Render dashboard'dan secret olarak yönetilecek
+        sync: false
       - key: DJANGO_FIELD_ENCRYPTION_KEY
-        value: ${DJANGO_FIELD_ENCRYPTION_KEY} # Render dashboard'dan secret olarak yönetilecek
+        sync: false
       
       # --- HOST VE DOMAIN AYARLARI ---
       - key: DJANGO_ALLOWED_HOSTS
@@ -52,13 +52,13 @@ envVarGroups:
       - key: DJANGO_EMAIL_HOST_USER
         value: "akma.koray@gmail.com"
       - key: DJANGO_EMAIL_HOST_PASSWORD
-        value: ${DJANGO_EMAIL_HOST_PASSWORD} # Render dashboard'dan secret olarak yönetilecek
+        sync: false
       - key: DJANGO_ADMIN_EMAIL_RECIPIENTS
         value: "akma.koray@gmail.com"
       
       # --- GOOGLE SERVICES AYARLARI ---
       - key: GOOGLE_MAPS_API_KEY
-        value: ${GOOGLE_MAPS_API_KEY} # Render dashboard'dan secret olarak yönetilecek
+        sync: false
       - key: GOOGLE_APPLICATION_CREDENTIALS_PATH
         value: "/etc/secrets/google-credentials.json"
       
@@ -76,7 +76,8 @@ services:
     buildCommand: "./build.sh"
     startCommand: "gunicorn makarna_project.asgi:application --workers 1 --worker-class uvicorn.workers.UvicornWorker --bind 0.0.0.0:$PORT"
     healthCheckPath: /
-    envVarGroup: orderai-env-group
+    envVarGroups:
+      - orderai-env-group
 
   # 2. Celery Worker Servisi
   - type: worker
@@ -86,4 +87,5 @@ services:
     plan: starter
     buildCommand: "./build.sh"
     startCommand: "celery -A makarna_project worker -l info --concurrency=2 --max-tasks-per-child=100 --prefetch-multiplier=1"
-    envVarGroup: orderai-env-group
+    envVarGroups:
+      - orderai-env-group
