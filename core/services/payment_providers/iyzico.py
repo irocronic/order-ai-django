@@ -56,39 +56,31 @@ class IyzicoPaymentService(BasePaymentService):
             import iyzipay
             logger.info("✅ iyzipay modülü başarıyla import edildi")
             
-            # Debug: API Key kontrolü
+            # API Key kontrolü
             logger.info(f"API Key var mı: {'✅ Evet' if self.api_key else '❌ Hayır'}")
             logger.info(f"Secret Key var mı: {'✅ Evet' if self.secret_key else '❌ Hayır'}")
             
-            if self.api_key:
-                logger.info(f"API Key ilk 8 karakter: {self.api_key[:8]}...")
-                logger.info(f"API Key uzunluğu: {len(self.api_key)}")
-            else:
-                logger.error("❌ API Key boş!")
+            if not self.api_key or not self.secret_key:
+                logger.error("❌ API Key veya Secret Key boş!")
+                raise Exception("API Key veya Secret Key boş")
                 
-            if self.secret_key:
-                logger.info(f"Secret Key ilk 8 karakter: {self.secret_key[:8]}...")
-                logger.info(f"Secret Key uzunluğu: {len(self.secret_key)}")
-            else:
-                logger.error("❌ Secret Key boş!")
-            
             # Options dictionary olarak oluştur
             self.options = {
                 'api_key': self.api_key,
                 'secret_key': self.secret_key,
             }
             
-            # Test/Production ortamına göre base URL ayarla - SADECE HOSTNAME
-            if getattr(settings, 'DEBUG', False):
-                self.options['base_url'] = "sandbox-api.iyzipay.com"  # Sadece hostname
+            # DÜZELTME: API anahtarına göre base URL belirle
+            if self.api_key.startswith('sandbox-'):
+                self.options['base_url'] = "sandbox-api.iyzipay.com"  # Sandbox için
                 logger.info("🔧 Iyzico SDK Sandbox ortamı için yapılandırıldı")
             else:
-                self.options['base_url'] = "api.iyzipay.com"  # Sadece hostname  
+                self.options['base_url'] = "api.iyzipay.com"  # Production için  
                 logger.info("🔧 Iyzico SDK Production ortamı için yapılandırıldı")
-                
+                    
             logger.info(f"Base URL: {self.options['base_url']}")
-            logger.info(f"Final options (anahtarlar gizli): {{'api_key': '***', 'secret_key': '***', 'base_url': '{self.options['base_url']}'}}")
-                
+            logger.info(f"Final options: {{'api_key': '***', 'secret_key': '***', 'base_url': '{self.options['base_url']}'}}")
+                    
         except ImportError as e:
             logger.error(f"❌ iyzipay kütüphanesi bulunamadı: {str(e)}")
             raise ImportError("iyzipay kütüphanesi yüklenmelidir")
