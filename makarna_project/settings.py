@@ -310,6 +310,9 @@ if not DEBUG and not ADMIN_EMAIL_RECIPIENTS:
 elif DEBUG and not ADMIN_EMAIL_RECIPIENTS:
     print("UYARI: Geliştirme ortamında yeni üyelik bildirimleri için DJANGO_ADMIN_EMAIL_RECIPIENTS ayarlanmamış. Bildirim gönderilmeyecek.")
 
+# --- GOOGLE MAPS API AYARI ---
+GOOGLE_MAPS_API_KEY = os.environ.get('GOOGLE_MAPS_API_KEY', 'AIzaSyBAgXbA85EJfjSCc5BdQtEdH3wXJ1trb80')
+
 # --- GOOGLE & SUBSCRIPTION AYARLARI ---
 GOOGLE_APPLICATION_CREDENTIALS = os.environ.get('GOOGLE_APPLICATION_CREDENTIALS_PATH')
 if not GOOGLE_APPLICATION_CREDENTIALS:

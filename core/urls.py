@@ -56,6 +56,12 @@ from core.views.business_website_views import (
 # YENİ EKLENEN IMPORT
 from core.views.reservation_views import TableAvailabilityAPIView
 
+# Google Places Proxy Views için importlar
+from core.views.places_views import (
+    google_places_autocomplete,
+    google_place_details
+)
+
 from subscriptions.views import VerifyPurchaseView
 
 # Genel API'ler için DefaultRouter
@@ -147,6 +153,10 @@ urlpatterns = [
 
     # Herkese Açık Rezervasyon URL'i
     path('public/business/<slug:business_slug>/reservations/', PublicReservationCreateView.as_view(), name='public-reservation-create'),
+    
+    # Google Places Proxy Endpoints
+    path('google-places/autocomplete/', google_places_autocomplete, name='google-places-autocomplete'),
+    path('google-places/details/', google_place_details, name='google-place-details'),
 ]
 
 # Geliştirme ortamında medya dosyalarını sunmak için
