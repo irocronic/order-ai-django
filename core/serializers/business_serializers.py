@@ -23,10 +23,6 @@ class TableSerializer(serializers.ModelSerializer):
         read_only_fields = ['uuid', 'business'] # layout ve business genellikle otomatik atanır
 
 
-
-
-
-
 # === YENİ SERIALIZER BAŞLANGICI ===
 class LayoutElementSerializer(serializers.ModelSerializer):
     class Meta:
@@ -37,9 +33,6 @@ class LayoutElementSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ['layout']
 # === YENİ SERIALIZER SONU ===
-
-
-
 
 
 # === DEĞİŞİKLİK BURADA BAŞLIYOR ===
@@ -71,23 +64,51 @@ class BusinessLayoutSerializer(serializers.ModelSerializer):
 # === DEĞİŞİKLİK BURADA BİTİYOR ===
 
 
-
 class BusinessPaymentSettingsSerializer(serializers.ModelSerializer):
     """
     İşletmenin ödeme sağlayıcı ayarlarını güncellemek için kullanılır.
-    API anahtarları sadece yazma amaçlıdır, okuma sırasında asla gönderilmez.
+    API anahtarları güvenlik nedeniyle maskelenmiş olarak döndürülür.
     """
+    payment_api_key_masked = serializers.SerializerMethodField()
+    payment_secret_key_masked = serializers.SerializerMethodField()
+    
     class Meta:
         model = Business
         fields = [
             'payment_provider',
             'payment_api_key',
-            'payment_secret_key'
+            'payment_secret_key',
+            'payment_api_key_masked',
+            'payment_secret_key_masked'
         ]
         extra_kwargs = {
             'payment_api_key': {'write_only': True, 'required': False, 'allow_blank': True, 'allow_null': True},
             'payment_secret_key': {'write_only': True, 'required': False, 'allow_blank': True, 'allow_null': True},
         }
+
+    def get_payment_api_key_masked(self, obj):
+        """API anahtarını maskelenmiş formatta döndürür"""
+        if obj.payment_api_key:
+            key = str(obj.payment_api_key)
+            if len(key) > 8:
+                return key[:4] + '*' * (len(key) - 8) + key[-4:]
+            elif len(key) > 4:
+                return key[:2] + '*' * (len(key) - 4) + key[-2:]
+            else:
+                return '*' * len(key)
+        return ''
+
+    def get_payment_secret_key_masked(self, obj):
+        """Secret anahtarını maskelenmiş formatta döndürür"""
+        if obj.payment_secret_key:
+            key = str(obj.payment_secret_key)
+            if len(key) > 8:
+                return key[:4] + '*' * (len(key) - 8) + key[-4:]
+            elif len(key) > 4:
+                return key[:2] + '*' * (len(key) - 4) + key[-2:]
+            else:
+                return '*' * len(key)
+        return ''
 
     def __init__(self, *args, **kwargs):
         # PUT metodu kullanıldığında partial=False olmasına rağmen,

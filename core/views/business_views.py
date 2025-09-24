@@ -81,21 +81,23 @@ class BusinessViewSet(viewsets.ModelViewSet):
             raise PermissionDenied("Bu işlem için yetkiniz yok.")
 
         if request.method == 'GET':
-            # GET isteğinde anahtarları ASLA göndermiyoruz. Sadece seçili sağlayıcıyı gönderiyoruz.
-            return Response({
-                'payment_provider': business.payment_provider,
-                'provider_display': business.get_payment_provider_display(),
-            })
+            # GET isteğinde maskelenmiş anahtarları ve sağlayıcı bilgilerini döndürüyoruz
+            serializer = BusinessPaymentSettingsSerializer(business)
+            return Response(serializer.data)
 
         elif request.method == 'PUT':
             serializer = BusinessPaymentSettingsSerializer(business, data=request.data)
             if serializer.is_valid(raise_exception=True):
                 try:
                     serializer.save()
+                    
+                    # Başarılı güncelleme sonrasında güncel verileri döndür
+                    updated_serializer = BusinessPaymentSettingsSerializer(business)
+                    
                     return Response({
                         'status': 'success',
                         'message': 'Ödeme ayarları başarıyla güncellendi.',
-                        'payment_provider': business.payment_provider,
+                        'data': updated_serializer.data
                     })
                 except Exception as e:
                     # Gerçek hatayı loglayalım ve genel bir mesaj döndürelim
