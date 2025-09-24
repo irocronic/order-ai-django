@@ -3,17 +3,14 @@
 envVarGroups:
   - name: orderai-env-group
     envVars:
-      # --- PYTHON & DJANGO TEMEL AYARLARI ---
       - key: PYTHON_VERSION
-        value: "3.11.4"  # Mevcut versiyonunuzla eşleştirdim
+        value: 3.12.4
       - key: DJANGO_SETTINGS_MODULE
         value: makarna_project.settings
       - key: DJANGO_DEBUG
-        value: "false"
+        value: false
       - key: PYTHONUNBUFFERED
         value: "1"
-      
-      # --- VERİTABANI VE REDIS BAĞLANTILARI ---
       - key: DATABASE_URL
         fromDatabase:
           name: makarna-db # Render'daki veritabanı adınızla eşleştiğinden emin olun
@@ -23,48 +20,35 @@ envVarGroups:
           type: redis
           name: makarna-redis # Render'daki Redis adınızla eşleştiğinden emin olun
           property: connectionString
-      
-      # --- GÜVENLİK VE AUTHENTICATION AYARLARI ---
+      # --- GÜVENLİK İÇİN SECRET OLARAK TANIMLANAN DEĞİŞKENLER ---
+      # Bu anahtarların değerlerini Render panosundaki "Environment" sekmesinde
+      # "Secret Files" veya "Normal Environment Variables" olarak oluşturmalısınız.
       - key: DJANGO_SECRET_KEY
-        value: ${DJANGO_SECRET_KEY} # Render dashboard'dan secret olarak yönetilecek
-      - key: DJANGO_FIELD_ENCRYPTION_KEY
-        value: ${DJANGO_FIELD_ENCRYPTION_KEY} # Render dashboard'dan secret olarak yönetilecek
-      
-      # --- HOST VE DOMAIN AYARLARI ---
+        generateValue: true # Render'ın güvenli bir anahtar üretmesini sağlar
+      - key: DJANGO_EMAIL_HOST_USER
+        value: "akma.koray@gmail.com" # Hassas değilse burada kalabilir, değilse secret yapın
+      - key: DJANGO_EMAIL_HOST_PASSWORD
+        value: ${DJANGO_EMAIL_HOST_PASSWORD} # Render panosundan eklenen secret'ı kullanır
       - key: DJANGO_ALLOWED_HOSTS
-        value: "orderai-web.onrender.com,127.0.0.1,localhost"
-      - key: DJANGO_CORS_ALLOWED_ORIGINS
-        value: "https://orderai-web.onrender.com"
-      - key: DJANGO_CSRF_TRUSTED_ORIGINS
-        value: "https://orderai-web.onrender.com"
-      - key: RENDER_EXTERNAL_URL
-        value: "https://orderai-web.onrender.com"
-      
-      # --- SSL VE GÜVENLİK AYARLARI ---
+        value: ${DJANGO_ALLOWED_HOSTS} # Render panosundan eklenen secret'ı kullanır
+      - key: DJANGO_ADMIN_EMAIL_RECIPIENTS
+        value: "akma.koray@gmail.com"
+      # --- YENİ EKLENEN: GOOGLE MAPS API KEY ---
+      - key: GOOGLE_MAPS_API_KEY
+        value: ${GOOGLE_MAPS_API_KEY} # Render panosundan eklenen secret'ı kullanır
+      # --- UYGULAMA AYARLARI ---
+      - key: ANDROID_PACKAGE_NAME
+        value: "com.orderai.app"
+      - key: GOOGLE_APPLICATION_CREDENTIALS_PATH
+        value: "/etc/secrets/google-credentials.json"
       - key: DJANGO_SECURE_SSL_REDIRECT
         value: "True"
       - key: DJANGO_SESSION_COOKIE_SECURE
         value: "True"
       - key: DJANGO_CSRF_COOKIE_SECURE
         value: "True"
-      
-      # --- E-POSTA AYARLARI ---
-      - key: DJANGO_EMAIL_HOST_USER
-        value: "akma.koray@gmail.com"
-      - key: DJANGO_EMAIL_HOST_PASSWORD
-        value: ${DJANGO_EMAIL_HOST_PASSWORD} # Render dashboard'dan secret olarak yönetilecek
-      - key: DJANGO_ADMIN_EMAIL_RECIPIENTS
-        value: "akma.koray@gmail.com"
-      
-      # --- GOOGLE SERVICES AYARLARI ---
-      - key: GOOGLE_MAPS_API_KEY
-        value: ${GOOGLE_MAPS_API_KEY} # Render dashboard'dan secret olarak yönetilecek
-      - key: GOOGLE_APPLICATION_CREDENTIALS_PATH
-        value: "/etc/secrets/google-credentials.json"
-      
-      # --- UYGULAMA ÖZELİNDE AYARLAR ---
-      - key: ANDROID_PACKAGE_NAME
-        value: "com.orderai.app"
+      - key: DJANGO_FIELD_ENCRYPTION_KEY
+        generateValue: true
 
 services:
   # 1. Django Web Servisi
@@ -76,7 +60,7 @@ services:
     buildCommand: "./build.sh"
     startCommand: "gunicorn makarna_project.asgi:application --workers 1 --worker-class uvicorn.workers.UvicornWorker --bind 0.0.0.0:$PORT"
     healthCheckPath: /
-    envVarGroup: orderai-env-group
+    envVarGroup: orderai-env-group # Yukarıda tanımlanan ortak grubu kullanır.
 
   # 2. Celery Worker Servisi
   - type: worker
@@ -86,4 +70,4 @@ services:
     plan: starter
     buildCommand: "./build.sh"
     startCommand: "celery -A makarna_project worker -l info --concurrency=2 --max-tasks-per-child=100 --prefetch-multiplier=1"
-    envVarGroup: orderai-env-group
+    envVarGroup: orderai-env-group # Yukarıda tanımlanan ortak grubu kullanır.
