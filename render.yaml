@@ -64,12 +64,12 @@ services:
       # --- VERİTABANI VE REDIS BAĞLANTILARI ---
       - key: DATABASE_URL
         fromDatabase:
-          name: makarna-db
+          name: order-ai
           property: connectionString
       - key: REDIS_URL
         fromService:
           type: redis
-          name: makarna-redis
+          name: orderai-redis
           property: connectionString
 
   # 2. Celery Worker Servisi
@@ -136,10 +136,10 @@ services:
       # --- VERİTABANI VE REDIS BAĞLANTILARI ---
       - key: DATABASE_URL
         fromDatabase:
-          name: makarna-db
+          name: order-ai
           property: connectionString
       - key: REDIS_URL
         fromService:
           type: redis
-          name: makarna-redis
+          name: orderai-redis
           property: connectionString
