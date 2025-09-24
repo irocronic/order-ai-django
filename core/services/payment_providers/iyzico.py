@@ -23,14 +23,14 @@ class IyzicoPaymentService(BasePaymentService):
         try:
             import iyzipay
             
-            # Options yapılandırması - YENİ API
+            # Options yapılandırması - doğru şekilde
             self.options = {
                 'api_key': self.api_key,
                 'secret_key': self.secret_key,
                 'base_url': "https://sandbox-api.iyzipay.com" if getattr(settings, 'DEBUG', False) else "https://api.iyzipay.com"
             }
             
-            logger.info(f"Iyzico SDK yapılandırıldı: {'Sandbox' if getattr(settings, 'DEBUG', False) else 'Production'}")
+            logger.info(f"Iyzico SDK yapılandırıldı - Debug: {getattr(settings, 'DEBUG', False)}")
                 
         except ImportError:
             logger.error("iyzipay kütüphanesi bulunamadı. 'pip install iyzipay' ile yükleyin.")
@@ -56,7 +56,7 @@ class IyzicoPaymentService(BasePaymentService):
             
             logger.info(f"Iyzico QR ödeme oluşturma (Checkout Form): Order #{order.id}")
             
-            # 1. Checkout Form için request hazırla
+            # 1. Checkout Form için request hazırla - TÜM STRING DEĞERLERİ KULLAN
             request_data = {
                 'locale': 'tr',
                 'conversationId': f'order-{order.id}-{str(order.uuid)[:8]}',
@@ -66,24 +66,27 @@ class IyzicoPaymentService(BasePaymentService):
                 'basketId': str(order.id),
                 'paymentGroup': 'PRODUCT',
                 'callbackUrl': f'{settings.BASE_URL}/api/iyzico/callback/',
-                'enabledInstallments': [1],  # Tek çekim
+                'enabledInstallments': ['1'],  # STRING olarak tek çekim - BURADA HATA VARDI!
                 'buyer': self._prepare_buyer_info(order),
                 'shippingAddress': self._prepare_address_info(order, 'shipping'),
                 'billingAddress': self._prepare_address_info(order, 'billing'),
                 'basketItems': self._prepare_basket_items(order),
             }
             
-            # 2. Checkout Form initialize et - YENİ API
+            logger.debug(f"Request data hazırlandı: {request_data}")
+            
+            # 2. Checkout Form initialize et
             checkout_form_initialize = iyzipay.CheckoutFormInitialize().create(request_data, self.options)
             
-            # 3. Response kontrol et
-            if hasattr(checkout_form_initialize, 'status') and checkout_form_initialize.status == 'success':
+            logger.debug(f"Checkout response: {checkout_form_initialize.status}")
+            
+            if checkout_form_initialize.status == 'success':
                 payment_url = checkout_form_initialize.payment_page_url
                 transaction_token = checkout_form_initialize.token
                 
                 logger.info(f"Checkout Form başarıyla oluşturuldu. Token: {transaction_token}")
                 
-                # 4. Payment URL'ini QR kod'una çevir
+                # 3. Payment URL'ini QR kod'una çevir
                 qr_data_string = self._generate_qr_code_string(payment_url)
                 
                 return {
@@ -92,9 +95,9 @@ class IyzicoPaymentService(BasePaymentService):
                 }
             else:
                 error_message = getattr(checkout_form_initialize, 'error_message', 'Checkout form oluşturulamadı')
-                logger.error(f"Iyzico Checkout Form hatası: {error_message}")
-                logger.error(f"Checkout Form Response: {checkout_form_initialize.__dict__}")
-                raise Exception(f"Iyzico Checkout Form hatası: {error_message}")
+                error_code = getattr(checkout_form_initialize, 'error_code', 'UNKNOWN')
+                logger.error(f"Iyzico Checkout Form hatası: {error_code} - {error_message}")
+                raise Exception(f"Iyzico Checkout Form hatası: {error_code} - {error_message}")
                 
         except ImportError:
             logger.error("iyzipay kütüphanesi bulunamadı")
@@ -147,7 +150,7 @@ class IyzicoPaymentService(BasePaymentService):
             # Checkout Form durumunu sorgula
             checkout_form_result = iyzipay.CheckoutForm().retrieve(request_data, self.options)
             
-            if hasattr(checkout_form_result, 'status') and checkout_form_result.status == 'success':
+            if checkout_form_result.status == 'success':
                 payment_status = getattr(checkout_form_result, 'payment_status', 'WAITING')
                 
                 # Iyzico status mapping
