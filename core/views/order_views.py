@@ -1,6 +1,6 @@
 # core/views/order_views.py
 
-from django.db import transaction
+from django.db import transaction, connection
 from django.db.models import Prefetch, Q
 from django.utils import timezone
 from rest_framework import viewsets, status, mixins
@@ -13,6 +13,7 @@ from django.db.models import Q, Prefetch
 from rest_framework.exceptions import PermissionDenied, ValidationError, NotFound
 import logging
 from decimal import Decimal
+from contextlib import contextmanager
 
 from rest_framework.pagination import PageNumberPagination
 
@@ -32,6 +33,21 @@ from ..signals.order_signals import send_order_update_notification
 from .order_actions import item_actions, status_actions, financial_actions, operational_actions
 
 logger = logging.getLogger(__name__)
+
+@contextmanager
+def handle_db_lock_timeout(max_wait_time=5):
+    """Database lock timeout'u yöneten context manager"""
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute(f"SET innodb_lock_wait_timeout = {max_wait_time}")
+        yield
+    except Exception as e:
+        logger.error(f"Database lock timeout hatası: {e}")
+        raise
+    finally:
+        # Timeout değerini varsayılana geri döndür
+        with connection.cursor() as cursor:
+            cursor.execute("SET innodb_lock_wait_timeout = DEFAULT")
 
 class StandardResultsSetPagination(PageNumberPagination):
     page_size = 20
@@ -114,15 +130,17 @@ class OrderViewSet(viewsets.ModelViewSet):
 
         return queryset.order_by('-created_at')
 
+    @transaction.atomic
     def perform_create(self, serializer):
         try:
-            order = serializer.save(taken_by_staff=self.request.user)
-            transaction.on_commit(
-                lambda: send_order_update_notification(
-                    order=order, 
-                    created=True
+            with handle_db_lock_timeout():
+                order = serializer.save(taken_by_staff=self.request.user)
+                transaction.on_commit(
+                    lambda: send_order_update_notification(
+                        order=order, 
+                        created=True
+                    )
                 )
-            )
         except Exception as e:
             logger.error(f"[PERFORM_CREATE_ORDER] Unexpected error: {e}")
             import traceback
@@ -130,8 +148,19 @@ class OrderViewSet(viewsets.ModelViewSet):
             raise
 
     @action(detail=True, methods=['post'], url_path='add-item')
+    @transaction.atomic
     def add_item(self, request, pk=None):
-        return item_actions.add_item_action(self, request, pk=pk)
+        """Race condition koruması ile item ekleme"""
+        try:
+            with handle_db_lock_timeout():
+                # SELECT FOR UPDATE ile order'ı kilitle
+                order = Order.objects.select_for_update().get(id=pk)
+                return item_actions.add_item_action(self, request, order=order)
+        except Order.DoesNotExist:
+            raise NotFound('Sipariş bulunamadı.')
+        except Exception as e:
+            logger.error(f"[ADD_ITEM] Race condition hatası: {e}")
+            raise ValidationError("Sipariş güncellenirken bir hata oluştu. Lütfen tekrar deneyin.")
 
     def get_object(self):
         lookup_url_kwarg = self.lookup_url_kwarg or self.lookup_field
@@ -176,8 +205,13 @@ class OrderViewSet(viewsets.ModelViewSet):
                current_view_action_name not in allowed_actions_for_pending_approval:
                 raise PermissionDenied(f"'{action_name}' için siparişin önce onaylanması veya reddedilmesi gerekir.")
 
+    @transaction.atomic
     def _add_or_update_order_item_internal(self, order: Order, item_data: dict, is_awaiting_staff_approval_flag: bool):
         from collections import Counter
+        
+        # SELECT FOR UPDATE ile concurrent access'i engelle
+        order = Order.objects.select_for_update().get(id=order.id)
+        
         menu_item = item_data.get('menu_item')
         variant = item_data.get('variant')
         quantity_to_add = item_data.get('quantity', 1)
@@ -194,7 +228,7 @@ class OrderViewSet(viewsets.ModelViewSet):
         create_new_item_instead = False
 
         if order.order_type == 'table':
-            matching_items_query = order.order_items.filter(
+            matching_items_query = order.order_items.select_for_update().filter(
                 menu_item=menu_item,
                 variant_id=variant.id if variant else None,
                 table_user=table_user,
@@ -231,33 +265,32 @@ class OrderViewSet(viewsets.ModelViewSet):
         )
         item_price_per_unit = main_price_decimal + extras_total_price_decimal
 
-        with transaction.atomic():
-            if found_item_to_increment and not create_new_item_instead:
-                found_item_to_increment.quantity += quantity_to_add
-                found_item_to_increment.price = item_price_per_unit
-                found_item_to_increment.save(update_fields=['quantity', 'price'])
-                processed_item = found_item_to_increment
-            else:
-                kds_status_for_new_item = OrderItem.KDS_ITEM_STATUS_CHOICES[0][0] if menu_item.category and menu_item.category.assigned_kds else None
-                order_item_instance = OrderItem.objects.create(
-                    order=order,
-                    menu_item=menu_item,
-                    variant_id=variant.id if variant else None,
-                    quantity=quantity_to_add,
-                    table_user=table_user,
-                    price=item_price_per_unit,
-                    is_awaiting_staff_approval=is_awaiting_staff_approval_flag,
-                    kds_status=kds_status_for_new_item,
-                    delivered=False
-                )
-                for extra_data in valid_extras_data:
-                    if isinstance(extra_data.get('variant'), MenuItemVariant):
-                        OrderItemExtra.objects.create(
-                            order_item=order_item_instance,
-                            variant=extra_data['variant'],
-                            quantity=extra_data.get('quantity', 1)
-                        )
-                processed_item = order_item_instance
+        if found_item_to_increment and not create_new_item_instead:
+            found_item_to_increment.quantity += quantity_to_add
+            found_item_to_increment.price = item_price_per_unit
+            found_item_to_increment.save(update_fields=['quantity', 'price'])
+            processed_item = found_item_to_increment
+        else:
+            kds_status_for_new_item = OrderItem.KDS_ITEM_STATUS_CHOICES[0][0] if menu_item.category and menu_item.category.assigned_kds else None
+            order_item_instance = OrderItem.objects.create(
+                order=order,
+                menu_item=menu_item,
+                variant_id=variant.id if variant else None,
+                quantity=quantity_to_add,
+                table_user=table_user,
+                price=item_price_per_unit,
+                is_awaiting_staff_approval=is_awaiting_staff_approval_flag,
+                kds_status=kds_status_for_new_item,
+                delivered=False
+            )
+            for extra_data in valid_extras_data:
+                if isinstance(extra_data.get('variant'), MenuItemVariant):
+                    OrderItemExtra.objects.create(
+                        order_item=order_item_instance,
+                        variant=extra_data['variant'],
+                        quantity=extra_data.get('quantity', 1)
+                    )
+            processed_item = order_item_instance
 
         return OrderItem.objects.select_related(
             'menu_item__category__assigned_kds', 
@@ -266,30 +299,37 @@ class OrderViewSet(viewsets.ModelViewSet):
         ).prefetch_related('extras__variant').get(id=processed_item.id)
 
     @action(detail=True, methods=['post'], url_path='deliver-item')
+    @transaction.atomic
     def deliver_item(self, request, pk=None):
         return item_actions.deliver_item_action(self, request, pk=pk)
 
     @action(detail=True, methods=['post'], url_path='approve-guest-order')
+    @transaction.atomic
     def approve_guest_order(self, request, pk=None):
         return status_actions.approve_guest_order_action(self, request, pk=pk)
 
     @action(detail=True, methods=['post'], url_path='reject-guest-order')
+    @transaction.atomic
     def reject_guest_order(self, request, pk=None):
         return status_actions.reject_guest_order_action(self, request, pk=pk)
     
     @action(detail=True, methods=['post'], url_path='mark-picked-up-by-waiter')
+    @transaction.atomic
     def mark_picked_up_by_waiter(self, request, pk=None):
         return status_actions.mark_order_picked_up_by_waiter_action(self, request, pk=pk)
 
     @action(detail=True, methods=['post'], url_path='deliver') 
+    @transaction.atomic
     def deliver_all_items(self, request, pk=None):
         return status_actions.deliver_all_items_action(self, request, pk=pk)
 
     @action(detail=True, methods=['post'], url_path='mark-as-paid')
+    @transaction.atomic
     def mark_as_paid(self, request, pk=None):
         return financial_actions.mark_as_paid_action(self, request, pk=pk)
 
     @action(detail=True, methods=['post'], url_path='credit')
+    @transaction.atomic
     def save_credit_payment(self, request, pk=None):
         return financial_actions.save_credit_payment_action(self, request, pk=pk)
 
@@ -297,24 +337,24 @@ class OrderViewSet(viewsets.ModelViewSet):
     def list_credit_sales(self, request):
         return financial_actions.list_credit_sales_action(self, request)
 
+    @transaction.atomic
     def destroy(self, request, *args, **kwargs):
         instance = self.get_object()
         return operational_actions.destroy_order_action(self, instance)
 
     @action(detail=False, methods=['post'], url_path='transfer')
+    @transaction.atomic
     def transfer_order(self, request):
         return operational_actions.transfer_order_action(self, request)
 
-
     @action(detail=True, methods=['post'], url_path='initiate-qr-payment')
+    @transaction.atomic
     def initiate_qr_payment(self, request, pk=None):
         return financial_actions.initiate_qr_payment_action(self, request, pk=pk)
 
     @action(detail=True, methods=['get'], url_path='check-qr-payment-status')
     def check_qr_payment_status(self, request, pk=None):
         return financial_actions.check_qr_payment_status_action(self, request, pk=pk)
-
-
 
 
 class OrderItemViewSet(mixins.DestroyModelMixin, mixins.UpdateModelMixin, viewsets.GenericViewSet):
@@ -358,6 +398,7 @@ class OrderItemViewSet(mixins.DestroyModelMixin, mixins.UpdateModelMixin, viewse
         if order.status in final_statuses and not order_item.is_awaiting_staff_approval:
             raise PermissionDenied(f"'{order.get_status_display()}' durumundaki siparişin onaylanmış kalemleri için '{action_name}' yapılamaz.")
 
+    @transaction.atomic
     def perform_update(self, serializer):
         order_item = serializer.instance 
         user = self.request.user
@@ -368,28 +409,31 @@ class OrderItemViewSet(mixins.DestroyModelMixin, mixins.UpdateModelMixin, viewse
         
         self._check_order_item_modifiable(order_item, action_name="güncelleme")
 
-        allowed_update_fields = {'quantity', 'delivered'}
-        update_data = {}
-        has_valid_update = False
+        with handle_db_lock_timeout():
+            # SELECT FOR UPDATE ile order item'ı kilitle
+            order_item = OrderItem.objects.select_for_update().get(id=order_item.id)
+            
+            allowed_update_fields = {'quantity', 'delivered'}
+            update_data = {}
+            has_valid_update = False
 
-        for field in allowed_update_fields:
-            if field in serializer.validated_data:
-                if field == 'quantity':
-                    new_quantity = serializer.validated_data[field]
-                    if new_quantity <= 0:
-                        raise ValidationError({"quantity": "Miktar pozitif olmalıdır. Kalemi silmek için silme endpoint'ini kullanın."})
-                    if new_quantity != order_item.quantity:
-                        update_data[field] = new_quantity
-                        has_valid_update = True
-                elif field == 'delivered':
-                    if serializer.validated_data[field] != order_item.delivered:
-                        update_data[field] = serializer.validated_data[field]
-                        has_valid_update = True
-        
-        if not has_valid_update:
-            return Response(OrderSerializer(order_item.order, context={'request': self.request}).data, status=status.HTTP_200_OK)
+            for field in allowed_update_fields:
+                if field in serializer.validated_data:
+                    if field == 'quantity':
+                        new_quantity = serializer.validated_data[field]
+                        if new_quantity <= 0:
+                            raise ValidationError({"quantity": "Miktar pozitif olmalıdır. Kalemi silmek için silme endpoint'ini kullanın."})
+                        if new_quantity != order_item.quantity:
+                            update_data[field] = new_quantity
+                            has_valid_update = True
+                    elif field == 'delivered':
+                        if serializer.validated_data[field] != order_item.delivered:
+                            update_data[field] = serializer.validated_data[field]
+                            has_valid_update = True
+            
+            if not has_valid_update:
+                return Response(OrderSerializer(order_item.order, context={'request': self.request}).data, status=status.HTTP_200_OK)
 
-        with transaction.atomic():
             for field, value in update_data.items():
                 setattr(order_item, field, value)
             
@@ -431,6 +475,7 @@ class OrderItemViewSet(mixins.DestroyModelMixin, mixins.UpdateModelMixin, viewse
         
         return Response(final_order_serializer.data, status=status.HTTP_200_OK)
 
+    @transaction.atomic
     def perform_destroy(self, instance: OrderItem):
         user = self.request.user
         if not (user.user_type == 'business_owner' or \
@@ -440,63 +485,67 @@ class OrderItemViewSet(mixins.DestroyModelMixin, mixins.UpdateModelMixin, viewse
 
         self._check_order_item_modifiable(instance, action_name="silme") 
         
-        order = instance.order
-        order_id_for_log = order.id
-        business_id_for_log = order.business.id
-        table_id_for_log = order.table.id if order.table else None
-        removed_item_id_for_log = instance.id
-        item_name_for_log = instance.menu_item.name
-        
-        is_last_item = order.order_items.count() == 1
-        
-        instance.delete()
-        logger.info(f"OrderItem ID {removed_item_id_for_log} ({item_name_for_log}) from Order ID {order_id_for_log} deleted by user {user.username}.")
-
-        try:
-            order.refresh_from_db()
-            order_serializer_data = OrderSerializer(order, context={'request': self.request}).data
+        with handle_db_lock_timeout():
+            # SELECT FOR UPDATE ile instance'ı ve order'ı kilitle
+            instance = OrderItem.objects.select_for_update().select_related('order').get(id=instance.id)
+            order = Order.objects.select_for_update().get(id=instance.order.id)
             
-            event_type = 'order_item_removed'
-            message = f"Sipariş #{order_id_for_log} güncellendi: '{item_name_for_log}' silindi."
+            order_id_for_log = order.id
+            business_id_for_log = order.business.id
+            table_id_for_log = order.table.id if order.table else None
+            removed_item_id_for_log = instance.id
+            item_name_for_log = instance.menu_item.name
+            
+            is_last_item = order.order_items.count() == 1
+            
+            instance.delete()
+            logger.info(f"OrderItem ID {removed_item_id_for_log} ({item_name_for_log}) from Order ID {order_id_for_log} deleted by user {user.username}.")
 
-            if is_last_item and order.order_items.count() == 0 and \
-               order.status not in [Order.STATUS_COMPLETED, Order.STATUS_CANCELLED, Order.STATUS_REJECTED]:
-                order.status = Order.STATUS_CANCELLED
-                order.save(update_fields=['status'])
-                logger.info(f"Order ID {order_id_for_log} (son kalemi silindiği için) İPTAL EDİLDİ olarak işaretlendi.")
+            try:
+                order.refresh_from_db()
                 order_serializer_data = OrderSerializer(order, context={'request': self.request}).data
-                event_type = 'order_cancelled'
-                message = f"Sipariş #{order_id_for_log} (tüm kalemleri silindiği için) iptal edildi."
-            
-            try:
-                from makarna_project.asgi import sio
-                if sio:
-                    room_name = f'business_{business_id_for_log}'
-                    payload = {
-                        'event_type': event_type,
-                        'message': message,
-                        'updated_order_data': convert_decimals_to_strings(order_serializer_data),
-                    }
-                    async_to_sync(sio.emit)('order_status_update', payload, room=room_name)
-                    logger.info(f"Socket.IO olayı ({event_type}) Order ID {order_id_for_log} için {room_name} odasına gönderildi.")
-            except Exception as e_socket:
-                logger.error(f"Socket.IO olayı gönderilirken hata (OrderItem delete - sipariş {order_id_for_log}): {e_socket}", exc_info=True)
+                
+                event_type = 'order_item_removed'
+                message = f"Sipariş #{order_id_for_log} güncellendi: '{item_name_for_log}' silindi."
 
-        except Order.DoesNotExist:
-            logger.warning(f"Order ID {order_id_for_log} bulunamadı (OrderItem silindikten sonra).")
-            try:
-                from makarna_project.asgi import sio
-                if sio:
-                    room_name = f'business_{business_id_for_log}'
-                    payload = {
-                        'event_type': 'order_deleted', 
-                        'order_id': order_id_for_log, 
-                        'table_id': table_id_for_log, 
-                        'business_id': business_id_for_log 
-                    }
-                    async_to_sync(sio.emit)('order_status_update', payload, room=room_name)
-            except Exception as e_socket:
-                logger.error(f"Socket.IO olayı gönderilirken hata (Order not found - sipariş {order_id_for_log}): {e_socket}", exc_info=True)
+                if is_last_item and order.order_items.count() == 0 and \
+                   order.status not in [Order.STATUS_COMPLETED, Order.STATUS_CANCELLED, Order.STATUS_REJECTED]:
+                    order.status = Order.STATUS_CANCELLED
+                    order.save(update_fields=['status'])
+                    logger.info(f"Order ID {order_id_for_log} (son kalemi silindiği için) İPTAL EDİLDİ olarak işaretlendi.")
+                    order_serializer_data = OrderSerializer(order, context={'request': self.request}).data
+                    event_type = 'order_cancelled'
+                    message = f"Sipariş #{order_id_for_log} (tüm kalemleri silindiği için) iptal edildi."
+                
+                try:
+                    from makarna_project.asgi import sio
+                    if sio:
+                        room_name = f'business_{business_id_for_log}'
+                        payload = {
+                            'event_type': event_type,
+                            'message': message,
+                            'updated_order_data': convert_decimals_to_strings(order_serializer_data),
+                        }
+                        async_to_sync(sio.emit)('order_status_update', payload, room=room_name)
+                        logger.info(f"Socket.IO olayı ({event_type}) Order ID {order_id_for_log} için {room_name} odasına gönderildi.")
+                except Exception as e_socket:
+                    logger.error(f"Socket.IO olayı gönderilirken hata (OrderItem delete - sipariş {order_id_for_log}): {e_socket}", exc_info=True)
+
+            except Order.DoesNotExist:
+                logger.warning(f"Order ID {order_id_for_log} bulunamadı (OrderItem silindikten sonra).")
+                try:
+                    from makarna_project.asgi import sio
+                    if sio:
+                        room_name = f'business_{business_id_for_log}'
+                        payload = {
+                            'event_type': 'order_deleted', 
+                            'order_id': order_id_for_log, 
+                            'table_id': table_id_for_log, 
+                            'business_id': business_id_for_log 
+                        }
+                        async_to_sync(sio.emit)('order_status_update', payload, room=room_name)
+                except Exception as e_socket:
+                    logger.error(f"Socket.IO olayı gönderilirken hata (Order not found - sipariş {order_id_for_log}): {e_socket}", exc_info=True)
 
     @action(detail=True, methods=['post'], url_path='start-preparing')
     @transaction.atomic
@@ -505,31 +554,34 @@ class OrderItemViewSet(mixins.DestroyModelMixin, mixins.UpdateModelMixin, viewse
         order = order_item.order
         self._check_order_item_modifiable(order_item, "hazırlamaya başlama")
 
-        if order_item.kds_status != OrderItem.KDS_ITEM_STATUS_CHOICES[0][0]: # 'pending_kds'
-            return Response({'detail': 'Bu ürün zaten hazırlanıyor veya hazır durumda.'}, status=status.HTTP_400_BAD_REQUEST)
+        with handle_db_lock_timeout():
+            # SELECT FOR UPDATE ile kilitle
+            order_item = OrderItem.objects.select_for_update().get(id=order_item.id)
+            order = Order.objects.select_for_update().get(id=order.id)
 
-        order_item.kds_status = OrderItem.KDS_ITEM_STATUS_CHOICES[1][0] # 'preparing_kds'
-        order_item.item_prepared_by_staff = request.user
-        order_item.save(update_fields=['kds_status', 'item_prepared_by_staff'])
+            if order_item.kds_status != OrderItem.KDS_ITEM_STATUS_CHOICES[0][0]: # 'pending_kds'
+                return Response({'detail': 'Bu ürün zaten hazırlanıyor veya hazır durumda.'}, status=status.HTTP_400_BAD_REQUEST)
 
-        if order.status == Order.STATUS_APPROVED:
-            order.status = Order.STATUS_PREPARING
-            order.save(update_fields=['status'])
+            order_item.kds_status = OrderItem.KDS_ITEM_STATUS_CHOICES[1][0] # 'preparing_kds'
+            order_item.item_prepared_by_staff = request.user
+            order_item.save(update_fields=['kds_status', 'item_prepared_by_staff'])
 
-        logger.info(f"OrderItem ID {order_item.id} (Order #{order.id}) 'preparing_kds' olarak işaretlendi.")
-        
-        # <<< GÜNCELLEME: Olay türü burada belirleniyor >>>
-        transaction.on_commit(
-            lambda: send_order_update_notification(
-                order=order, 
-                created=False, 
-                specific_event_type='order_preparing_update' # Doğru olay türünü zorla
+            if order.status == Order.STATUS_APPROVED:
+                order.status = Order.STATUS_PREPARING
+                order.save(update_fields=['status'])
+
+            logger.info(f"OrderItem ID {order_item.id} (Order #{order.id}) 'preparing_kds' olarak işaretlendi.")
+            
+            transaction.on_commit(
+                lambda: send_order_update_notification(
+                    order=order, 
+                    created=False, 
+                    specific_event_type='order_preparing_update'
+                )
             )
-        )
-        
-        serializer = OrderSerializer(order_item.order, context={'request': request})
-        return Response(serializer.data, status=status.HTTP_200_OK)
-
+            
+            serializer = OrderSerializer(order_item.order, context={'request': request})
+            return Response(serializer.data, status=status.HTTP_200_OK)
 
     @action(detail=True, methods=['post'], url_path='mark-ready')
     @transaction.atomic
@@ -538,50 +590,52 @@ class OrderItemViewSet(mixins.DestroyModelMixin, mixins.UpdateModelMixin, viewse
         order = order_item.order
         self._check_order_item_modifiable(order_item, "hazır olarak işaretleme")
 
-        if order_item.kds_status == OrderItem.KDS_ITEM_STATUS_CHOICES[2][0]: # 'ready_kds'
-            return Response({'detail': 'Bu ürün zaten hazır olarak işaretlenmiş.'}, status=status.HTTP_400_BAD_REQUEST)
+        with handle_db_lock_timeout():
+            # SELECT FOR UPDATE ile kilitle
+            order_item = OrderItem.objects.select_for_update().get(id=order_item.id)
+            order = Order.objects.select_for_update().get(id=order.id)
 
-        order_item.kds_status = OrderItem.KDS_ITEM_STATUS_CHOICES[2][0] # 'ready_kds'
-        if not order_item.item_prepared_by_staff:
-            order_item.item_prepared_by_staff = request.user
-        order_item.save(update_fields=['kds_status', 'item_prepared_by_staff'])
-        logger.info(f"OrderItem ID {order_item.id} (Order #{order.id}) 'ready_kds' olarak işaretlendi.")
+            if order_item.kds_status == OrderItem.KDS_ITEM_STATUS_CHOICES[2][0]: # 'ready_kds'
+                return Response({'detail': 'Bu ürün zaten hazır olarak işaretlenmiş.'}, status=status.HTTP_400_BAD_REQUEST)
 
-        all_kds_items_in_order = order.order_items.filter(
-            is_awaiting_staff_approval=False, 
-            delivered=False, 
-            menu_item__category__assigned_kds__isnull=False
-        )
-        
-        all_ready = not all_kds_items_in_order.exclude(kds_status=OrderItem.KDS_ITEM_STATUS_READY).exists()
+            order_item.kds_status = OrderItem.KDS_ITEM_STATUS_CHOICES[2][0] # 'ready_kds'
+            if not order_item.item_prepared_by_staff:
+                order_item.item_prepared_by_staff = request.user
+            order_item.save(update_fields=['kds_status', 'item_prepared_by_staff'])
+            logger.info(f"OrderItem ID {order_item.id} (Order #{order.id}) 'ready_kds' olarak işaretlendi.")
 
-        # +++ ÇÖZÜM KODU BAŞLANGICI +++
-        notification_event_to_send = None
-        
-        if all_ready:
-            logger.info(f"Sipariş #{order.id} için tüm KDS ürünleri hazır. Genel durum güncelleniyor.")
-            if order.status != Order.STATUS_READY_FOR_PICKUP:
-                order.status = Order.STATUS_READY_FOR_PICKUP
-                order.kitchen_completed_at = timezone.now()
-                order.save(update_fields=['status', 'kitchen_completed_at'])
-            
-            notification_event_to_send = 'order_ready_for_pickup_update'
-        else:
-            logger.info(f"Sipariş #{order.id} için bazı kalemler hazır, ancak diğerleri bekliyor.")
-            # Siparişin genel durumu değişmedi, sadece bir kalemi güncellendi.
-            notification_event_to_send = 'order_item_updated'
-        
-        transaction.on_commit(
-            lambda: send_order_update_notification(
-                order=order, 
-                created=False, 
-                specific_event_type=notification_event_to_send
+            all_kds_items_in_order = order.order_items.filter(
+                is_awaiting_staff_approval=False, 
+                delivered=False, 
+                menu_item__category__assigned_kds__isnull=False
             )
-        )
-        # +++ ÇÖZÜM KODU SONU +++
-        
-        serializer = OrderSerializer(order_item.order, context={'request': request})
-        return Response(serializer.data, status=status.HTTP_200_OK)
+            
+            all_ready = not all_kds_items_in_order.exclude(kds_status=OrderItem.KDS_ITEM_STATUS_READY).exists()
+
+            notification_event_to_send = None
+            
+            if all_ready:
+                logger.info(f"Sipariş #{order.id} için tüm KDS ürünleri hazır. Genel durum güncelleniyor.")
+                if order.status != Order.STATUS_READY_FOR_PICKUP:
+                    order.status = Order.STATUS_READY_FOR_PICKUP
+                    order.kitchen_completed_at = timezone.now()
+                    order.save(update_fields=['status', 'kitchen_completed_at'])
+                
+                notification_event_to_send = 'order_ready_for_pickup_update'
+            else:
+                logger.info(f"Sipariş #{order.id} için bazı kalemler hazır, ancak diğerleri bekliyor.")
+                notification_event_to_send = 'order_item_updated'
+            
+            transaction.on_commit(
+                lambda: send_order_update_notification(
+                    order=order, 
+                    created=False, 
+                    specific_event_type=notification_event_to_send
+                )
+            )
+            
+            serializer = OrderSerializer(order_item.order, context={'request': request})
+            return Response(serializer.data, status=status.HTTP_200_OK)
 
     @action(detail=True, methods=['post'], url_path='mark-picked-up')
     @transaction.atomic
@@ -591,25 +645,30 @@ class OrderItemViewSet(mixins.DestroyModelMixin, mixins.UpdateModelMixin, viewse
         order = order_item.order
         self._check_order_item_modifiable(order_item, "garson tarafından alınma")
 
-        if order_item.kds_status != OrderItem.KDS_ITEM_STATUS_CHOICES[2][0]: # 'ready_kds'
-            return Response(
-                {'detail': f"Bu ürün henüz mutfakta hazır değil. Durum: {order_item.get_kds_status_display()}"},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        
-        order_item.kds_status = OrderItem.KDS_ITEM_STATUS_CHOICES[3][0] # 'picked_up_kds'
-        order_item.waiter_picked_up_at = timezone.now()
-        order_item.save(update_fields=['kds_status', 'waiter_picked_up_at'])
-        logger.info(f"OrderItem ID {order_item.id} (Order #{order.id}) 'picked_up_kds' olarak işaretlendi.")
+        with handle_db_lock_timeout():
+            # SELECT FOR UPDATE ile kilitle
+            order_item = OrderItem.objects.select_for_update().get(id=order_item.id)
+            order = Order.objects.select_for_update().get(id=order.id)
 
-        if order.status == Order.STATUS_READY_FOR_PICKUP:
-            order.status = Order.STATUS_READY_FOR_DELIVERY
-            if not order.picked_up_by_waiter_at:
-                order.picked_up_by_waiter_at = timezone.now()
-            order.save(update_fields=['status', 'picked_up_by_waiter_at'])
-            transaction.on_commit(lambda: send_order_update_notification(order=order, created=False, update_fields=['status', 'order_items']))
-        else:
-            transaction.on_commit(lambda: send_order_update_notification(order=order, created=False, update_fields=['order_items']))
+            if order_item.kds_status != OrderItem.KDS_ITEM_STATUS_CHOICES[2][0]: # 'ready_kds'
+                return Response(
+                    {'detail': f"Bu ürün henüz mutfakta hazır değil. Durum: {order_item.get_kds_status_display()}"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            order_item.kds_status = OrderItem.KDS_ITEM_STATUS_CHOICES[3][0] # 'picked_up_kds'
+            order_item.waiter_picked_up_at = timezone.now()
+            order_item.save(update_fields=['kds_status', 'waiter_picked_up_at'])
+            logger.info(f"OrderItem ID {order_item.id} (Order #{order.id}) 'picked_up_kds' olarak işaretlendi.")
 
-        order.refresh_from_db()
-        return Response(OrderSerializer(order, context=self.get_serializer_context()).data, status=status.HTTP_200_OK)
+            if order.status == Order.STATUS_READY_FOR_PICKUP:
+                order.status = Order.STATUS_READY_FOR_DELIVERY
+                if not order.picked_up_by_waiter_at:
+                    order.picked_up_by_waiter_at = timezone.now()
+                order.save(update_fields=['status', 'picked_up_by_waiter_at'])
+                transaction.on_commit(lambda: send_order_update_notification(order=order, created=False, update_fields=['status', 'order_items']))
+            else:
+                transaction.on_commit(lambda: send_order_update_notification(order=order, created=False, update_fields=['order_items']))
+
+            order.refresh_from_db()
+            return Response(OrderSerializer(order, context=self.get_serializer_context()).data, status=status.HTTP_200_OK)

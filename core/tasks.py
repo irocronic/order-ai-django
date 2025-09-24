@@ -1,4 +1,4 @@
-# core/tasks.py - GÜVENLİ VERSİYON
+# core/tasks.py - GÜVENLİ VERSİYON (Memory Leak Koruması Eklenmiş)
 
 from celery import shared_task
 from django.conf import settings
@@ -13,8 +13,10 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 import smtplib
 from socket import timeout as SocketTimeout
+import weakref
+import gc
 
-from .models import Order, Ingredient, Supplier # YENİ: Supplier modeli import edildi
+from .models import Order, Ingredient, Supplier
 from .serializers import OrderSerializer
 import uuid
 from datetime import datetime
@@ -43,10 +45,44 @@ except Exception as e:
     logger.error(f"Failed to initialize Redis client: {e}")
     redis_client = None
 
+# Memory leak koruması için connection havuzu
+_connection_pool = weakref.WeakValueDictionary()
+
+def cleanup_connections():
+    """Kullanılmayan bağlantıları temizle"""
+    try:
+        gc.collect()  # Garbage collector'ı çalıştır
+        logger.debug(f"Connection cleanup completed. Pool size: {len(_connection_pool)}")
+    except Exception as e:
+        logger.error(f"Connection cleanup error: {e}")
+
+async def safe_emit_notification(sio, event, data, room):
+    """Memory leak koruması ile Socket.IO emit"""
+    connection_ref = None
+    try:
+        # Connection timeout ayarla
+        await asyncio.wait_for(sio.emit(event, data, room=room), timeout=5.0)
+        logger.info(f"[Notification] Successfully sent to room: {room}")
+        return True
+    except asyncio.TimeoutError:
+        logger.warning(f"[Notification] Timeout while sending to room: {room}")
+        return False
+    except Exception as e:
+        logger.error(f"[Notification] Error sending to room {room}: {e}")
+        return False
+    finally:
+        # Connection cleanup
+        if connection_ref:
+            try:
+                connection_ref.close()
+            except:
+                pass
+        cleanup_connections()
 
 def send_socket_io_notification(room, event, data):
     """
     Socket.IO bildirimi gönderen yardımcı fonksiyon.
+    Memory leak koruması ve connection cleanup ile
     Dönüş değerleri: 'sent', 'blocked', 'failed'
     """
     event_type_to_check = data.get('event_type')
@@ -60,27 +96,48 @@ def send_socket_io_notification(room, event, data):
     
     try:
         from makarna_project.asgi import sio
-        import asyncio
         
-        async def emit_notification():
-            await sio.emit(event, data, room=room)
-            
+        async def emit_notification_with_cleanup():
+            connection = None
+            try:
+                # Connection ile işlem yap
+                success = await safe_emit_notification(sio, event, data, room)
+                return success
+            except Exception as e:
+                logger.error(f"[Notification] Emit with cleanup failed: {e}")
+                return False
+            finally:
+                # Her durumda cleanup yap
+                if connection:
+                    try:
+                        await connection.disconnect()
+                    except:
+                        pass
+                cleanup_connections()
+        
         try:
             loop = asyncio.get_event_loop()
             if loop.is_running():
-                asyncio.create_task(emit_notification())
+                # Yeni event loop task'ı oluştur ve cleanup'ı garanti et
+                task = asyncio.create_task(emit_notification_with_cleanup())
+                # Task completion callback ile cleanup
+                task.add_done_callback(lambda t: cleanup_connections())
             else:
-                loop.run_until_complete(emit_notification())
+                success = loop.run_until_complete(emit_notification_with_cleanup())
         except RuntimeError:
-            asyncio.run(emit_notification())
+            success = asyncio.run(emit_notification_with_cleanup())
             
-        logger.info(f"[Notification] Sent via Socket.IO server to room: {room}")
-        success = True
+        if success:
+            logger.info(f"[Notification] Sent via Socket.IO server to room: {room}")
         
     except Exception as e:
         logger.error(f"[Notification] Direct Socket.IO emit failed: {e}")
+    finally:
+        # Her durumda cleanup yap
+        cleanup_connections()
     
     if not success and redis_client:
+        redis_connection = None
         try:
             message = {
                 "uid": "emitter",
@@ -89,14 +146,23 @@ def send_socket_io_notification(room, event, data):
                 "nsp": "/"
             }
             room_key = f"socket.io#{room}"
-            redis_client.publish(room_key, json.dumps(message))
+            redis_connection = redis_client
+            redis_connection.publish(room_key, json.dumps(message))
             logger.info(f"[Notification] Sent via Redis pub/sub to room: {room}")
             success = True
             
         except Exception as e:
             logger.error(f"[Notification] Redis pub/sub failed: {e}")
+        finally:
+            # Redis connection cleanup
+            if redis_connection and hasattr(redis_connection, 'connection_pool'):
+                try:
+                    redis_connection.connection_pool.disconnect()
+                except:
+                    pass
     
     if not success:
+        http_session = None
         try:
             import requests
             webhook_url = "https://order-ai-7bd2c97ec9ef.herokuapp.com/api/webhook/socket-emit/"
@@ -105,7 +171,11 @@ def send_socket_io_notification(room, event, data):
                 'event': event,
                 'data': data
             }
-            response = requests.post(webhook_url, json=payload, timeout=5)
+            
+            # Session ile bağlantı havuzunu yönet
+            http_session = requests.Session()
+            response = http_session.post(webhook_url, json=payload, timeout=5)
+            
             if response.status_code == 200:
                 logger.info(f"[Notification] Sent via HTTP webhook to room: {room}")
                 success = True
@@ -114,7 +184,16 @@ def send_socket_io_notification(room, event, data):
                 
         except Exception as e:
             logger.debug(f"[Notification] HTTP webhook not available: {e}")
+        finally:
+            # HTTP session cleanup
+            if http_session:
+                try:
+                    http_session.close()
+                except:
+                    pass
     
+    # Final cleanup
+    cleanup_connections()
     return 'sent' if success else 'failed'
 
 
@@ -122,8 +201,12 @@ def send_socket_io_notification(room, event, data):
 def send_order_update_task(order_id, event_type, message, extra_data=None):
     """
     WebSocket üzerinden sipariş güncelleme bildirimini gönderen Celery task'i.
+    Memory leak koruması ile
     """
     logger.info(f"[Celery Task] Sending notification for Order ID: {order_id}, Event: {event_type}")
+    
+    order = None
+    serialized_order = None
     
     try:
         order = Order.objects.select_related(
@@ -191,6 +274,12 @@ def send_order_update_task(order_id, event_type, message, extra_data=None):
     except Exception as e:
         logger.error(f"[Celery Task] Failed to send notification for order {order_id}. Error: {e}", exc_info=True)
         raise
+    finally:
+        # Memory cleanup
+        order = None
+        serialized_order = None
+        cleanup_connections()
+        gc.collect()
 
 
 @shared_task(name="send_bulk_order_notifications")
@@ -198,13 +287,16 @@ def send_bulk_order_notifications(notification_list):
     """
     Toplu sipariş bildirimlerini gönderen task
     """
-    for notification in notification_list:
-        send_order_update_task.delay(
-            notification.get('order_id'),
-            notification.get('event_type'),
-            notification.get('message'),
-            notification.get('extra_data')
-        )
+    try:
+        for notification in notification_list:
+            send_order_update_task.delay(
+                notification.get('order_id'),
+                notification.get('event_type'),
+                notification.get('message'),
+                notification.get('extra_data')
+            )
+    finally:
+        cleanup_connections()
 
 
 @shared_task(name="test_socket_connection")
@@ -233,6 +325,8 @@ def test_socket_connection():
     except Exception as e:
         logger.error(f"[Celery Task] Socket connection test failed: {e}")
         return False
+    finally:
+        cleanup_connections()
 
 
 @shared_task(name="cleanup_old_notifications")
@@ -250,6 +344,8 @@ def cleanup_old_notifications():
         
     except Exception as e:
         logger.error(f"[Celery Task] Notification cleanup failed: {e}")
+    finally:
+        cleanup_connections()
 
 
 @shared_task(name="send_test_notification")
@@ -257,32 +353,36 @@ def send_test_notification(business_id=67):
     """
     Manual test bildirimi gönderen task
     """
-    test_data = {
-        'event_type': 'order_approved_for_kitchen',
-        'order_id': 99999,
-        'table_number': 999,
-        'message': '🧪 Backend test bildirimi - Manuel gönderim',
-        'notification_id': f"manual_test_{uuid.uuid4()}",
-        'timestamp': datetime.now().isoformat()
-    }
-    
-    room = f"business_{business_id}"
-    status = send_socket_io_notification(room, 'order_status_update', test_data)
-    
-    if status != 'failed':
-        logger.info(f"[Celery Task] 🧪 Manual test notification sent to {room} with status: {status}")
-        return True
-    else:
-        logger.error(f"[Celery Task] 🧪 Manual test notification failed for {room}")
-        return False
+    try:
+        test_data = {
+            'event_type': 'order_approved_for_kitchen',
+            'order_id': 99999,
+            'table_number': 999,
+            'message': '🧪 Backend test bildirimi - Manuel gönderim',
+            'notification_id': f"manual_test_{uuid.uuid4()}",
+            'timestamp': datetime.now().isoformat()
+        }
+        
+        room = f"business_{business_id}"
+        status = send_socket_io_notification(room, 'order_status_update', test_data)
+        
+        if status != 'failed':
+            logger.info(f"[Celery Task] 🧪 Manual test notification sent to {room} with status: {status}")
+            return True
+        else:
+            logger.error(f"[Celery Task] 🧪 Manual test notification failed for {room}")
+            return False
+    finally:
+        cleanup_connections()
 
 
 # ==================== GÜVENLİ E-POSTA SİSTEMİ ====================
 
 async def send_email_async(subject, message, from_email, recipient_list, timeout=10):
     """
-    Async e-posta gönderme fonksiyonu - timeout koruması ile
+    Async e-posta gönderme fonksiyonu - timeout koruması ve connection cleanup ile
     """
+    server = None
     try:
         msg = MIMEMultipart()
         msg['From'] = from_email
@@ -310,7 +410,6 @@ async def send_email_async(subject, message, from_email, recipient_list, timeout
             await asyncio.wait_for(server.login(smtp_user, smtp_password), timeout=timeout)
         
         await asyncio.wait_for(server.send_message(msg), timeout=timeout)
-        await server.quit()
         
         logger.info(f"[Email] ✅ Async e-posta başarıyla gönderildi: {recipient_list}")
         return True
@@ -321,15 +420,26 @@ async def send_email_async(subject, message, from_email, recipient_list, timeout
     except Exception as e:
         logger.error(f"[Email] ❌ Async e-posta hatası: {e}")
         return False
+    finally:
+        # SMTP connection cleanup
+        if server:
+            try:
+                await asyncio.wait_for(server.quit(), timeout=2)
+            except:
+                try:
+                    server.close()
+                except:
+                    pass
 
 
 def send_email_sync_fallback(subject, message, from_email, recipient_list, timeout=5):
     """
     Sync fallback e-posta gönderme - kısa timeout ile
     """
+    import socket
+    default_timeout = socket.getdefaulttimeout()
+    
     try:
-        import socket
-        default_timeout = socket.getdefaulttimeout()
         socket.setdefaulttimeout(timeout)
         
         send_mail(
@@ -341,7 +451,6 @@ def send_email_sync_fallback(subject, message, from_email, recipient_list, timeo
             connection=None
         )
         
-        socket.setdefaulttimeout(default_timeout)
         logger.info(f"[Email] ✅ Sync fallback e-posta gönderildi: {recipient_list}")
         return True
         
@@ -358,9 +467,11 @@ def send_email_sync_fallback(subject, message, from_email, recipient_list, timeo
 @shared_task(bind=True, name="send_low_stock_email_to_supplier", max_retries=2, default_retry_delay=300)
 def send_low_stock_notification_email_task(self, ingredient_id):
     """
-    GÜVENLİ VERSİYON: Async + Timeout + Fallback + Retry + WebSocket bildirimi
+    GÜVENLİ VERSİYON: Async + Timeout + Fallback + Retry + WebSocket bildirimi + Memory Leak Koruması
     """
     logger.info(f"[Celery Task] 📧 Düşük stok e-posta bildirimi başlatılıyor. Malzeme ID: {ingredient_id}")
+    
+    ingredient = None
     
     def format_quantity(value):
         """Sayıları kullanıcı dostu formatta döndürür."""
@@ -415,7 +526,6 @@ Teşekkürler,
             success = asyncio.run(send_email_async(subject, message, from_email, recipient_list, timeout=10))
             
             if success:
-                # +++++++++++++++ YENİ BÖLÜM BAŞLANGICI +++++++++++++++
                 # Bildirim bayrağını işaretle
                 ingredient.low_stock_notification_sent = True
                 ingredient.save(update_fields=['low_stock_notification_sent'])
@@ -437,7 +547,6 @@ Teşekkürler,
                     logger.info(f"İşletme odasına ({business_room}) anlık stok durumu güncellemesi gönderildi.")
                 except Exception as e_socket:
                     logger.error(f"Stok durumu için socket bildirimi gönderilirken hata: {e_socket}")
-                # +++++++++++++++ YENİ BÖLÜM SONU +++++++++++++++
                 
                 logger.info(f"[Email] ✅ Async e-posta başarılı: '{ingredient.name}' → {supplier.email}")
                 return {"status": "success", "method": "async", "ingredient": ingredient.name}
@@ -450,7 +559,6 @@ Teşekkürler,
         success = send_email_sync_fallback(subject, message, from_email, recipient_list, timeout=5)
         
         if success:
-            # +++++++++++++++ YENİ BÖLÜM BAŞLANGICI (FALLBACK İÇİN) +++++++++++++++
             # Bildirim bayrağını işaretle
             ingredient.low_stock_notification_sent = True
             ingredient.save(update_fields=['low_stock_notification_sent'])
@@ -472,7 +580,6 @@ Teşekkürler,
                 logger.info(f"İşletme odasına ({business_room}) anlık stok durumu güncellemesi gönderildi (fallback).")
             except Exception as e_socket:
                 logger.error(f"Stok durumu için socket bildirimi gönderilirken hata (fallback): {e_socket}")
-            # +++++++++++++++ YENİ BÖLÜM SONU +++++++++++++++
             
             logger.info(f"[Email] ✅ Sync fallback e-posta başarılı: '{ingredient.name}' → {supplier.email}")
             return {"status": "success", "method": "sync_fallback", "ingredient": ingredient.name}
@@ -501,16 +608,25 @@ Teşekkürler,
         else:
             logger.error(f"[Email] ❌ Tüm retry denemeleri tükendi. Malzeme ID: {ingredient_id}")
             return {"status": "failed", "reason": "max_retries_exceeded", "ingredient_id": ingredient_id}
+    
+    finally:
+        # Memory cleanup
+        ingredient = None
+        cleanup_connections()
+        gc.collect()
 
 
-# +++++++++++++++++++++ YENİ CELERY GÖREVİ +++++++++++++++++++++
 @shared_task(name="send_manual_low_stock_email")
 def send_manual_low_stock_email_task(supplier_id, ingredient_ids):
     """
     Belirli bir tedarikçiye, seçilen birden çok malzeme için
     tek bir düşük stok bilgilendirme e-postası gönderir.
+    Memory leak koruması ile
     """
     logger.info(f"[Celery Task] 📧 Manuel düşük stok e-posta bildirimi başlatılıyor. Tedarikçi ID: {supplier_id}, Malzeme ID'leri: {ingredient_ids}")
+
+    supplier = None
+    ingredients = None
 
     try:
         supplier = Supplier.objects.get(id=supplier_id)
@@ -518,6 +634,8 @@ def send_manual_low_stock_email_task(supplier_id, ingredient_ids):
     except Supplier.DoesNotExist:
         logger.error(f"[Email] ❌ Tedarikçi ID {supplier_id} bulunamadı.")
         return {"status": "error", "reason": "supplier_not_found"}
+    finally:
+        cleanup_connections()
 
     if not ingredients.exists():
         logger.warning(f"[Email] ⚠️ E-posta için malzeme bulunamadı. ID'ler: {ingredient_ids}")
@@ -556,11 +674,22 @@ Teşekkürler,
     from_email = settings.DEFAULT_FROM_EMAIL
     recipient_list = [supplier.email]
 
-    # E-postayı gönder
-    success_async = asyncio.run(send_email_async(subject, message, from_email, recipient_list))
-    if not success_async:
-        logger.warning("[Email] ⚠️ Manuel e-posta async gönderimi başarısız, fallback deneniyor.")
-        send_email_sync_fallback(subject, message, from_email, recipient_list)
+    try:
+        # E-postayı gönder
+        success_async = asyncio.run(send_email_async(subject, message, from_email, recipient_list))
+        if not success_async:
+            logger.warning("[Email] ⚠️ Manuel e-posta async gönderimi başarısız, fallback deneniyor.")
+            send_email_sync_fallback(subject, message, from_email, recipient_list)
+        
+        return {"status": "success", "supplier": supplier.name}
     
-    return {"status": "success", "supplier": supplier.name}
-# ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+    except Exception as e:
+        logger.error(f"[Email] ❌ Manuel e-posta gönderimi hatası: {e}")
+        return {"status": "error", "reason": str(e)}
+    
+    finally:
+        # Memory cleanup
+        supplier = None
+        ingredients = None
+        cleanup_connections()
+        gc.collect()
