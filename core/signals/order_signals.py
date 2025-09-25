@@ -40,7 +40,6 @@ def get_event_type_from_status(order: Order, created: bool, update_fields=None, 
     return NOTIFICATION_EVENT_TYPES[14][0]
 
 
-# === GÜNCELLENMİŞ FONKSİYON ===
 def send_order_update_notification(order, created: bool = False, update_fields=None, item_added_info=None, specific_event_type=None):
     if not isinstance(order, Order):
         logger.error(f"BİLDİRİM GÖNDERME HATASI: Geçersiz 'order' nesnesi tipi. Beklenen: Order, Gelen: {type(order)}")
@@ -56,12 +55,11 @@ def send_order_update_notification(order, created: bool = False, update_fields=N
         f"Event Type: '{event_type}'"
     )
 
-    # --- YENİ YAPI: Sadece anahtar gönder ---
+    # Sadece anahtar gönderiyoruz, çevrilmiş metin veya message yok!
     message_key = 'orderStatusUpdate'
     message_args = {
         'orderId': str(order.id),
         'statusKey': order.status,  # 'approved', 'preparing' gibi ham anahtar
-        # 'statusDisplay' kaldırıldı!
     }
 
     if item_added_info:
@@ -76,16 +74,13 @@ def send_order_update_notification(order, created: bool = False, update_fields=N
         'message_args': message_args
     }
     
-    # Celery task'ine yapısal veriyi `extra_data` olarak gönderiyoruz.
-    # Eski 'message' parametresi artık Flutter'da birincil olarak kullanılmayacak.
+    # Artık 'message' alanı gönderilmiyor! Flutter localize edecek.
     send_order_update_task.delay(
         order_id=order.id, 
         event_type=event_type, 
-        message=f"Sipariş #{order.id} durumu güncellendi: {order.get_status_display()}", # Eski istemciler için fallback
         extra_data=extra_data
     )
     logger.info(f"Celery task for order #{order.id} (Event: {event_type}) has been queued with structured data.")
-# === GÜNCELLEME SONU ===
 
 
 @receiver(pre_delete, sender=Order)
@@ -93,7 +88,13 @@ def handle_order_deletion_notification(sender, instance: Order, **kwargs):
     send_order_update_task.delay(
         order_id=instance.id,
         event_type='order_cancelled_update',
-        message=f"Sipariş #{instance.id} iptal edildi."
+        # Burada da message kaldırıldı!
+        extra_data={
+            'message_key': 'orderCancelled',
+            'message_args': {
+                'orderId': str(instance.id)
+            }
+        }
     )
 
 @receiver(pre_delete, sender=Order)
