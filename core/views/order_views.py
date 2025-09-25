@@ -492,15 +492,13 @@ class OrderItemViewSet(mixins.DestroyModelMixin, mixins.UpdateModelMixin, viewse
 
         final_order_serializer = OrderSerializer(order, context={'request': self.request})
         
-        # GÜNCELLEME: Sabit kodlanmış 'message' alanı, 'message_key' ve 'message_params' ile değiştirildi.
         try:
             from makarna_project.asgi import sio
             if sio:
                 room_name = f'business_{order.business.id}'
                 payload = {
                     'event_type': 'order_item_updated',
-                    'message_key': 'notificationOrderItemUpdated',
-                    'message_params': [str(order.id), updated_item.menu_item.name],
+                    'message': f"Sipariş #{order.id} güncellendi: Kalem '{updated_item.menu_item.name}' durumu/miktarı değiştirildi.",
                     'updated_order_data': convert_decimals_to_strings(final_order_serializer.data),
                 }
                 async_to_sync(sio.emit)('order_status_update', payload, room=room_name)
@@ -539,10 +537,8 @@ class OrderItemViewSet(mixins.DestroyModelMixin, mixins.UpdateModelMixin, viewse
                 order.refresh_from_db()
                 order_serializer_data = OrderSerializer(order, context={'request': self.request}).data
                 
-                # GÜNCELLEME: Bildirim payload yapısı değiştirildi.
                 event_type = 'order_item_removed'
-                message_key = 'notificationOrderItemRemoved'
-                message_params = [str(order_id_for_log), item_name_for_log]
+                message = f"Sipariş #{order_id_for_log} güncellendi: '{item_name_for_log}' silindi."
 
                 if is_last_item and order.order_items.count() == 0 and \
                    order.status not in [Order.STATUS_COMPLETED, Order.STATUS_CANCELLED, Order.STATUS_REJECTED]:
@@ -550,10 +546,8 @@ class OrderItemViewSet(mixins.DestroyModelMixin, mixins.UpdateModelMixin, viewse
                     order.save(update_fields=['status'])
                     logger.info(f"Order ID {order_id_for_log} (son kalemi silindiği için) İPTAL EDİLDİ olarak işaretlendi.")
                     order_serializer_data = OrderSerializer(order, context={'request': self.request}).data
-                    
                     event_type = 'order_cancelled'
-                    message_key = 'notificationOrderCancelledAllItemsRemoved'
-                    message_params = [str(order_id_for_log)]
+                    message = f"Sipariş #{order_id_for_log} (tüm kalemleri silindiği için) iptal edildi."
                 
                 try:
                     from makarna_project.asgi import sio
@@ -561,8 +555,7 @@ class OrderItemViewSet(mixins.DestroyModelMixin, mixins.UpdateModelMixin, viewse
                         room_name = f'business_{business_id_for_log}'
                         payload = {
                             'event_type': event_type,
-                            'message_key': message_key,
-                            'message_params': message_params,
+                            'message': message,
                             'updated_order_data': convert_decimals_to_strings(order_serializer_data),
                         }
                         async_to_sync(sio.emit)('order_status_update', payload, room=room_name)
