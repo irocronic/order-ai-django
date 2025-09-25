@@ -40,40 +40,51 @@ def get_event_type_from_status(order: Order, created: bool, update_fields=None, 
     return NOTIFICATION_EVENT_TYPES[14][0]
 
 
-# === LOGLAMA İÇİN GÜNCELLENMİŞ FONKSİYON ===
+# === GÜNCELLENMİŞ FONKSİYON ===
 def send_order_update_notification(order, created: bool = False, update_fields=None, item_added_info=None, specific_event_type=None):
     if not isinstance(order, Order):
         logger.error(f"BİLDİRİM GÖNDERME HATASI: Geçersiz 'order' nesnesi tipi. Beklenen: Order, Gelen: {type(order)}")
         return
-    
-    # +++ YENİ LOGLAMA BAŞLANGICI +++
-    logger.critical(
-        f"[send_order_update_notification DEBUG] Order ID: {order.id}, "
-        f"Gelen Order Status: '{order.status}', "
-        f"Gelen update_fields: {update_fields}, "
-        f"Gelen specific_event_type: '{specific_event_type}'"
-    )
-    # +++ YENİ LOGLAMA SONU +++
     
     if specific_event_type:
         event_type = specific_event_type
     else:
         event_type = get_event_type_from_status(order, created, update_fields, item_added_info)
     
-    # +++ YENİ LOGLAMA BAŞLANGICI +++
-    logger.critical(
-        f"[send_order_update_notification SONUÇ] Order ID: {order.id}, "
-        f"Üretilen Event Type: '{event_type}'"
+    logger.info(
+        f"[send_order_update_notification] Order ID: {order.id}, "
+        f"Event Type: '{event_type}'"
     )
-    # +++ YENİ LOGLAMA SONU +++
 
-    message = f"Sipariş #{order.id} durumu güncellendi: {order.get_status_display()}"
+    # --- YENİ YAPI: Hardcode metin yerine yapısal veri gönder ---
+    message_key = 'orderStatusUpdate'
+    message_args = {
+        'orderId': str(order.id),
+        'statusKey': order.status, # 'approved', 'preparing' gibi ham anahtar
+        'statusDisplay': order.get_status_display() # Fallback için eski metni de gönderelim
+    }
 
     if item_added_info:
-        message = f"{item_added_info['item_name']} ürünü Sipariş #{order.id}'e eklendi."
+        message_key = 'orderItemAdded'
+        message_args = {
+            'orderId': str(order.id),
+            'itemName': item_added_info.get('item_name', 'Bilinmeyen ürün')
+        }
+
+    extra_data = {
+        'message_key': message_key,
+        'message_args': message_args
+    }
     
-    send_order_update_task.delay(order_id=order.id, event_type=event_type, message=message)
-    logger.info(f"Celery task for order #{order.id} (Event: {event_type}) has been queued.")
+    # Celery task'ine yapısal veriyi `extra_data` olarak gönderiyoruz.
+    # Eski 'message' parametresi artık Flutter'da birincil olarak kullanılmayacak.
+    send_order_update_task.delay(
+        order_id=order.id, 
+        event_type=event_type, 
+        message=f"Sipariş #{order.id} durumu güncellendi: {order.get_status_display()}", # Eski istemciler için fallback
+        extra_data=extra_data
+    )
+    logger.info(f"Celery task for order #{order.id} (Event: {event_type}) has been queued with structured data.")
 # === GÜNCELLEME SONU ===
 
 
