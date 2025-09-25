@@ -13,7 +13,7 @@ from collections import Counter
 from decimal import Decimal
 from rest_framework.exceptions import ValidationError
 
-# === DEĞİŞİKLİK BURADA: Artık sinyal yerine doğrudan Celery task'ini import ediyoruz ===
+# === DEĞİŞİKLİK: Artık sinyal yerine doğrudan Celery task'ini import ediyoruz ===
 from ..tasks import send_order_update_task
 
 from makarna_project.asgi import sio
@@ -28,11 +28,6 @@ from ..serializers import (
 logger = logging.getLogger(__name__)
 
 def add_item_to_guest_order(order: Order, item_data_dict: dict, is_awaiting_staff_approval_flag: bool):
-    """
-    Mevcut bir siparişe ürün ekler veya miktarını günceller.
-    item_data_dict: GuestOrderItemSerializer.validate() tarafından döndürülen ve işlenmiş verileri içerir.
-    is_awaiting_staff_approval_flag: Yeni veya güncellenen OrderItem için bu flag'in değeri.
-    """
     menu_item_instance = item_data_dict.get('menu_item_instance')
     variant_instance = item_data_dict.get('variant_instance')
     quantity_to_add = item_data_dict.get('quantity', 1)
@@ -70,7 +65,7 @@ def add_item_to_guest_order(order: Order, item_data_dict: dict, is_awaiting_staf
         try:
             campaign = menu_item_instance.represented_campaign
             if campaign and campaign.is_active:
-                from django.utils import timezone # Fonksiyon içinde import
+                from django.utils import timezone
                 now_date = timezone.now().date()
                 if (campaign.start_date and campaign.start_date > now_date) or \
                    (campaign.end_date and campaign.end_date < now_date):
@@ -118,7 +113,6 @@ def add_item_to_guest_order(order: Order, item_data_dict: dict, is_awaiting_staf
             logger.info(f"Guest Add: Yeni OrderItem ID {order_item.id} Sipariş ID {order.id} için oluşturuldu.")
 
     return OrderItem.objects.select_related('menu_item', 'menu_item__category', 'variant').prefetch_related('extras__variant').get(id=processed_item.id)
-
 
 class GuestOrderCreateView(generics.GenericAPIView):
     serializer_class = GuestOrderCreateSerializer
@@ -203,15 +197,20 @@ class GuestOrderCreateView(generics.GenericAPIView):
                 response_status_code = status.HTTP_201_CREATED
 
         if final_order_to_return:
-            # === DEĞİŞİKLİK BURADA: Celery task'i doğrudan çağrılıyor ===
+            # === DEĞİŞİKLİK: Celery task'i doğrudan çağrılıyor, message kaldırıldı! ===
             is_newly_created = response_status_code == status.HTTP_201_CREATED
             event_type = 'guest_order_pending_approval'
-            message = f"Masa {table_instance.table_number} için yeni misafir siparişi onay bekliyor." if is_newly_created else f"Masa {table_instance.table_number} siparişine ürün eklendi, onay bekliyor."
+            extra_data = {
+                'message_key': 'guestOrderPendingApproval',
+                'message_args': {
+                    'orderId': str(final_order_to_return.id)
+                }
+            }
             transaction.on_commit(
                 lambda: send_order_update_task.delay(
                     order_id=final_order_to_return.id,
                     event_type=event_type,
-                    message=message
+                    extra_data=extra_data
                 )
             )
             final_order_to_return.refresh_from_db()
@@ -220,7 +219,6 @@ class GuestOrderCreateView(generics.GenericAPIView):
         else:
             logger.error("GuestOrderCreateView: Sipariş oluşturma/güncelleme sonrası final_order_to_return None kaldı.")
             return Response({"detail": "Sipariş işlenirken beklenmedik bir sorun oluştu."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
 
 class GuestMenuView(generics.ListAPIView):
     serializer_class = MenuItemSerializer
@@ -274,7 +272,6 @@ class GuestMenuView(generics.ListAPIView):
             'active_order': active_order_data,
         }, status=status.HTTP_200_OK)
 
-
 class GuestTakeawayMenuView(generics.ListAPIView):
     serializer_class = MenuItemSerializer
     permission_classes = [AllowAny]
@@ -313,7 +310,6 @@ class GuestTakeawayMenuView(generics.ListAPIView):
 
         except (ValueError, Order.DoesNotExist, Http404):
             return Response({"detail": "Geçersiz sipariş kodu."}, status=status.HTTP_404_NOT_FOUND)
-
 
 class GuestTakeawayOrderUpdateView(generics.GenericAPIView):
     serializer_class = GuestOrderItemSerializer
@@ -354,14 +350,19 @@ class GuestTakeawayOrderUpdateView(generics.GenericAPIView):
                 order_to_update.status = Order.STATUS_PENDING_APPROVAL
                 order_to_update.save(update_fields=['status'])
 
-            # === DEĞİŞİKLİK BURADA: Celery task'i doğrudan çağrılıyor ===
+            # === DEĞİŞİKLİK: Celery task'i doğrudan çağrılıyor, message kaldırıldı! ===
             event_type = 'existing_order_needs_reapproval'
-            message = f"Paket sipariş #{order_to_update.id} güncellendi ve yeniden onay bekliyor."
+            extra_data = {
+                'message_key': 'existingOrderNeedsReapproval',
+                'message_args': {
+                    'orderId': str(order_to_update.id)
+                }
+            }
             transaction.on_commit(
                 lambda: send_order_update_task.delay(
                     order_id=order_to_update.id,
                     event_type=event_type,
-                    message=message
+                    extra_data=extra_data
                 )
             )
 
@@ -370,8 +371,4 @@ class GuestTakeawayOrderUpdateView(generics.GenericAPIView):
 
             return Response(final_order_data, status=status.HTTP_200_OK)
 
-        except (ValueError, Order.DoesNotExist):
-            return Response({"detail": "Geçersiz sipariş kodu."}, status=status.HTTP_404_NOT_FOUND)
-        except ValidationError as e:
-            logger.warning(f"GuestTakeawayOrderUpdateView validasyon hatası: {e.detail}")
-            return Response(e.detail, status=status.HTTP_400_BAD_REQUEST)
+        except (ValueError, Order
