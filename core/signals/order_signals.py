@@ -56,12 +56,12 @@ def send_order_update_notification(order, created: bool = False, update_fields=N
         f"Event Type: '{event_type}'"
     )
 
-    # --- YENİ YAPI: Hardcode metin yerine yapısal veri gönder ---
+    # --- YENİ YAPI: Sadece anahtar gönder ---
     message_key = 'orderStatusUpdate'
     message_args = {
         'orderId': str(order.id),
-        'statusKey': order.status, # 'approved', 'preparing' gibi ham anahtar
-        'statusDisplay': order.get_status_display() # Fallback için eski metni de gönderelim
+        'statusKey': order.status,  # 'approved', 'preparing' gibi ham anahtar
+        # 'statusDisplay' kaldırıldı!
     }
 
     if item_added_info:
