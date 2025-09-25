@@ -13,10 +13,12 @@ from makarna_project.asgi import sio
 from ...models import Order, MenuItem, MenuItemVariant, OrderItem, OrderItemExtra, NOTIFICATION_EVENT_TYPES
 from ...serializers import OrderSerializer
 from ...utils.order_helpers import PermissionKeys
+# === DEĞİŞİKLİK BURADA: import yolunu güncelliyoruz ===
 from ...signals.order_signals import send_order_update_notification
 from ...utils.json_helpers import convert_decimals_to_strings
 
 logger = logging.getLogger(__name__)
+
 
 @transaction.atomic
 def add_item_action(view_instance, request, pk=None):
@@ -116,26 +118,8 @@ def add_item_action(view_instance, request, pk=None):
     logger.info(f"Sipariş #{order.id}'e ürün eklendi. `send_order_update_notification` fonksiyonu tetiklendi.")
 
     order_serializer = OrderSerializer(order, context={'request': request})
-    if sio:
-        room_name = f'business_{order.business.id}'
-        payload = {
-            'event_type': 'order_item_added',
-            'message_key': 'notificationOrderItemAdded',
-            'message_args': {
-                'orderId': str(order.id),
-                'itemName': str(processed_item.menu_item.name),
-                'quantity': str(processed_item.quantity),
-                'variantName': str(processed_item.variant.name) if processed_item.variant else ""
-            },
-            'order_id': order.id,
-            'updated_order_data': convert_decimals_to_strings(order_serializer.data)
-        }
-        try:
-            async_to_sync(sio.emit)('order_status_update', payload, room=room_name)
-            logger.info(f"Socket.IO 'order_status_update' (item_added) for Order ID {order.id}, Item {processed_item.menu_item.name} sent.")
-        except Exception as e_socket:
-            logger.error(f"Socket.IO error sending order_item_added event: {e_socket}", exc_info=True)
     return Response(order_serializer.data, status=status.HTTP_200_OK)
+
 
 @transaction.atomic
 def deliver_item_action(view_instance, request, pk=None):
@@ -186,12 +170,7 @@ def deliver_item_action(view_instance, request, pk=None):
         room_name = f'business_{order.business.id}'
         payload = {
             'event_type': 'order_item_delivered',
-            'message_key': 'notificationOrderItemDelivered',
-            'message_args': {
-                'orderId': str(order.id),
-                'orderItemId': str(order_item.id),
-                'itemName': str(order_item.menu_item.name)
-            },
+            'message': f"Sipariş #{order.id}, kalem #{order_item.id} ({order_item.menu_item.name}) teslim edildi.",
             'order_id': order.id,
             'item_id': order_item.id,
             'all_items_delivered_in_order': all_items_delivered and order_updated,
@@ -202,5 +181,6 @@ def deliver_item_action(view_instance, request, pk=None):
             logger.info(f"Socket.IO 'order_status_update' (item_delivered) for Order ID {order.id}, Item {order_item.id} sent.")
         except Exception as e_socket:
             logger.error(f"Socket.IO error sending order_item_delivered event: {e_socket}", exc_info=True)
+
 
     return Response(order_serializer.data, status=status.HTTP_200_OK)

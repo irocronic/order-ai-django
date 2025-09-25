@@ -98,11 +98,7 @@ def mark_as_paid_action(view_instance, request, pk=None):
         room_name = f'business_{order.business.id}'
         payload = {
             'event_type': 'order_paid',
-            'message_key': 'notificationOrderPaid',
-            'message_args': {
-                'orderId': str(order.id),
-                'tableId': str(original_table_id) if original_table_id else ""
-            },
+            'message': f"Sipariş #{order.id} ödendi.",
             'order_id': order.id,
             'table_id': original_table_id,
             'updated_order_data': order_serializer.data,
@@ -164,11 +160,7 @@ def check_qr_payment_status_action(view_instance, request, pk=None):
                 room_name = f'business_{finalized_order.business.id}'
                 payload = {
                     'event_type': 'order_paid',
-                    'message_key': 'notificationOrderPaid',
-                    'message_args': {
-                        'orderId': str(finalized_order.id),
-                        'tableId': str(original_table_id) if original_table_id else ""
-                    },
+                    'message': f"Sipariş #{finalized_order.id} QR ile ödendi.",
                     'order_id': finalized_order.id,
                     'table_id': original_table_id,
                     'updated_order_data': order_serializer.data,
@@ -233,10 +225,7 @@ def save_credit_payment_action(view_instance, request, pk=None):
         room_name = f'business_{order.business.id}'
         payload = {
             'event_type': 'order_credit_sale',
-            'message_key': 'notificationOrderCreditSale',
-            'message_args': {
-                'orderId': str(order.id)
-            },
+            'message': f"Sipariş #{order.id} veresiyeye eklendi.",
             'order_id': order.id,
             'updated_order_data': order_serializer.data,
         }
