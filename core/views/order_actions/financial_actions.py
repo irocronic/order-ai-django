@@ -96,9 +96,11 @@ def mark_as_paid_action(view_instance, request, pk=None):
     
     if sio:
         room_name = f'business_{order.business.id}'
+        # === DEĞİŞİKLİK BURADA ===
+        # 'event_type' artık .arb dosyasındaki anahtarla eşleşiyor.
+        # Hardcoded 'message' alanı kaldırıldı, çünkü bu metin artık mobil uygulama tarafında oluşturulacak.
         payload = {
-            'event_type': 'order_paid',
-            'message': f"Sipariş #{order.id} ödendi.",
+            'event_type': 'order_completed_update',
             'order_id': order.id,
             'table_id': original_table_id,
             'updated_order_data': order_serializer.data,
@@ -106,7 +108,7 @@ def mark_as_paid_action(view_instance, request, pk=None):
         try:
             cleaned_payload = convert_decimals_to_strings(payload)
             async_to_sync(sio.emit)('order_status_update', cleaned_payload, room=room_name)
-            logger.info(f"Socket.IO (Ödeme): 'order_status_update' (paid) {room_name} odasına gönderildi (Sipariş ID: {order.id}).")
+            logger.info(f"Socket.IO (Ödeme): 'order_status_update' (order_completed_update) {room_name} odasına gönderildi (Sipariş ID: {order.id}).")
         except Exception as e_socket:
             logger.error(f"Socket.IO event gönderilirken hata (ödeme - sipariş {order.id}): {e_socket}", exc_info=True)
 
@@ -158,9 +160,10 @@ def check_qr_payment_status_action(view_instance, request, pk=None):
 
             if sio:
                 room_name = f'business_{finalized_order.business.id}'
+                # === DEĞİŞİKLİK BURADA ===
+                # 'event_type' standartlaştırıldı ve hardcoded 'message' kaldırıldı.
                 payload = {
-                    'event_type': 'order_paid',
-                    'message': f"Sipariş #{finalized_order.id} QR ile ödendi.",
+                    'event_type': 'order_completed_update',
                     'order_id': finalized_order.id,
                     'table_id': original_table_id,
                     'updated_order_data': order_serializer.data,
@@ -168,7 +171,7 @@ def check_qr_payment_status_action(view_instance, request, pk=None):
                 try:
                     cleaned_payload = convert_decimals_to_strings(payload)
                     async_to_sync(sio.emit)('order_status_update', cleaned_payload, room=room_name)
-                    logger.info(f"Socket.IO (QR Ödeme): 'order_status_update' (paid) {room_name} odasına gönderildi (Sipariş ID: {finalized_order.id}).")
+                    logger.info(f"Socket.IO (QR Ödeme): 'order_status_update' (order_completed_update) {room_name} odasına gönderildi (Sipariş ID: {finalized_order.id}).")
                 except Exception as e_socket:
                     logger.error(f"Socket.IO event gönderilirken hata (QR ödeme - sipariş {finalized_order.id}): {e_socket}", exc_info=True)
             
@@ -223,9 +226,12 @@ def save_credit_payment_action(view_instance, request, pk=None):
     
     if sio:
         room_name = f'business_{order.business.id}'
+        # === DEĞİŞİKLİK BURADA ===
+        # 'message' alanı kaldırıldı. Not: 'order_credit_sale' için .arb dosyanıza özel bir
+        # çeviri anahtarı ekleyebilir ve socket_service.dart'taki _buildLocalizedMessage
+        # fonksiyonuna yeni bir 'case' ekleyerek daha açıklayıcı bir bildirim oluşturabilirsiniz.
         payload = {
             'event_type': 'order_credit_sale',
-            'message': f"Sipariş #{order.id} veresiyeye eklendi.",
             'order_id': order.id,
             'updated_order_data': order_serializer.data,
         }
