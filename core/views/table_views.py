@@ -1,7 +1,5 @@
 # core/views/table_views.py
 
-# core/views/table_views.py
-
 from rest_framework import viewsets, status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.exceptions import PermissionDenied, ValidationError

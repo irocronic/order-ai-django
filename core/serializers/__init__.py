@@ -1,7 +1,5 @@
 # core/serializers/__init__.py
 
-# core/serializers/__init__.py
-
 from .user_serializers import (
     RegisterSerializer,
     AccountSettingsSerializer,

@@ -1,4 +1,5 @@
 # core/serializers/waiting_customer_serializers.py
+
 from rest_framework import serializers
 from rest_framework.exceptions import PermissionDenied
 from ..models import WaitingCustomer, Business

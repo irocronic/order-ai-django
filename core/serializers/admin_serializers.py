@@ -1,7 +1,6 @@
 # core/serializers/admin_serializers.py
 
 from rest_framework import serializers
-# GÜNCELLENMİŞ: timezone import edildi
 from django.utils import timezone
 from ..models import Business, CustomUser as User, NotificationSetting, KDSScreen, NOTIFICATION_EVENT_TYPES, STAFF_PERMISSION_CHOICES
 from .kds_serializers import KDSScreenSerializer

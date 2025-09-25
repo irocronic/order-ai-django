@@ -1,3 +1,6 @@
+# makarna_project/makarna_project/asgi.py
+
+
 import os
 import django
 import socketio 

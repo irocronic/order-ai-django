@@ -1,4 +1,4 @@
-# core/tasks.py - GÜNCELLENMİŞ VE EKSİKSİZ
+# core/tasks.py
 
 from celery import shared_task
 from django.conf import settings

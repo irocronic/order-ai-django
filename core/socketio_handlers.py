@@ -1,4 +1,5 @@
-# core/socketio_handlers.py - GÜNCELLENMİŞ VERSİYON
+# core/socketio_handlers.py
+
 
 from urllib.parse import parse_qs
 from django.conf import settings
