@@ -6,9 +6,9 @@ from rest_framework.response import Response
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
-from datetime import timedelta, datetime # datetime import'u eklendi
-from django.views import View # <-- EKSİK OLAN VE HATAYI GİDEREN IMPORT
-from django.http import JsonResponse # <-- YENİ API İÇİN GEREKLİ IMPORT
+from datetime import timedelta, datetime
+from django.views import View
+from django.http import JsonResponse
 from ..models import Reservation, Business, Table
 from ..serializers.reservation_serializers import ReservationSerializer, PublicReservationCreateSerializer
 from ..utils.order_helpers import get_user_business
@@ -17,7 +17,6 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-# İşletme sahibi için
 class ReservationViewSet(viewsets.ModelViewSet):
     serializer_class = ReservationSerializer
     permission_classes = [IsAuthenticated]
@@ -54,7 +53,6 @@ class ReservationViewSet(viewsets.ModelViewSet):
         reservation.save(update_fields=['status'])
         return Response(self.get_serializer(reservation).data)
 
-# Herkese açık web sitesi için
 class PublicReservationCreateView(generics.CreateAPIView):
     permission_classes = [AllowAny]
     serializer_class = PublicReservationCreateSerializer
@@ -76,20 +74,21 @@ class PublicReservationCreateView(generics.CreateAPIView):
 
             # İşletme sahibine bildirim gönder
             try:
-                message = (
-                    f"Yeni rezervasyon talebi: {reservation.customer_name} - "
-                    f"Masa {reservation.table.table_number} - "
-                    f"{reservation.reservation_time.strftime('%d.%m %H:%M')}"
-                )
                 extra_data = {
                     'reservation_id': reservation.id,
                     'is_reservation': True,
-                    'business_id': business.id
+                    'business_id': business.id,
+                    'message_key': 'reservationPendingApproval',
+                    'message_args': {
+                        'reservationId': str(reservation.id),
+                        'customerName': reservation.customer_name,
+                        'tableNumber': reservation.table.table_number if reservation.table else None,
+                        'reservationTime': reservation.reservation_time.strftime('%Y-%m-%d %H:%M')
+                    }
                 }
                 send_order_update_task.delay(
-                    order_id=reservation.id, # order_id olarak gönderiyoruz ama backend'de ayırt edilebilir
+                    order_id=reservation.id,
                     event_type='reservation_pending_approval',
-                    message=message,
                     extra_data=extra_data
                 )
             except Exception as notify_err:
@@ -111,7 +110,6 @@ class PublicReservationCreateView(generics.CreateAPIView):
                 status=error_code
             )
 
-# YENİ EKLENEN SINIF
 class TableAvailabilityAPIView(View):
     """
     Belirli bir tarihteki rezerve edilmiş masaların ID'lerini döndüren API.
@@ -122,19 +120,16 @@ class TableAvailabilityAPIView(View):
             return JsonResponse({'error': 'Tarih parametresi gerekli.'}, status=400)
 
         try:
-            # Tarihi 'YYYY-MM-DD' formatından parse et
             reservation_date = datetime.strptime(date_str, '%Y-%m-%d').date()
         except ValueError:
             return JsonResponse({'error': 'Geçersiz tarih formatı. YYYY-MM-DD kullanın.'}, status=400)
 
         try:
             business = Business.objects.get(slug=business_slug)
-            
-            # O tarihteki onaylanmış ('confirmed') rezervasyonları bul
             reserved_tables = Reservation.objects.filter(
                 business=business,
                 reservation_time__date=reservation_date,
-                status='confirmed' # Sadece onaylanmışları dolu say
+                status='confirmed'
             ).values_list('table_id', flat=True)
 
             return JsonResponse({'reserved_table_ids': list(set(reserved_tables))})

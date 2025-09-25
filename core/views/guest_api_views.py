@@ -371,4 +371,8 @@ class GuestTakeawayOrderUpdateView(generics.GenericAPIView):
 
             return Response(final_order_data, status=status.HTTP_200_OK)
 
-        except (ValueError, Order
+        except (ValueError, Order.DoesNotExist, Http404):
+            return Response({"detail": "Geçersiz sipariş kodu."}, status=status.HTTP_404_NOT_FOUND)
+        except ValidationError as e:
+            logger.warning(f"GuestTakeawayOrderUpdateView validasyon hatası: {e.detail}")
+            return Response(e.detail, status=status.HTTP_400_BAD_REQUEST)
