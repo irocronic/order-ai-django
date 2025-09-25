@@ -7,20 +7,18 @@ from django.utils import timezone
 from django.db import transaction
 import logging
 from decimal import Decimal
-from asgiref.sync import async_to_sync
 
-# Gerekli importlar eklendi
-from makarna_project.asgi import sio
-from ...utils.json_helpers import convert_decimals_to_strings
 from ...models import Order, OrderItem
 from ...serializers import OrderSerializer
 from ...utils.order_helpers import PermissionKeys
+# <<< GÜNCELLEME: Merkezi bildirim fonksiyonunu import ediyoruz >>>
+from ...signals.order_signals import send_order_update_notification
 
 logger = logging.getLogger(__name__)
 
 @transaction.atomic
 def approve_guest_order_action(view_instance, request, pk=None):
-    """Misafir siparişini onaylar ve detaylı bildirim gönderir."""
+    """Misafir siparişini onaylar."""
     order = view_instance.get_object()
     user = request.user
 
@@ -41,36 +39,23 @@ def approve_guest_order_action(view_instance, request, pk=None):
 
     order.refresh_from_db()
     
-    order_serializer = OrderSerializer(order, context={'request': request})
-
-    # === GÜNCELLEME: Sinyal yerine doğrudan Socket.IO event'i gönderiliyor ===
-    def send_socket_notification():
-        if sio:
-            room_name = f'business_{order.business.id}'
-            table_info = f"Masa {order.table.table_number}" if order.table else order.get_order_type_display()
-            payload = {
-                'event_type': 'order_approved_for_kitchen',
-                'message_key': 'notificationOrderApprovedForKitchen',
-                'message_args': {
-                    'orderId': str(order.id),
-                    'tableInfo': table_info
-                },
-                'updated_order_data': convert_decimals_to_strings(order_serializer.data),
-            }
-            try:
-                async_to_sync(sio.emit)('order_status_update', payload, room=room_name)
-                logger.info(f"Socket.IO 'order_approved_for_kitchen' event for Order ID {order.id} sent.")
-            except Exception as e:
-                logger.error(f"Socket.IO emit error in approve_guest_order_action: {e}")
-
-    transaction.on_commit(send_socket_notification)
+    # <<< YENİ: Bildirimi doğrudan ve sadece buradan gönderiyoruz >>>
+    transaction.on_commit(
+        lambda: send_order_update_notification(
+            order=order,  # order_id yerine order nesnesi
+            created=False, 
+            update_fields=['status']
+        )
+    )
+    # <<< GÜNCELLEME SONU >>>
     
+    order_serializer = OrderSerializer(order, context={'request': request})
     return Response(order_serializer.data, status=status.HTTP_200_OK)
 
 
 @transaction.atomic
 def reject_guest_order_action(view_instance, request, pk=None):
-    """Misafir siparişini reddeder ve detaylı bildirim gönderir."""
+    """Misafir siparişini reddeder."""
     order = view_instance.get_object()
     user = request.user
 
@@ -84,51 +69,43 @@ def reject_guest_order_action(view_instance, request, pk=None):
     items_to_delete_if_modification_rejected = order.order_items.filter(is_awaiting_staff_approval=True)
     previously_approved_items_exist = order.order_items.filter(is_awaiting_staff_approval=False).exists()
 
-    update_fields = []
+    update_fields_for_notification = ['status']
     if previously_approved_items_exist and items_to_delete_if_modification_rejected.exists():
         items_to_delete_if_modification_rejected.delete()
         order.status = Order.STATUS_APPROVED
-        update_fields.append('status')
         if not order.taken_by_staff:
             order.taken_by_staff = user
-            update_fields.append('taken_by_staff')
+            update_fields_for_notification.append('taken_by_staff')
         if not order.approved_at:
             order.approved_at = timezone.now()
-            update_fields.append('approved_at')
-        order.save(update_fields=update_fields)
+            update_fields_for_notification.append('approved_at')
+        order.save(update_fields=update_fields_for_notification)
     else:
         order.status = Order.STATUS_REJECTED
         order.taken_by_staff = user
-        update_fields.extend(['status', 'taken_by_staff'])
-        order.save(update_fields=update_fields)
+        update_fields_for_notification.append('taken_by_staff')
+        order.save(update_fields=update_fields_for_notification)
 
     order.refresh_from_db()
-    order_serializer = OrderSerializer(order, context={'request': request})
-    
-    # === GÜNCELLEME: Sinyal yerine doğrudan Socket.IO event'i gönderiliyor ===
-    def send_socket_notification():
-        if sio:
-            room_name = f'business_{order.business.id}'
-            payload = {
-                'event_type': 'order_rejected_update',
-                'message_key': 'notificationOrderRejected',
-                'message_args': {'orderId': str(order.id)},
-                'updated_order_data': convert_decimals_to_strings(order_serializer.data),
-            }
-            try:
-                async_to_sync(sio.emit)('order_status_update', payload, room=room_name)
-                logger.info(f"Socket.IO 'order_rejected_update' event for Order ID {order.id} sent.")
-            except Exception as e:
-                logger.error(f"Socket.IO emit error in reject_guest_order_action: {e}")
 
-    transaction.on_commit(send_socket_notification)
+    # <<< YENİ: Bildirimi doğrudan ve sadece buradan gönderiyoruz >>>
+    transaction.on_commit(
+        lambda: send_order_update_notification(
+            order=order,  # order_id yerine order nesnesi
+            created=False, 
+            update_fields=update_fields_for_notification
+        )
+    )
+    # <<< GÜNCELLEME SONU >>>
+    
+    order_serializer = OrderSerializer(order, context={'request': request})
     
     return Response(order_serializer.data, status=status.HTTP_200_OK)
 
 
 @transaction.atomic
 def mark_order_picked_up_by_waiter_action(view_instance, request, pk=None):
-    """Siparişi garson tarafından mutfaktan alınmış olarak işaretler ve detaylı bildirim gönderir."""
+    """Siparişi garson tarafından mutfaktan alınmış olarak işaretler."""
     order = view_instance.get_object()
     user = request.user
 
@@ -148,32 +125,24 @@ def mark_order_picked_up_by_waiter_action(view_instance, request, pk=None):
     logger.info(f"Sipariş #{order.id} garson {user.username} tarafından mutfaktan alındı ve durumu '{Order.STATUS_READY_FOR_DELIVERY}' olarak güncellendi.")
 
     order.refresh_from_db()
-    order_serializer = OrderSerializer(order, context={'request': request})
     
-    # === GÜNCELLEME: Sinyal yerine doğrudan Socket.IO event'i gönderiliyor ===
-    def send_socket_notification():
-        if sio:
-            room_name = f'business_{order.business.id}'
-            payload = {
-                'event_type': 'order_picked_up_by_waiter',
-                'message_key': 'notificationOrderPickedUpByWaiter',
-                'message_args': {'orderId': str(order.id)},
-                'updated_order_data': convert_decimals_to_strings(order_serializer.data),
-            }
-            try:
-                async_to_sync(sio.emit)('order_status_update', payload, room=room_name)
-                logger.info(f"Socket.IO 'order_picked_up_by_waiter' event for Order ID {order.id} sent.")
-            except Exception as e:
-                logger.error(f"Socket.IO emit error in mark_order_picked_up_by_waiter_action: {e}")
-    
-    transaction.on_commit(send_socket_notification)
+    # <<< YENİ: Bildirimi doğrudan ve sadece buradan gönderiyoruz >>>
+    transaction.on_commit(
+        lambda: send_order_update_notification(
+            order=order,  # order_id yerine order nesnesi
+            created=False, 
+            update_fields=['status']
+        )
+    )
+    # <<< GÜNCELLEME SONU >>>
 
+    order_serializer = OrderSerializer(order, context={'request': request})
     return Response(order_serializer.data, status=status.HTTP_200_OK)
 
 
 @transaction.atomic
 def deliver_all_items_action(view_instance, request, pk=None):
-    """Siparişin tüm kalemlerini müşteriye teslim edilmiş olarak işaretler ve detaylı bildirim gönderir."""
+    """Siparişin tüm kalemlerini müşteriye teslim edilmiş olarak işaretler."""
     order = view_instance.get_object()
     if order.is_paid or order.status in [Order.STATUS_COMPLETED, Order.STATUS_CANCELLED, Order.STATUS_REJECTED]:
         raise PermissionDenied("Bu sipariş üzerinde işlem yapılamaz.")
@@ -201,24 +170,16 @@ def deliver_all_items_action(view_instance, request, pk=None):
     logger.info(f"[DELIVER_ORDER_ALL] Order ID {order.id} marked as delivered at {now}.")
 
     order.refresh_from_db()
+
+    # <<< YENİ: Bildirimi doğrudan ve sadece buradan gönderiyoruz >>>
+    transaction.on_commit(
+        lambda: send_order_update_notification(
+            order=order,  # order_id yerine order nesnesi
+            created=False, 
+            update_fields=['delivered_at']  # ya da daha genel bir tip
+        )
+    )
+    # <<< GÜNCELLEME SONU >>>
+
     order_serializer = OrderSerializer(order, context={'request': request})
-
-    # === GÜNCELLEME: Sinyal yerine doğrudan Socket.IO event'i gönderiliyor ===
-    def send_socket_notification():
-        if sio:
-            room_name = f'business_{order.business.id}'
-            payload = {
-                'event_type': 'order_fully_delivered',
-                'message_key': 'notificationOrderFullyDelivered',
-                'message_args': {'orderId': str(order.id)},
-                'updated_order_data': convert_decimals_to_strings(order_serializer.data),
-            }
-            try:
-                async_to_sync(sio.emit)('order_status_update', payload, room=room_name)
-                logger.info(f"Socket.IO 'order_fully_delivered' event for Order ID {order.id} sent.")
-            except Exception as e:
-                logger.error(f"Socket.IO emit error in deliver_all_items_action: {e}")
-
-    transaction.on_commit(send_socket_notification)
-
     return Response(order_serializer.data, status=status.HTTP_200_OK)

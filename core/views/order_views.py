@@ -492,7 +492,7 @@ class OrderItemViewSet(mixins.DestroyModelMixin, mixins.UpdateModelMixin, viewse
 
         final_order_serializer = OrderSerializer(order, context={'request': self.request})
         
-        # GÜNCELLEME: Payload yapısı, message_params yerine message_args (dictionary) kullanacak şekilde değiştirildi.
+        # GÜNCELLEME: Sabit kodlanmış 'message' alanı, 'message_key' ve 'message_params' ile değiştirildi.
         try:
             from makarna_project.asgi import sio
             if sio:
@@ -500,10 +500,7 @@ class OrderItemViewSet(mixins.DestroyModelMixin, mixins.UpdateModelMixin, viewse
                 payload = {
                     'event_type': 'order_item_updated',
                     'message_key': 'notificationOrderItemUpdated',
-                    'message_args': {
-                        'orderId': str(order.id),
-                        'productName': updated_item.menu_item.name
-                    },
+                    'message_params': [str(order.id), updated_item.menu_item.name],
                     'updated_order_data': convert_decimals_to_strings(final_order_serializer.data),
                 }
                 async_to_sync(sio.emit)('order_status_update', payload, room=room_name)
@@ -542,13 +539,10 @@ class OrderItemViewSet(mixins.DestroyModelMixin, mixins.UpdateModelMixin, viewse
                 order.refresh_from_db()
                 order_serializer_data = OrderSerializer(order, context={'request': self.request}).data
                 
-                # GÜNCELLEME: Bildirim payload yapısı, message_params yerine message_args (dictionary) kullanacak şekilde değiştirildi.
+                # GÜNCELLEME: Bildirim payload yapısı değiştirildi.
                 event_type = 'order_item_removed'
                 message_key = 'notificationOrderItemRemoved'
-                message_args = {
-                    'orderId': str(order_id_for_log),
-                    'productName': item_name_for_log
-                }
+                message_params = [str(order_id_for_log), item_name_for_log]
 
                 if is_last_item and order.order_items.count() == 0 and \
                    order.status not in [Order.STATUS_COMPLETED, Order.STATUS_CANCELLED, Order.STATUS_REJECTED]:
@@ -559,7 +553,7 @@ class OrderItemViewSet(mixins.DestroyModelMixin, mixins.UpdateModelMixin, viewse
                     
                     event_type = 'order_cancelled'
                     message_key = 'notificationOrderCancelledAllItemsRemoved'
-                    message_args = {'orderId': str(order_id_for_log)}
+                    message_params = [str(order_id_for_log)]
                 
                 try:
                     from makarna_project.asgi import sio
@@ -568,7 +562,7 @@ class OrderItemViewSet(mixins.DestroyModelMixin, mixins.UpdateModelMixin, viewse
                         payload = {
                             'event_type': event_type,
                             'message_key': message_key,
-                            'message_args': message_args, # Değiştirildi: message_params -> message_args
+                            'message_params': message_params,
                             'updated_order_data': convert_decimals_to_strings(order_serializer_data),
                         }
                         async_to_sync(sio.emit)('order_status_update', payload, room=room_name)

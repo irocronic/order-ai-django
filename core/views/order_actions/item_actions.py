@@ -13,8 +13,8 @@ from makarna_project.asgi import sio
 from ...models import Order, MenuItem, MenuItemVariant, OrderItem, OrderItemExtra, NOTIFICATION_EVENT_TYPES
 from ...serializers import OrderSerializer
 from ...utils.order_helpers import PermissionKeys
-# === DEĞİŞİKLİK: Artık sinyal fonksiyonunu kullanmayacağız ===
-# from ...signals.order_signals import send_order_update_notification
+# === DEĞİŞİKLİK BURADA: import yolunu güncelliyoruz ===
+from ...signals.order_signals import send_order_update_notification
 from ...utils.json_helpers import convert_decimals_to_strings
 
 logger = logging.getLogger(__name__)
@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 def add_item_action(view_instance, request, pk=None):
     """
     Mevcut bir siparişe yeni bir ürün kalemi ekler veya mevcut kalemin miktarını artırır.
-    Bildirim, merkezi sinyal yerine doğrudan buradan gönderilir.
+    Hata yönetimi ve doğru bildirim çağrısı ile güncellenmiştir.
     """
     order = view_instance.get_object()
     user = request.user
@@ -92,46 +92,32 @@ def add_item_action(view_instance, request, pk=None):
     if not processed_item:
         return Response({'detail': 'Sipariş kalemi işlenirken bir hata oluştu.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
     
-    # Sipariş durumu güncelleniyor
-    update_fields = []
-    if order.status != Order.STATUS_APPROVED:
-        order.status = Order.STATUS_APPROVED
-        update_fields.append('status')
+    order.status = Order.STATUS_APPROVED
     if not order.taken_by_staff:
         order.taken_by_staff = user
-        update_fields.append('taken_by_staff')
     if not order.approved_at:
         order.approved_at = timezone.now()
-        update_fields.append('approved_at')
 
-    if update_fields:
-        order.save(update_fields=update_fields)
+    order.save(update_fields=['status', 'taken_by_staff', 'approved_at'])
 
     order.refresh_from_db()
-    order_serializer = OrderSerializer(order, context={'request': request})
-    
-    # === GÜNCELLEME: Sinyal yerine doğrudan Socket.IO event'i gönderiliyor ===
-    def send_socket_notification():
-        if sio:
-            room_name = f'business_{order.business.id}'
-            payload = {
-                'event_type': 'order_item_added',
-                'message_key': 'notificationOrderItemAdded',
-                'message_args': {
-                    'orderId': str(order.id),
-                    'productName': menu_item.name,
-                    'quantity': str(quantity_to_add)
-                },
-                'updated_order_data': convert_decimals_to_strings(order_serializer.data),
-            }
-            try:
-                async_to_sync(sio.emit)('order_status_update', payload, room=room_name)
-                logger.info(f"Socket.IO 'order_item_added' event for Order ID {order.id} sent.")
-            except Exception as e:
-                logger.error(f"Socket.IO emit error in add_item_action: {e}")
 
-    transaction.on_commit(send_socket_notification)
+    item_added_info = {
+        'item_name': processed_item.menu_item.name,
+        'quantity': processed_item.quantity,
+        'variant_name': processed_item.variant.name if processed_item.variant else None
+    }
     
+    transaction.on_commit(
+        lambda: send_order_update_notification(
+            order=order,
+            created=False,
+            item_added_info=item_added_info
+        )
+    )
+    logger.info(f"Sipariş #{order.id}'e ürün eklendi. `send_order_update_notification` fonksiyonu tetiklendi.")
+
+    order_serializer = OrderSerializer(order, context={'request': request})
     return Response(order_serializer.data, status=status.HTTP_200_OK)
 
 
@@ -195,6 +181,5 @@ def deliver_item_action(view_instance, request, pk=None):
             logger.info(f"Socket.IO 'order_status_update' (item_delivered) for Order ID {order.id}, Item {order_item.id} sent.")
         except Exception as e_socket:
             logger.error(f"Socket.IO error sending order_item_delivered event: {e_socket}", exc_info=True)
-
 
     return Response(order_serializer.data, status=status.HTTP_200_OK)
