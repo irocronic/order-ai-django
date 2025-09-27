@@ -1,0 +1,32 @@
+{
+  "categories": [
+    {
+      "name": "Ana Yemekler",
+      "icon": "restaurant",
+      "menu_items": [
+        { "name": "Spaghetti Bolonez" },
+        { "name": "Adana Kebap" },
+        { "name": "Tavuk Şiş" }
+      ],
+      "variants": [
+        { "name": "Küçük Porsiyon", "multiplier": 0.7, "icon": "restaurant_outlined", "order": 1 },
+        { "name": "Orta Porsiyon", "multiplier": 1.0, "icon": "restaurant", "order": 2 },
+        { "name": "Büyük Porsiyon", "multiplier": 1.3, "icon": "dinner_dining", "order": 3 }
+      ]
+    },
+    {
+      "name": "Sıcak İçecekler",
+      "icon": "coffee",
+      "menu_items": [
+        { "name": "Çay" },
+        { "name": "Türk Kahvesi" },
+        { "name": "Latte" }
+      ],
+      "variants": [
+        { "name": "Küçük", "multiplier": 0.8, "icon": "local_cafe_outlined", "order": 1 },
+        { "name": "Orta", "multiplier": 1.0, "icon": "local_cafe", "order": 2 },
+        { "name": "Büyük", "multiplier": 1.3, "icon": "coffee", "order": 3 }
+      ]
+    }
+  ]
+}
