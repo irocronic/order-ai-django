@@ -13,7 +13,6 @@ from makarna_project.asgi import sio
 from ...models import Order, MenuItem, MenuItemVariant, OrderItem, OrderItemExtra, NOTIFICATION_EVENT_TYPES
 from ...serializers import OrderSerializer
 from ...utils.order_helpers import PermissionKeys
-# === DEĞİŞİKLİK BURADA: import yolunu güncelliyoruz ===
 from ...signals.order_signals import send_order_update_notification
 from ...utils.json_helpers import convert_decimals_to_strings
 
@@ -170,7 +169,8 @@ def deliver_item_action(view_instance, request, pk=None):
         room_name = f'business_{order.business.id}'
         payload = {
             'event_type': 'order_item_delivered',
-            'message': f"Sipariş #{order.id}, kalem #{order_item.id} ({order_item.menu_item.name}) teslim edildi.",
+            'message_key': 'notificationOrderItemDelivered',
+            'message_params': [str(order.id), str(order_item.id), order_item.menu_item.name],
             'order_id': order.id,
             'item_id': order_item.id,
             'all_items_delivered_in_order': all_items_delivered and order_updated,

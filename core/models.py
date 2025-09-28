@@ -1084,6 +1084,7 @@ class BusinessWebsite(models.Model):
         verbose_name="Hakkımızda Açıklaması"
     )
     about_image = models.URLField(
+        max_length=1024,
         blank=True, 
         null=True, 
         verbose_name="Hakkımızda Görseli"
