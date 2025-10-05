@@ -44,6 +44,11 @@ from core.views import (
     PublicReservationCreateView,
     BusinessLayoutViewSet,
     LayoutElementViewSet,
+    generate_qr_code,
+    get_location_by_qr,
+    record_attendance,
+    get_employee_status,
+    get_attendance_history,
 )
 
 # Business Website API Views için importlar
@@ -157,6 +162,13 @@ urlpatterns = [
     # Google Places Proxy Endpoints
     path('google-places/autocomplete/', google_places_autocomplete, name='google-places-autocomplete'),
     path('google-places/details/', google_place_details, name='google-place-details'),
+
+    # Giriş-Çıkış (Attendance) API'leri
+    path('api/locations/generate-qr/', generate_qr_code, name='generate_qr'),
+    path('api/locations/qr/<uuid:qr_code>/', get_location_by_qr, name='get_location_by_qr'),
+    path('api/attendance/record/', record_attendance, name='record_attendance'),
+    path('api/employees/status/', get_employee_status, name='employee_status'),
+    path('api/attendance/history/', get_attendance_history, name='attendance_history'),
 ]
 
 # Geliştirme ortamında medya dosyalarını sunmak için

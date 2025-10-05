@@ -1280,3 +1280,58 @@ class Reservation(models.Model):
 
     def __str__(self):
         return f"Rez. #{self.id}: {self.customer_name} - Masa {self.table.table_number} ({self.reservation_time.strftime('%d.%m %H:%M')})"
+
+
+
+
+class Company(models.Model):
+    name = models.CharField(max_length=200)
+    owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return self.name
+
+class Location(models.Model):
+    company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name='locations')
+    name = models.CharField(max_length=200)
+    address = models.TextField()
+    latitude = models.DecimalField(max_digits=10, decimal_places=8)
+    longitude = models.DecimalField(max_digits=11, decimal_places=8)
+    radius = models.IntegerField(default=100)  # metre cinsinden
+    qr_code = models.UUIDField(default=uuid.uuid4, unique=True)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"{self.name} - {self.company.name}"
+
+class Employee(models.Model):
+    user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    company = models.ForeignKey(Company, on_delete=models.CASCADE)
+    employee_id = models.CharField(max_length=50)
+    is_active = models.BooleanField(default=True)
+
+    def __str__(self):
+        return f"{self.user.get_full_name()} - {self.company.name}"
+
+class AttendanceRecord(models.Model):
+    ENTRY_TYPE_CHOICES = [
+        ('IN', 'Giriş'),
+        ('OUT', 'Çıkış'),
+    ]
+    
+    employee = models.ForeignKey(Employee, on_delete=models.CASCADE)
+    location = models.ForeignKey(Location, on_delete=models.CASCADE)
+    entry_type = models.CharField(max_length=3, choices=ENTRY_TYPE_CHOICES)
+    timestamp = models.DateTimeField(auto_now_add=True)
+    gps_latitude = models.DecimalField(max_digits=10, decimal_places=8)
+    gps_longitude = models.DecimalField(max_digits=11, decimal_places=8)
+    is_valid_location = models.BooleanField(default=False)
+    notes = models.TextField(blank=True)
+
+    def __str__(self):
+        return f"{self.employee.user.get_full_name()} - {self.entry_type} - {self.timestamp}"
+
+    class Meta:
+        ordering = ['-timestamp']
