@@ -44,11 +44,9 @@ from core.views import (
     PublicReservationCreateView,
     BusinessLayoutViewSet,
     LayoutElementViewSet,
+    AttendanceViewSet,  # DÜZELTME: Doğrudan core.views'dan import
     get_location_by_qr,
 )
-
-# YENİ EKLENEN: AttendanceViewSet import
-from core.views.attendance_views import AttendanceViewSet
 
 # Business Website API Views için importlar
 from core.views.business_website_views import (
@@ -93,6 +91,8 @@ router.register(r'purchase-orders', PurchaseOrderViewSet, basename='purchaseorde
 router.register(r'reservations', ReservationViewSet, basename='reservation')
 router.register(r'layouts', BusinessLayoutViewSet, basename='layout')
 router.register(r'layout-elements', LayoutElementViewSet, basename='layoutelement')
+# DÜZELTME: AttendanceViewSet'i router'a ekliyoruz
+router.register(r'attendance', AttendanceViewSet, basename='attendance')
 
 # YÖNETİCİ API'leri için ayrı bir DefaultRouter
 admin_router = DefaultRouter()
@@ -162,16 +162,8 @@ urlpatterns = [
     path('google-places/autocomplete/', google_places_autocomplete, name='google-places-autocomplete'),
     path('google-places/details/', google_place_details, name='google-place-details'),
 
-    # === YENİ EKLENEN: PERSONEL GİRİŞ-ÇIKIŞ URL'LERİ ===
-    path('attendance/', include([
-        path('locations/', AttendanceViewSet.as_view({'get': 'locations', 'post': 'create_location'}), name='attendance-locations'),
-        path('locations/<int:pk>/', AttendanceViewSet.as_view({'put': 'update_location', 'delete': 'delete_location'}), name='attendance-location-detail'),
-        path('qr-generate/', AttendanceViewSet.as_view({'post': 'generate_qr'}), name='attendance-qr-generate'),
-        path('qr-checkin/', AttendanceViewSet.as_view({'post': 'qr_checkin'}), name='attendance-qr-checkin'),
-        path('current-status/', AttendanceViewSet.as_view({'get': 'current_status'}), name='attendance-current-status'),
-        path('history/', AttendanceViewSet.as_view({'get': 'history'}), name='attendance-history'),
-        path('qr/<uuid:qr_code>/', get_location_by_qr, name='attendance-get-location-by-qr'),
-    ])),
+    # DÜZELTME: QR kod URL'i için özel pattern
+    path('attendance/qr/<uuid:qr_code>/', get_location_by_qr, name='attendance-get-location-by-qr'),
 ]
 
 # Geliştirme ortamında medya dosyalarını sunmak için

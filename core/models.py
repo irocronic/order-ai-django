@@ -78,6 +78,8 @@ NOTIFICATION_EVENT_TYPES = [
     ('stock_adjusted', 'Stok Ayarlandı/Güncellendi'),
     ('pager_status_updated', 'Çağrı Cihazı Durumu Güncellendi'),
     ('reservation_pending_approval', 'Yeni Rezervasyon Onay Bekliyor'),
+    ('staff_check_in', 'Personel Giriş Yaptı'),  # YENİ EKLENEN
+    ('staff_check_out', 'Personel Çıkış Yaptı'),  # YENİ EKLENEN
 ]
 
 DEFAULT_BUSINESS_OWNER_NOTIFICATION_PERMISSIONS = [key for key, desc in NOTIFICATION_EVENT_TYPES]
@@ -253,8 +255,6 @@ class Business(models.Model):
         null=True,
         verbose_name="Ödeme Sağlayıcı Gizli Anahtarı"
     )
-
-
 
 # === YENİ MODELLER: Tedarikçi ve Alım Yönetimi ===
 
@@ -450,10 +450,6 @@ class LayoutElement(models.Model):
 
     def __str__(self):
         return f"{self.get_element_type_display()} - {self.layout.business.name}"
-
-
-
-
 
 class Table(models.Model):
     business = models.ForeignKey(Business, on_delete=models.CASCADE, related_name='tables')
