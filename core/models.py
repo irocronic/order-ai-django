@@ -1345,7 +1345,7 @@ class AttendanceRecord(models.Model):
     )
     check_in_location = models.ForeignKey(
         'CheckInLocation', 
-        on_delete=models.SET_NULL, 
+        on_delete=models.PROTECT,  # 🔧 DÜZELTME: PROTECT ile lokasyon silinmesini engelliyoruz
         null=True, 
         blank=True,
         related_name='attendance_records',
