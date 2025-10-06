@@ -91,8 +91,6 @@ router.register(r'purchase-orders', PurchaseOrderViewSet, basename='purchaseorde
 router.register(r'reservations', ReservationViewSet, basename='reservation')
 router.register(r'layouts', BusinessLayoutViewSet, basename='layout')
 router.register(r'layout-elements', LayoutElementViewSet, basename='layoutelement')
-# AttendanceViewSet'i router'a ekliyoruz
-router.register(r'attendance', AttendanceViewSet, basename='attendance')
 
 # YÖNETİCİ API'leri için ayrı bir DefaultRouter
 admin_router = DefaultRouter()
@@ -105,6 +103,35 @@ urlpatterns = [
     # Router tarafından oluşturulan API URL'leri
     path('', include(router.urls)),
     path('admin-panel/', include(admin_router.urls)),
+
+    # ATTENDANCE API'leri - Manuel tanımlama (router kullanmayın)
+    path('attendance/locations/', AttendanceViewSet.as_view({
+        'get': 'locations',
+        'post': 'create_location'
+    }), name='attendance-locations'),
+    
+    path('attendance/locations/<int:pk>/', AttendanceViewSet.as_view({
+        'put': 'update_location',
+        'delete': 'delete_location'
+    }), name='attendance-location-detail'),
+    
+    path('attendance/qr-generate/', AttendanceViewSet.as_view({
+        'post': 'generate_qr'
+    }), name='attendance-qr-generate'),
+    
+    path('attendance/qr-checkin/', AttendanceViewSet.as_view({
+        'post': 'qr_checkin'
+    }), name='attendance-qr-checkin'),
+    
+    path('attendance/current-status/', AttendanceViewSet.as_view({
+        'get': 'current_status'
+    }), name='attendance-current-status'),
+    
+    path('attendance/history/', AttendanceViewSet.as_view({
+        'get': 'history'
+    }), name='attendance-history'),
+    
+    path('attendance/qr/<uuid:qr_code>/', get_location_by_qr, name='attendance-get-location-by-qr'),
 
     # IngredientViewSet için özel action URL'leri
     path('ingredients/<int:pk>/adjust-stock/', IngredientViewSet.as_view({'post': 'adjust_stock'}), name='ingredient-adjust-stock'),
@@ -124,21 +151,6 @@ urlpatterns = [
     path('order_items/<int:pk>/start-preparing/', OrderItemViewSet.as_view({'post': 'start_preparing_item'}), name='orderitem-start-preparing'),
     path('order_items/<int:pk>/mark-ready/', OrderItemViewSet.as_view({'post': 'mark_item_ready'}), name='orderitem-mark-ready'),
     path('order_items/<int:pk>/mark-picked-up/', OrderItemViewSet.as_view({'post': 'mark_item_picked_up'}), name='orderitem-mark-picked-up'),
-
-    # Attendance için özel action URL'leri - DÜZELTME: Bu satırlar eklendi
-    path('attendance/locations/', AttendanceViewSet.as_view({
-        'get': 'locations',
-        'post': 'create_location'
-    }), name='attendance-locations'),
-    path('attendance/locations/<int:pk>/', AttendanceViewSet.as_view({
-        'put': 'update_location',
-        'delete': 'delete_location'
-    }), name='attendance-location-detail'),
-    path('attendance/qr-generate/', AttendanceViewSet.as_view({'post': 'generate_qr'}), name='attendance-qr-generate'),
-    path('attendance/qr-checkin/', AttendanceViewSet.as_view({'post': 'qr_checkin'}), name='attendance-qr-checkin'),
-    path('attendance/current-status/', AttendanceViewSet.as_view({'get': 'current_status'}), name='attendance-current-status'),
-    path('attendance/history/', AttendanceViewSet.as_view({'get': 'history'}), name='attendance-history'),
-    path('attendance/qr/<uuid:qr_code>/', get_location_by_qr, name='attendance-get-location-by-qr'),
 
     # Raporlar
     path('reports/general/', ReportView.as_view(), name='report_general'),

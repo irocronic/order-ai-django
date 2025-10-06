@@ -67,10 +67,9 @@ class AttendanceViewSet(viewsets.ViewSet):
             return True
         elif user.user_type in ['staff', 'kitchen_staff']:
             # Personelin manage_attendance yetkisi olup olmadığını kontrol et
-            return 'manage_attendance' in user.staff_permissions
+            return getattr(user, 'staff_permissions', None) and 'manage_attendance' in user.staff_permissions
         return False
 
-    @action(detail=False, methods=['get'])
     def locations(self, request):
         """Check-in lokasyonlarını listeler - GET /attendance/locations/"""
         business = self._get_user_business(request.user)
@@ -95,7 +94,6 @@ class AttendanceViewSet(viewsets.ViewSet):
         
         return Response(locations_data)
 
-    @action(detail=False, methods=['post'])
     def create_location(self, request):
         """Yeni check-in lokasyonu oluşturur - POST /attendance/locations/"""
         business = self._get_user_business(request.user)
@@ -155,7 +153,6 @@ class AttendanceViewSet(viewsets.ViewSet):
             logger.error(f"Lokasyon oluşturma hatası: {str(e)}")
             return Response({'error': 'Lokasyon oluşturulurken bir hata oluştu'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-    @action(detail=True, methods=['put'])
     def update_location(self, request, pk=None):
         """Check-in lokasyonunu günceller - PUT /attendance/locations/{id}/"""
         business = self._get_user_business(request.user)
@@ -219,7 +216,6 @@ class AttendanceViewSet(viewsets.ViewSet):
             'updated_at': location.updated_at.isoformat(),
         })
 
-    @action(detail=True, methods=['delete'])
     def delete_location(self, request, pk=None):
         """Check-in lokasyonunu siler - DELETE /attendance/locations/{id}/"""
         business = self._get_user_business(request.user)
@@ -233,12 +229,12 @@ class AttendanceViewSet(viewsets.ViewSet):
         try:
             location = CheckInLocation.objects.get(id=pk, business=business)
             
-            # Aktif QR kodları olup olmadığını kontrol et
+            # Aktif QR kodları olup olmadığını kontrol et - BU HATANIN SEBEBİ
             active_qr_count = QRCode.objects.filter(location=location, is_active=True).count()
             if active_qr_count > 0:
-                return Response({
-                    'error': f'Bu lokasyona ait {active_qr_count} aktif QR kod bulunuyor. Önce QR kodları deaktif edin.'
-                }, status=status.HTTP_409_CONFLICT)
+                # QR kodları pasif yap
+                QRCode.objects.filter(location=location, is_active=True).update(is_active=False)
+                logger.info(f"Lokasyon silinmeden önce {active_qr_count} aktif QR kod deaktif edildi")
             
             location_name = location.name
             location.delete()
@@ -253,7 +249,6 @@ class AttendanceViewSet(viewsets.ViewSet):
             logger.error(f"Lokasyon silme hatası: {str(e)}")
             return Response({'error': 'Lokasyon silinirken bir hata oluştu'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-    @action(detail=False, methods=['post'])
     def generate_qr(self, request):
         """QR kod oluşturma - POST /attendance/qr-generate/"""
         business = self._get_user_business(request.user)
@@ -304,7 +299,6 @@ class AttendanceViewSet(viewsets.ViewSet):
             logger.error(f"QR kod oluşturma hatası: {str(e)}")
             return Response({'error': 'QR kod oluşturulurken bir hata oluştu'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-    @action(detail=False, methods=['post'])
     def qr_checkin(self, request):
         """QR kod ile giriş-çıkış - POST /attendance/qr-checkin/"""
         business = self._get_user_business(request.user)
@@ -430,7 +424,6 @@ class AttendanceViewSet(viewsets.ViewSet):
             logger.error(f"Giriş-çıkış kaydı oluşturma hatası: {str(e)}")
             return Response({'error': 'Giriş-çıkış kaydı oluşturulurken bir hata oluştu'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-    @action(detail=False, methods=['get'])
     def current_status(self, request):
         """Mevcut giriş-çıkış durumu - GET /attendance/current-status/"""
         business = self._get_user_business(request.user)
@@ -458,7 +451,6 @@ class AttendanceViewSet(viewsets.ViewSet):
             'current_location': last_record.check_in_location.name if last_record and last_record.check_in_location else None,
         })
 
-    @action(detail=False, methods=['get'])
     def history(self, request):
         """Giriş-çıkış geçmişi - GET /attendance/history/"""
         business = self._get_user_business(request.user)
@@ -504,31 +496,26 @@ class AttendanceViewSet(viewsets.ViewSet):
         total_count = records_query.count()
         records = records_query.select_related('check_in_location').order_by('-timestamp')[offset:offset+limit]
         
-        # Response hazırla
+        # Response hazırla - DÜZELTME: Burada liste formatı doğru
         records_data = []
         for record in records:
             records_data.append({
                 'id': record.id,
-                'user': record.user.id,
+                'user_id': record.user.id,  # DÜZELTME: user_id alanı eklendi
                 'business': record.business.id,
                 'type': record.type,
                 'timestamp': record.timestamp.isoformat(),
                 'latitude': float(record.latitude) if record.latitude else None,
                 'longitude': float(record.longitude) if record.longitude else None,
-                'check_in_location': record.check_in_location.id if record.check_in_location else None,
+                'check_in_location_id': record.check_in_location.id if record.check_in_location else None,  # DÜZELTME: field adı düzeltildi
                 'location_name': record.check_in_location.name if record.check_in_location else None,
                 'notes': record.notes,
                 'qr_code_data': record.qr_code_data,
                 'is_manual_entry': record.is_manual_entry,
             })
         
-        return Response({
-            'results': records_data,
-            'total_count': total_count,
-            'limit': limit,
-            'offset': offset,
-            'has_next': offset + limit < total_count,
-        })
+        # DÜZELTME: Response formatı düzeltildi
+        return Response(records_data)
 
 
 @api_view(['GET'])
@@ -559,34 +546,3 @@ def get_location_by_qr(request, qr_code):
         })
     except QRCode.DoesNotExist:
         return Response({'error': 'Geçersiz veya süresi dolmuş QR kod'}, status=status.HTTP_404_NOT_FOUND)
-
-
-# Eski function-based view'ları koruma amaçlı (geçici)
-# Bu fonksiyonlar gelecekte kaldırılacak
-@api_view(['POST'])
-@permission_classes([IsAuthenticated])
-def generate_qr_code(request):
-    """DEPRECATED: AttendanceViewSet.generate_qr kullanın"""
-    viewset = AttendanceViewSet()
-    return viewset.generate_qr(request)
-
-@api_view(['POST'])
-@permission_classes([IsAuthenticated])
-def record_attendance(request):
-    """DEPRECATED: AttendanceViewSet.qr_checkin kullanın"""
-    viewset = AttendanceViewSet()
-    return viewset.qr_checkin(request)
-
-@api_view(['GET'])
-@permission_classes([IsAuthenticated])
-def get_employee_status(request):
-    """DEPRECATED: AttendanceViewSet.current_status kullanın"""
-    viewset = AttendanceViewSet()
-    return viewset.current_status(request)
-
-@api_view(['GET'])
-@permission_classes([IsAuthenticated])
-def get_attendance_history(request):
-    """DEPRECATED: AttendanceViewSet.history kullanın"""
-    viewset = AttendanceViewSet()
-    return viewset.history(request)
