@@ -5,7 +5,7 @@ from django.core.exceptions import ObjectDoesNotExist
 from datetime import datetime, timedelta
 import json
 import math
-from .models import Location, Employee, AttendanceRecord, Company
+from .models import CheckInLocation, CustomUser, AttendanceRecord, Business
 from .utils import calculate_distance, is_within_location
 
 @login_required

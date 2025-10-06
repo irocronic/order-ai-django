@@ -57,6 +57,7 @@ from core.views.business_website_views import (
     business_public_website_api,
     business_website_view
 )
+
 # YENİ EKLENEN IMPORT
 from core.views.reservation_views import TableAvailabilityAPIView
 
@@ -92,9 +93,6 @@ router.register(r'purchase-orders', PurchaseOrderViewSet, basename='purchaseorde
 router.register(r'reservations', ReservationViewSet, basename='reservation')
 router.register(r'layouts', BusinessLayoutViewSet, basename='layout')
 router.register(r'layout-elements', LayoutElementViewSet, basename='layoutelement')
-
-# YENİ EKLENEN: AttendanceViewSet router'a eklendi
-router.register(r'attendance', AttendanceViewSet, basename='attendance')
 
 # YÖNETİCİ API'leri için ayrı bir DefaultRouter
 admin_router = DefaultRouter()
@@ -164,8 +162,16 @@ urlpatterns = [
     path('google-places/autocomplete/', google_places_autocomplete, name='google-places-autocomplete'),
     path('google-places/details/', google_place_details, name='google-place-details'),
 
-    # QR kod lokasyon bilgisi için standalone URL (ViewSet dışında)
-    path('attendance/qr/<uuid:qr_code>/', get_location_by_qr, name='get_location_by_qr'),
+    # === YENİ EKLENEN: PERSONEL GİRİŞ-ÇIKIŞ URL'LERİ ===
+    path('attendance/', include([
+        path('locations/', AttendanceViewSet.as_view({'get': 'locations', 'post': 'create_location'}), name='attendance-locations'),
+        path('locations/<int:pk>/', AttendanceViewSet.as_view({'put': 'update_location', 'delete': 'delete_location'}), name='attendance-location-detail'),
+        path('qr-generate/', AttendanceViewSet.as_view({'post': 'generate_qr'}), name='attendance-qr-generate'),
+        path('qr-checkin/', AttendanceViewSet.as_view({'post': 'qr_checkin'}), name='attendance-qr-checkin'),
+        path('current-status/', AttendanceViewSet.as_view({'get': 'current_status'}), name='attendance-current-status'),
+        path('history/', AttendanceViewSet.as_view({'get': 'history'}), name='attendance-history'),
+        path('qr/<uuid:qr_code>/', get_location_by_qr, name='attendance-get-location-by-qr'),
+    ])),
 ]
 
 # Geliştirme ortamında medya dosyalarını sunmak için

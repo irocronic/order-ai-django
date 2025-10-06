@@ -872,3 +872,22 @@ class BusinessLayoutAdmin(admin.ModelAdmin):
     search_fields = ('business__name',)
 
 
+# admin.py'a eklenmeli:
+@admin.register(CheckInLocation)
+class CheckInLocationAdmin(admin.ModelAdmin):
+    list_display = ('name', 'business', 'is_active', 'latitude', 'longitude', 'radius_meters')
+    list_filter = ('business', 'is_active')
+    search_fields = ('name', 'business__name')
+
+@admin.register(QRCode)
+class QRCodeAdmin(admin.ModelAdmin):
+    list_display = ('qr_data', 'location', 'is_active', 'expires_at', 'created_at')
+    list_filter = ('is_active', 'location__business')
+    readonly_fields = ('qr_data', 'created_at')
+
+@admin.register(AttendanceRecord)
+class AttendanceRecordAdmin(admin.ModelAdmin):
+    list_display = ('user', 'business', 'type', 'timestamp', 'check_in_location')
+    list_filter = ('type', 'business', 'timestamp', 'is_manual_entry')
+    search_fields = ('user__username', 'business__name')
+    date_hierarchy = 'timestamp'
