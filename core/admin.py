@@ -8,7 +8,7 @@ from django.db import models
 # --- YENİ: Subscription modeli buraya import edildi ---
 from subscriptions.models import Subscription
 
-# === GÜNCELLEME: Hatalı import düzeltildi ve Reservation eklendi ===
+# === GÜNCELLEME: Hatalı import düzeltildi ve yeni modeller eklendi ===
 from .models import (
     Business, Table, MenuItem, Order, OrderItem, Payment, Category,
     MenuItemVariant, WaitingCustomer, CreditPaymentDetails,
@@ -19,9 +19,77 @@ from .models import (
     STAFF_PERMISSION_CHOICES, NOTIFICATION_EVENT_TYPES,
     UnitOfMeasure, Ingredient, RecipeItem, IngredientStockMovement,
     Supplier, PurchaseOrder, BusinessWebsite, PurchaseOrderItem,
-    Reservation, BusinessLayout
+    Reservation, BusinessLayout,
+    # YENİ EKLENEN: Personel giriş-çıkış modelleri
+    CheckInLocation, QRCode, AttendanceRecord
 )
 # =============================================================
+
+# === YENİ: Personel Giriş-Çıkış için Admin sınıfları ===
+@admin.register(CheckInLocation)
+class CheckInLocationAdmin(admin.ModelAdmin):
+    list_display = ('name', 'business', 'latitude', 'longitude', 'radius_meters', 'is_active', 'created_at')
+    list_filter = ('business', 'is_active', 'created_at')
+    search_fields = ('name', 'business__name')
+    list_editable = ('is_active', 'radius_meters')
+    readonly_fields = ('created_at', 'updated_at')
+    
+    fieldsets = (
+        ('Temel Bilgiler', {
+            'fields': ('business', 'name', 'is_active')
+        }),
+        ('Konum Bilgileri', {
+            'fields': ('latitude', 'longitude', 'radius_meters')
+        }),
+        ('Zaman Damgaları', {
+            'fields': ('created_at', 'updated_at'),
+            'classes': ('collapse',)
+        }),
+    )
+
+@admin.register(QRCode)
+class QRCodeAdmin(admin.ModelAdmin):
+    list_display = ('qr_data_short', 'location', 'is_active', 'expires_at', 'created_at')
+    list_filter = ('location__business', 'is_active', 'created_at', 'expires_at')
+    search_fields = ('qr_data', 'location__name', 'location__business__name')
+    list_editable = ('is_active',)
+    readonly_fields = ('qr_data', 'created_at')
+    
+    def qr_data_short(self, obj):
+        return f"{str(obj.qr_data)[:8]}..."
+    qr_data_short.short_description = 'QR Data'
+    
+    fieldsets = (
+        ('QR Kod Bilgileri', {
+            'fields': ('location', 'qr_data', 'is_active')
+        }),
+        ('Geçerlilik', {
+            'fields': ('expires_at', 'created_at')
+        }),
+    )
+
+@admin.register(AttendanceRecord)
+class AttendanceRecordAdmin(admin.ModelAdmin):
+    list_display = ('user', 'business', 'type', 'timestamp', 'check_in_location', 'is_manual_entry')
+    list_filter = ('business', 'type', 'timestamp', 'is_manual_entry', 'check_in_location')
+    search_fields = ('user__username', 'user__first_name', 'user__last_name', 'business__name', 'notes')
+    readonly_fields = ('timestamp',)
+    date_hierarchy = 'timestamp'
+    list_select_related = ('user', 'business', 'check_in_location')
+    
+    fieldsets = (
+        ('Temel Bilgiler', {
+            'fields': ('user', 'business', 'type', 'timestamp')
+        }),
+        ('Konum Bilgileri', {
+            'fields': ('check_in_location', 'latitude', 'longitude')
+        }),
+        ('Ek Bilgiler', {
+            'fields': ('notes', 'qr_code_data', 'is_manual_entry')
+        }),
+    )
+
+# =====================================================
 
 # === YENİ: Reservation için Admin sınıfı eklendi ===
 @admin.register(Reservation)
@@ -232,9 +300,6 @@ class BusinessAdmin(admin.ModelAdmin):
             return "-"
         except Subscription.DoesNotExist:
             return "-"
-
-# ... Bu dosyada bulunan diğer tüm Admin sınıflarınız (TableAdmin, KDSScreenAdmin, vb.) aynı şekilde kalmalıdır ...
-# Sadece BusinessAdmin sınıfını yukarıdaki gibi değiştirmeniz yeterlidir.
 
 @admin.register(Table)
 class TableAdmin(admin.ModelAdmin):
@@ -870,24 +935,3 @@ class BusinessLayoutAdmin(admin.ModelAdmin):
     list_display = ('business', 'width', 'height', 'updated_at')
     inlines = [TableInlineAdmin]
     search_fields = ('business__name',)
-
-
-# admin.py'a eklenmeli:
-@admin.register(CheckInLocation)
-class CheckInLocationAdmin(admin.ModelAdmin):
-    list_display = ('name', 'business', 'is_active', 'latitude', 'longitude', 'radius_meters')
-    list_filter = ('business', 'is_active')
-    search_fields = ('name', 'business__name')
-
-@admin.register(QRCode)
-class QRCodeAdmin(admin.ModelAdmin):
-    list_display = ('qr_data', 'location', 'is_active', 'expires_at', 'created_at')
-    list_filter = ('is_active', 'location__business')
-    readonly_fields = ('qr_data', 'created_at')
-
-@admin.register(AttendanceRecord)
-class AttendanceRecordAdmin(admin.ModelAdmin):
-    list_display = ('user', 'business', 'type', 'timestamp', 'check_in_location')
-    list_filter = ('type', 'business', 'timestamp', 'is_manual_entry')
-    search_fields = ('user__username', 'business__name')
-    date_hierarchy = 'timestamp'
