@@ -1288,7 +1288,12 @@ class CheckInLocation(models.Model):
     name = models.CharField(max_length=200, verbose_name="Lokasyon Adı")
     latitude = models.DecimalField(max_digits=10, decimal_places=8, verbose_name="Enlem")
     longitude = models.DecimalField(max_digits=11, decimal_places=8, verbose_name="Boylam")
-    radius_meters = models.FloatField(default=100.0, verbose_name="Yarıçap (Metre)")
+    radius_meters = models.FloatField(
+        default=100.0,
+        validators=[MinValueValidator(1.0), MaxValueValidator(10000.0)],
+        verbose_name="Yarıçap (Metre)",
+        help_text="1 ile 10000 metre arasında olmalıdır"
+    )
     is_active = models.BooleanField(default=True, verbose_name="Aktif Mi?")
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
