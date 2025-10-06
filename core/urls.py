@@ -44,12 +44,11 @@ from core.views import (
     PublicReservationCreateView,
     BusinessLayoutViewSet,
     LayoutElementViewSet,
-    generate_qr_code,
     get_location_by_qr,
-    record_attendance,
-    get_employee_status,
-    get_attendance_history,
 )
+
+# YENİ EKLENEN: AttendanceViewSet import
+from core.views.attendance_views import AttendanceViewSet
 
 # Business Website API Views için importlar
 from core.views.business_website_views import (
@@ -94,6 +93,8 @@ router.register(r'reservations', ReservationViewSet, basename='reservation')
 router.register(r'layouts', BusinessLayoutViewSet, basename='layout')
 router.register(r'layout-elements', LayoutElementViewSet, basename='layoutelement')
 
+# YENİ EKLENEN: AttendanceViewSet router'a eklendi
+router.register(r'attendance', AttendanceViewSet, basename='attendance')
 
 # YÖNETİCİ API'leri için ayrı bir DefaultRouter
 admin_router = DefaultRouter()
@@ -163,12 +164,8 @@ urlpatterns = [
     path('google-places/autocomplete/', google_places_autocomplete, name='google-places-autocomplete'),
     path('google-places/details/', google_place_details, name='google-place-details'),
 
-    # Giriş-Çıkış (Attendance) API'leri
-    path('api/locations/generate-qr/', generate_qr_code, name='generate_qr'),
-    path('api/locations/qr/<uuid:qr_code>/', get_location_by_qr, name='get_location_by_qr'),
-    path('api/attendance/record/', record_attendance, name='record_attendance'),
-    path('api/employees/status/', get_employee_status, name='employee_status'),
-    path('api/attendance/history/', get_attendance_history, name='attendance_history'),
+    # QR kod lokasyon bilgisi için standalone URL (ViewSet dışında)
+    path('attendance/qr/<uuid:qr_code>/', get_location_by_qr, name='get_location_by_qr'),
 ]
 
 # Geliştirme ortamında medya dosyalarını sunmak için

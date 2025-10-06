@@ -45,11 +45,8 @@ from .reservation_views import (
     PublicReservationCreateView,
 )
 from .attendance_views import (
-    generate_qr_code,
-    get_location_by_qr,
-    record_attendance,
-    get_employee_status,
-    get_attendance_history,
+    get_location_by_qr,  # Sadece tek fonksiyon export ediliyor
+    AttendanceViewSet,   # ViewSet eklendi
 )
 
 __all__ = [
@@ -98,9 +95,6 @@ __all__ = [
     'business_website_view',
     'ReservationViewSet',
     'PublicReservationCreateView',
-    'generate_qr_code',
-    'get_location_by_qr',
-    'record_attendance',
-    'get_employee_status',
-    'get_attendance_history',
+    'get_location_by_qr',    # Sadece tek fonksiyon export ediliyor
+    'AttendanceViewSet',     # ViewSet eklendi
 ]

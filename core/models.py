@@ -48,6 +48,7 @@ STAFF_PERMISSION_CHOICES = [
     ('manage_kds_screens', 'KDS Ekran Tanımlarını Yönetme (Ekle/Sil/Düzenle)'),
     ('manage_pagers', 'Çağrı Cihazı Yönetimi'),
     ('manage_campaigns', 'Kampanya Yönetimi'),
+    ('manage_attendance', 'Personel Giriş-Çıkış Yönetimi'),  # YENİ EKLENEN
 ]
 
 NOTIFICATION_EVENT_TYPES = [
@@ -76,7 +77,6 @@ NOTIFICATION_EVENT_TYPES = [
     ('waiting_customer_seated', 'Bekleyen Müşteri Oturtuldu'),
     ('stock_adjusted', 'Stok Ayarlandı/Güncellendi'),
     ('pager_status_updated', 'Çağrı Cihazı Durumu Güncellendi'),
-    # === YENİ OLAY TÜRÜ ===
     ('reservation_pending_approval', 'Yeni Rezervasyon Onay Bekliyor'),
 ]
 
@@ -1281,57 +1281,148 @@ class Reservation(models.Model):
     def __str__(self):
         return f"Rez. #{self.id}: {self.customer_name} - Masa {self.table.table_number} ({self.reservation_time.strftime('%d.%m %H:%M')})"
 
+# === PERSONEL GİRİŞ-ÇIKIŞ MODELLERİ ===
 
-
-
-class Company(models.Model):
-    name = models.CharField(max_length=200)
-    owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+class CheckInLocation(models.Model):
+    """
+    İşletmelerin personel giriş-çıkış noktalarını tanımlar.
+    QR kod ile konum tabanlı giriş-çıkış sistemi için kullanılır.
+    """
+    business = models.ForeignKey(Business, on_delete=models.CASCADE, related_name='check_in_locations', verbose_name="İşletme")
+    name = models.CharField(max_length=200, verbose_name="Lokasyon Adı")
+    latitude = models.DecimalField(max_digits=10, decimal_places=8, verbose_name="Enlem")
+    longitude = models.DecimalField(max_digits=11, decimal_places=8, verbose_name="Boylam")
+    radius_meters = models.FloatField(default=100.0, verbose_name="Yarıçap (Metre)")
+    is_active = models.BooleanField(default=True, verbose_name="Aktif Mi?")
     created_at = models.DateTimeField(auto_now_add=True)
-
-    def __str__(self):
-        return self.name
-
-class Location(models.Model):
-    company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name='locations')
-    name = models.CharField(max_length=200)
-    address = models.TextField()
-    latitude = models.DecimalField(max_digits=10, decimal_places=8)
-    longitude = models.DecimalField(max_digits=11, decimal_places=8)
-    radius = models.IntegerField(default=100)  # metre cinsinden
-    qr_code = models.UUIDField(default=uuid.uuid4, unique=True)
-    is_active = models.BooleanField(default=True)
-    created_at = models.DateTimeField(auto_now_add=True)
-
-    def __str__(self):
-        return f"{self.name} - {self.company.name}"
-
-class Employee(models.Model):
-    user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
-    company = models.ForeignKey(Company, on_delete=models.CASCADE)
-    employee_id = models.CharField(max_length=50)
-    is_active = models.BooleanField(default=True)
-
-    def __str__(self):
-        return f"{self.user.get_full_name()} - {self.company.name}"
-
-class AttendanceRecord(models.Model):
-    ENTRY_TYPE_CHOICES = [
-        ('IN', 'Giriş'),
-        ('OUT', 'Çıkış'),
-    ]
-    
-    employee = models.ForeignKey(Employee, on_delete=models.CASCADE)
-    location = models.ForeignKey(Location, on_delete=models.CASCADE)
-    entry_type = models.CharField(max_length=3, choices=ENTRY_TYPE_CHOICES)
-    timestamp = models.DateTimeField(auto_now_add=True)
-    gps_latitude = models.DecimalField(max_digits=10, decimal_places=8)
-    gps_longitude = models.DecimalField(max_digits=11, decimal_places=8)
-    is_valid_location = models.BooleanField(default=False)
-    notes = models.TextField(blank=True)
-
-    def __str__(self):
-        return f"{self.employee.user.get_full_name()} - {self.entry_type} - {self.timestamp}"
+    updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
+        verbose_name = "Check-in Lokasyonu"
+        verbose_name_plural = "Check-in Lokasyonları"
+        unique_together = ('business', 'name')
+        ordering = ['name']
+
+    def __str__(self):
+        status = "Aktif" if self.is_active else "Pasif"
+        return f"{self.name} - {self.business.name} ({status})"
+
+class QRCode(models.Model):
+    """
+    Check-in lokasyonları için üretilen QR kodları.
+    """
+    location = models.ForeignKey(CheckInLocation, on_delete=models.CASCADE, related_name='qr_codes', verbose_name="Lokasyon")
+    qr_data = models.UUIDField(default=uuid.uuid4, unique=True, verbose_name="QR Kod Verisi")
+    created_at = models.DateTimeField(auto_now_add=True)
+    expires_at = models.DateTimeField(null=True, blank=True, verbose_name="Geçerlilik Bitiş Tarihi")
+    is_active = models.BooleanField(default=True, verbose_name="Aktif Mi?")
+
+    class Meta:
+        verbose_name = "QR Kod"
+        verbose_name_plural = "QR Kodlar"
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"QR: {self.location.name} - {str(self.qr_data)[:8]}..."
+
+
+class AttendanceRecord(models.Model):
+    """
+    Personellerin giriş-çıkış kayıtlarını tutar.
+    """
+    TYPE_CHOICES = [
+        ('check_in', 'Giriş'),
+        ('check_out', 'Çıkış'),
+    ]
+    
+    user = models.ForeignKey(
+        CustomUser, 
+        on_delete=models.CASCADE, 
+        related_name='attendance_records',
+        verbose_name="Personel"
+    )
+    business = models.ForeignKey(
+        Business, 
+        on_delete=models.CASCADE, 
+        related_name='attendance_records',
+        verbose_name="İşletme"
+    )
+    check_in_location = models.ForeignKey(
+        'CheckInLocation', 
+        on_delete=models.SET_NULL, 
+        null=True, 
+        blank=True,
+        related_name='attendance_records',
+        verbose_name="Check-in Lokasyonu"
+    )
+    
+    type = models.CharField(
+        max_length=10, 
+        choices=TYPE_CHOICES,
+        verbose_name="Giriş/Çıkış Tipi"
+    )
+    timestamp = models.DateTimeField(
+        auto_now_add=True,
+        verbose_name="Zaman Damgası"
+    )
+    
+    # Konum bilgileri
+    latitude = models.DecimalField(
+        max_digits=10, 
+        decimal_places=8, 
+        null=True, 
+        blank=True,
+        verbose_name="Enlem"
+    )
+    longitude = models.DecimalField(
+        max_digits=11, 
+        decimal_places=8, 
+        null=True, 
+        blank=True,
+        verbose_name="Boylam"
+    )
+    
+    # Ek bilgiler
+    notes = models.TextField(
+        blank=True, 
+        null=True,
+        verbose_name="Notlar"
+    )
+    qr_code_data = models.UUIDField(
+        null=True, 
+        blank=True,
+        verbose_name="QR Kod Verisi"
+    )
+    is_manual_entry = models.BooleanField(
+        default=False,
+        verbose_name="Manuel Giriş Mi?"
+    )
+
+    class Meta:
+        verbose_name = "Personel Giriş-Çıkış Kaydı"
+        verbose_name_plural = "Personel Giriş-Çıkış Kayıtları"
         ordering = ['-timestamp']
+        indexes = [
+            models.Index(fields=['user', 'business', '-timestamp']),
+            models.Index(fields=['business', '-timestamp']),
+            models.Index(fields=['type', '-timestamp']),
+        ]
+
+    def __str__(self):
+        return f"{self.user.username} - {self.get_type_display()} - {self.timestamp.strftime('%d.%m.%Y %H:%M')}"
+
+    @property
+    def duration_from_last_opposite_record(self):
+        """Son ters tip kayıttan bu yana geçen süreyi hesaplar"""
+        opposite_type = 'check_out' if self.type == 'check_in' else 'check_in'
+        
+        last_opposite = AttendanceRecord.objects.filter(
+            user=self.user,
+            business=self.business,
+            type=opposite_type,
+            timestamp__lt=self.timestamp
+        ).order_by('-timestamp').first()
+        
+        if last_opposite:
+            return self.timestamp - last_opposite.timestamp
+        return None
